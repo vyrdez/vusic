@@ -25,12 +25,16 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
 
 ## Milestones
 - [x] M0 environment (JDK17, SDK34, build-tools 34.0.0, platform-tools)
-- [ ] M1 setup+auth (project scaffold, login, connection test, encrypted creds, reactive nav)
-- [ ] M2 library browsing (home, library tabs, search, detail pages, paging/sort/grid toggle)
-- [ ] M3 playback service (MediaSessionService, notification, focus, gapless, scrobble, star)
-- [ ] M4 queue+Now Playing (full/mini player, queue ops, lyrics, dynamic bg)
-- [ ] M5 offline+settings (downloads, stream cache, bitrate wifi/mobile, theme, cert toggle, logout)
-- [ ] M6 extras (Auto manifest support, home widget, README, final APK verify)
+- [x] M1 setup+auth (project scaffold, login, connection test, encrypted creds, reactive nav)
+- [x] M2 library browsing (home, library tabs, search, detail pages, paging/sort/grid toggle)
+- [x] M3 playback service (MediaSessionService, notification, focus, gapless, scrobble, star)
+- [x] M4 queue+Now Playing (full/mini player, queue ops, lyrics, dynamic bg)
+- [x] M5 offline+settings (downloads, stream cache, bitrate wifi/mobile, theme, cert toggle, logout)
+- [x] M6 extras (Auto manifest support, home screen widget, README, final APK verify)
+
+Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
+`testDebugUnitTest` 3/3 pass. APK 23MB at app/build/outputs/apk/debug/app-debug.apk.
+No adb device attached, so no on-device install/logcat check — noted below.
 
 ## Assumptions
 - Server speaks Subsonic 1.16.1 / OpenSubsonic; `f=json` always.
