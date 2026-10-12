@@ -1,7 +1,34 @@
 package com.feishin.mobile.data.model
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonTransformingSerializer
+
+/**
+ * Subsonic wire DTOs. Never exposed to the UI (see domain models + mappers).
+ *
+ * Quirks handled:
+ * - Subsonic servers sometimes return a single object instead of a one-element
+ *   array; every list field tolerates both shapes via [SingleOrListSerializer].
+ * - Navidrome sends extra fields: unknown keys are ignored (converter config).
+ * - Missing optional fields fall back to defaults.
+ */
+open class SingleOrListSerializer<T>(elementSerializer: KSerializer<T>) :
+    JsonTransformingSerializer<List<T>>(ListSerializer(elementSerializer)) {
+    override fun transformDeserialize(element: JsonElement): JsonElement =
+        if (element is JsonArray) element else JsonArray(listOf(element))
+}
+
+object AlbumDtoListSerializer : SingleOrListSerializer<AlbumDto>(AlbumDto.serializer())
+object SongDtoListSerializer : SingleOrListSerializer<SongDto>(SongDto.serializer())
+object ArtistDtoListSerializer : SingleOrListSerializer<ArtistDto>(ArtistDto.serializer())
+object GenreDtoListSerializer : SingleOrListSerializer<GenreDto>(GenreDto.serializer())
+object PlaylistDtoListSerializer : SingleOrListSerializer<PlaylistDto>(PlaylistDto.serializer())
+object ArtistIndexDtoListSerializer : SingleOrListSerializer<ArtistIndexDto>(ArtistIndexDto.serializer())
 
 @Serializable
 data class SubsonicEnvelope(
@@ -13,31 +40,37 @@ data class SubsonicResponse(
     val status: String = "",
     val version: String = "",
     val error: SubsonicError? = null,
-    val albumList: AlbumList? = null,
-    val albumList2: AlbumList2? = null,
-    val searchResult3: SearchResult3? = null,
-    val album: AlbumDetail? = null,
-    val artist: ArtistDetail? = null,
-    val artists: Artists? = null,
-    val playlists: Playlists? = null,
-    val playlist: PlaylistDetail? = null,
-    val starred: Starred? = null,
-    val starred2: Starred2? = null,
-    val genres: Genres? = null,
-    val lyrics: Lyrics? = null,
+    val albumList: AlbumListDto? = null,
+    val albumList2: AlbumList2Dto? = null,
+    val searchResult3: SearchResult3Dto? = null,
+    val album: AlbumDetailDto? = null,
+    val artist: ArtistDetailDto? = null,
+    val artists: ArtistsDto? = null,
+    val playlists: PlaylistsDto? = null,
+    val playlist: PlaylistDetailDto? = null,
+    val starred: StarredDto? = null,
+    val starred2: Starred2Dto? = null,
+    val genres: GenresDto? = null,
+    val lyrics: LyricsDto? = null,
 )
 
 @Serializable
 data class SubsonicError(val code: Int = 0, val message: String = "")
 
 @Serializable
-data class AlbumList(val album: List<Album> = emptyList())
+data class AlbumListDto(
+    @Serializable(with = AlbumDtoListSerializer::class)
+    val album: List<AlbumDto> = emptyList(),
+)
 
 @Serializable
-data class AlbumList2(val album: List<Album> = emptyList())
+data class AlbumList2Dto(
+    @Serializable(with = AlbumDtoListSerializer::class)
+    val album: List<AlbumDto> = emptyList(),
+)
 
 @Serializable
-data class Album(
+data class AlbumDto(
     val id: String = "",
     val name: String = "",
     val artist: String = "",
@@ -52,7 +85,7 @@ data class Album(
 )
 
 @Serializable
-data class AlbumDetail(
+data class AlbumDetailDto(
     val id: String = "",
     val name: String = "",
     val artist: String = "",
@@ -63,11 +96,12 @@ data class AlbumDetail(
     val year: Int? = null,
     val genre: String? = null,
     val starred: String? = null,
-    val song: List<Song> = emptyList(),
+    @Serializable(with = SongDtoListSerializer::class)
+    val song: List<SongDto> = emptyList(),
 )
 
 @Serializable
-data class Song(
+data class SongDto(
     val id: String = "",
     val title: String = "",
     val album: String = "",
@@ -87,13 +121,20 @@ data class Song(
 )
 
 @Serializable
-data class Artists(val index: List<ArtistIndex> = emptyList())
+data class ArtistsDto(
+    @Serializable(with = ArtistIndexDtoListSerializer::class)
+    val index: List<ArtistIndexDto> = emptyList(),
+)
 
 @Serializable
-data class ArtistIndex(val name: String = "", val artist: List<Artist> = emptyList())
+data class ArtistIndexDto(
+    val name: String = "",
+    @Serializable(with = ArtistDtoListSerializer::class)
+    val artist: List<ArtistDto> = emptyList(),
+)
 
 @Serializable
-data class Artist(
+data class ArtistDto(
     val id: String = "",
     val name: String = "",
     val coverArt: String? = null,
@@ -102,27 +143,34 @@ data class Artist(
 )
 
 @Serializable
-data class ArtistDetail(
+data class ArtistDetailDto(
     val id: String = "",
     val name: String = "",
     val coverArt: String? = null,
     val albumCount: Int = 0,
     val starred: String? = null,
-    val album: List<Album> = emptyList(),
+    @Serializable(with = AlbumDtoListSerializer::class)
+    val album: List<AlbumDto> = emptyList(),
 )
 
 @Serializable
-data class SearchResult3(
-    val artist: List<Artist> = emptyList(),
-    val album: List<Album> = emptyList(),
-    val song: List<Song> = emptyList(),
+data class SearchResult3Dto(
+    @Serializable(with = ArtistDtoListSerializer::class)
+    val artist: List<ArtistDto> = emptyList(),
+    @Serializable(with = AlbumDtoListSerializer::class)
+    val album: List<AlbumDto> = emptyList(),
+    @Serializable(with = SongDtoListSerializer::class)
+    val song: List<SongDto> = emptyList(),
 )
 
 @Serializable
-data class Playlists(val playlist: List<Playlist> = emptyList())
+data class PlaylistsDto(
+    @Serializable(with = PlaylistDtoListSerializer::class)
+    val playlist: List<PlaylistDto> = emptyList(),
+)
 
 @Serializable
-data class Playlist(
+data class PlaylistDto(
     val id: String = "",
     val name: String = "",
     val songCount: Int = 0,
@@ -131,25 +179,49 @@ data class Playlist(
 )
 
 @Serializable
-data class PlaylistDetail(
+data class PlaylistDetailDto(
     val id: String = "",
     val name: String = "",
     val songCount: Int = 0,
     val duration: Int = 0,
-    val entry: List<Song> = emptyList(),
+    @Serializable(with = SongDtoListSerializer::class)
+    val entry: List<SongDto> = emptyList(),
 )
 
 @Serializable
-data class Starred(val artist: List<Artist> = emptyList(), val album: List<Album> = emptyList(), val song: List<Song> = emptyList())
+data class StarredDto(
+    @Serializable(with = ArtistDtoListSerializer::class)
+    val artist: List<ArtistDto> = emptyList(),
+    @Serializable(with = AlbumDtoListSerializer::class)
+    val album: List<AlbumDto> = emptyList(),
+    @Serializable(with = SongDtoListSerializer::class)
+    val song: List<SongDto> = emptyList(),
+)
 
 @Serializable
-data class Starred2(val artist: List<Artist> = emptyList(), val album: List<Album> = emptyList(), val song: List<Song> = emptyList())
+data class Starred2Dto(
+    @Serializable(with = ArtistDtoListSerializer::class)
+    val artist: List<ArtistDto> = emptyList(),
+    @Serializable(with = AlbumDtoListSerializer::class)
+    val album: List<AlbumDto> = emptyList(),
+    @Serializable(with = SongDtoListSerializer::class)
+    val song: List<SongDto> = emptyList(),
+)
 
 @Serializable
-data class Genres(val genre: List<Genre> = emptyList())
+data class GenresDto(
+    @Serializable(with = GenreDtoListSerializer::class)
+    val genre: List<GenreDto> = emptyList(),
+)
 
 @Serializable
-data class Genre(val name: String = "", val songCount: Int = 0, val albumCount: Int = 0)
+data class GenreDto(
+    val name: String = "",
+    /** Navidrome/OpenSubsonic puts the genre name in `value` instead of `name`. */
+    val value: String = "",
+    val songCount: Int = 0,
+    val albumCount: Int = 0,
+)
 
 @Serializable
-data class Lyrics(val artist: String = "", val title: String = "", val value: String = "")
+data class LyricsDto(val artist: String = "", val title: String = "", val value: String = "")

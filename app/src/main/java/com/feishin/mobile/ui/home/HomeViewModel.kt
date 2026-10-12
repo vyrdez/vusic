@@ -2,9 +2,9 @@ package com.feishin.mobile.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.feishin.mobile.data.model.Album
-import com.feishin.mobile.data.model.Song
-import com.feishin.mobile.data.repo.MusicRepository
+import com.feishin.mobile.domain.model.Album
+import com.feishin.mobile.domain.model.Track
+import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.common.UiState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -20,11 +20,11 @@ data class HomeData(
     val newest: List<Album> = emptyList(),
     val frequent: List<Album> = emptyList(),
     val random: List<Album> = emptyList(),
-    val starredSongs: List<Song> = emptyList(),
+    val starredSongs: List<Track> = emptyList(),
 )
 
 @HiltViewModel
-class HomeViewModel @Inject constructor(private val repo: MusicRepository) : ViewModel() {
+class HomeViewModel @Inject constructor(private val repo: MusicDataRepository) : ViewModel() {
     private val _ui = MutableStateFlow<UiState<HomeData>>(UiState.Loading)
     val ui: StateFlow<UiState<HomeData>> = _ui.asStateFlow()
 
@@ -43,7 +43,7 @@ class HomeViewModel @Inject constructor(private val repo: MusicRepository) : Vie
                 newest = (newest.await() as? Result.Ok)?.value.orEmpty(),
                 frequent = (frequent.await() as? Result.Ok)?.value.orEmpty(),
                 random = (random.await() as? Result.Ok)?.value.orEmpty(),
-                starredSongs = (starred.await() as? Result.Ok)?.value?.third.orEmpty(),
+                starredSongs = (starred.await() as? Result.Ok)?.value?.tracks.orEmpty(),
             )
             _ui.value = if (data.recent.isEmpty() && data.newest.isEmpty() && data.frequent.isEmpty() &&
                 data.random.isEmpty() && data.starredSongs.isEmpty()

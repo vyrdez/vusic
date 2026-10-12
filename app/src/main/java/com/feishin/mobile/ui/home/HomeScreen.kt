@@ -20,9 +20,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.feishin.mobile.data.model.Album
-import com.feishin.mobile.data.model.Song
-import com.feishin.mobile.data.repo.MusicRepository
+import com.feishin.mobile.domain.model.Album
+import com.feishin.mobile.domain.model.Track
+import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.EmptyBox
 import com.feishin.mobile.ui.ErrorBox
@@ -30,13 +30,14 @@ import com.feishin.mobile.ui.LoadingBox
 import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.ui.components.AlbumCard
 import com.feishin.mobile.ui.components.SongRow
+import com.feishin.mobile.ui.components.rememberSavableListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     vm: HomeViewModel = hiltViewModel(),
     player: PlayerManager,
-    repo: MusicRepository,
+    repo: MusicDataRepository,
     onAlbum: (String) -> Unit,
 ) {
     val ui by vm.ui.collectAsState()
@@ -51,8 +52,12 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HomeContent(data: HomeData, player: PlayerManager, repo: MusicRepository, onAlbum: (String) -> Unit) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
+private fun HomeContent(data: HomeData, player: PlayerManager, repo: MusicDataRepository, onAlbum: (String) -> Unit) {
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        state = rememberSavableListState(),
+        contentPadding = PaddingValues(bottom = 160.dp),
+    ) {
         if (data.recent.isNotEmpty()) item { Section("Recently played", data.recent, repo, onAlbum, player) }
         if (data.newest.isNotEmpty()) item { Section("Newest", data.newest, repo, onAlbum, player) }
         if (data.frequent.isNotEmpty()) item { Section("Most played", data.frequent, repo, onAlbum, player) }
@@ -71,12 +76,12 @@ private fun HomeContent(data: HomeData, player: PlayerManager, repo: MusicReposi
 }
 
 @Composable
-private fun Section(title: String, albums: List<Album>, repo: MusicRepository, onAlbum: (String) -> Unit, player: PlayerManager) {
+private fun Section(title: String, albums: List<Album>, repo: MusicDataRepository, onAlbum: (String) -> Unit, player: PlayerManager) {
     Column(Modifier.fillMaxWidth()) {
         Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp, 12.dp, 16.dp, 4.dp))
         LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
             items(albums, key = { it.id }) { a ->
-                AlbumCard(a, repo.coverArtUrl(a.coverArt, 256), onClick = { onAlbum(a.id) }, modifier = Modifier.width(140.dp))
+                AlbumCard(a, repo.coverArtUrl(a.coverArt, 300), onClick = { onAlbum(a.id) }, modifier = Modifier.width(140.dp))
             }
         }
     }

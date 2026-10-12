@@ -2,12 +2,13 @@ package com.feishin.mobile.ui.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.feishin.mobile.data.model.Album
-import com.feishin.mobile.data.model.Artist
-import com.feishin.mobile.data.model.Genre
-import com.feishin.mobile.data.model.Playlist
-import com.feishin.mobile.data.model.Song
-import com.feishin.mobile.data.repo.MusicRepository
+import com.feishin.mobile.domain.model.Album
+import com.feishin.mobile.domain.model.Artist
+import com.feishin.mobile.domain.model.Genre
+import com.feishin.mobile.domain.model.Playlist
+import com.feishin.mobile.domain.model.StarredCollection
+import com.feishin.mobile.domain.model.Track
+import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.common.UiState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -21,7 +22,7 @@ enum class LibraryTab { ALBUMS, ARTISTS, GENRES, PLAYLISTS, FAVORITES }
 enum class SortOrder { NAME_ASC, NAME_DESC, YEAR_DESC, PLAYS_DESC }
 
 @HiltViewModel
-class LibraryViewModel @Inject constructor(private val repo: MusicRepository) : ViewModel() {
+class LibraryViewModel @Inject constructor(private val repo: MusicDataRepository) : ViewModel() {
     private val _tab = MutableStateFlow(LibraryTab.ALBUMS)
     val tab: StateFlow<LibraryTab> = _tab.asStateFlow()
 
@@ -43,8 +44,8 @@ class LibraryViewModel @Inject constructor(private val repo: MusicRepository) : 
     private val _playlists = MutableStateFlow<UiState<List<Playlist>>>(UiState.Loading)
     val playlists: StateFlow<UiState<List<Playlist>>> = _playlists.asStateFlow()
 
-    private val _favs = MutableStateFlow<UiState<Triple<List<Artist>, List<Album>, List<Song>>>>(UiState.Loading)
-    val favs: StateFlow<UiState<Triple<List<Artist>, List<Album>, List<Song>>>> = _favs.asStateFlow()
+    private val _favs = MutableStateFlow<UiState<StarredCollection>>(UiState.Loading)
+    val favs: StateFlow<UiState<StarredCollection>> = _favs.asStateFlow()
 
     private var albumOffset = 0
     private val albumAccum = mutableListOf<Album>()
@@ -76,7 +77,7 @@ class LibraryViewModel @Inject constructor(private val repo: MusicRepository) : 
         if (albumEnd) return
         viewModelScope.launch {
             if (reset) _albums.value = UiState.Loading
-            when (val r = repo.albumList("alphabetical", 100, albumOffset)) {
+            when (val r = repo.albumList("alphabeticalByName", 100, albumOffset)) {
                 is Result.Ok -> {
                     if (r.value.isEmpty()) albumEnd = true
                     albumOffset += r.value.size
@@ -138,8 +139,8 @@ class LibraryViewModel @Inject constructor(private val repo: MusicRepository) : 
             _favs.value = UiState.Loading
             _favs.value = when (val r = repo.starred()) {
                 is Result.Ok -> {
-                    val (a, al, s) = r.value
-                    if (a.isEmpty() && al.isEmpty() && s.isEmpty()) UiState.Empty else UiState.Data(r.value)
+                    val v = r.value
+                    if (v.artists.isEmpty() && v.albums.isEmpty() && v.tracks.isEmpty()) UiState.Empty else UiState.Data(v)
                 }
                 is Result.Err -> UiState.Error(r.message)
             }

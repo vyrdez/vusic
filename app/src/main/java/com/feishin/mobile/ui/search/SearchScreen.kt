@@ -18,19 +18,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.feishin.mobile.data.repo.MusicRepository
+import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.EmptyBox
 import com.feishin.mobile.ui.ErrorBox
 import com.feishin.mobile.ui.LoadingBox
 import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.ui.components.SongRow
+import com.feishin.mobile.ui.components.rememberSavableListState
 
 @Composable
 fun SearchScreen(
     vm: SearchViewModel = hiltViewModel(),
     player: PlayerManager,
-    repo: MusicRepository,
+    repo: MusicDataRepository,
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
 ) {
@@ -48,8 +49,15 @@ fun SearchScreen(
             is UiState.Error -> ErrorBox(s.message) { vm.onQuery(q) }
             is UiState.Empty -> EmptyBox(if (q.isBlank()) "Type to search" else "No results")
             is UiState.Data -> {
-                val (artists, albums, songs) = s.value
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
+                val res = s.value
+                val artists = res.artists
+                val albums = res.albums
+                val songs = res.tracks
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    state = rememberSavableListState(),
+                    contentPadding = PaddingValues(bottom = 160.dp),
+                ) {
                     if (artists.isNotEmpty()) {
                         item { Text("Artists", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp, 8.dp)) }
                         items(artists, key = { "a${it.id}" }) { a ->

@@ -19,11 +19,13 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -34,7 +36,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
-import com.feishin.mobile.data.repo.MusicRepository
+import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.EmptyBox
 import com.feishin.mobile.ui.ErrorBox
@@ -42,12 +44,14 @@ import com.feishin.mobile.ui.LoadingBox
 import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.ui.components.SongRow
 import com.feishin.mobile.ui.components.formatDuration
+import com.feishin.mobile.ui.components.rememberSavableListState
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumDetailScreen(
     vm: AlbumDetailViewModel = hiltViewModel(),
     player: PlayerManager,
-    repo: MusicRepository,
+    repo: MusicDataRepository,
     onArtist: (String) -> Unit,
 ) {
     val ui by vm.ui.collectAsState()
@@ -57,49 +61,57 @@ fun AlbumDetailScreen(
         is UiState.Empty -> EmptyBox("Album not found")
         is UiState.Data -> {
             val a = s.value
-            val starred = a.starred != null
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
+            val starred = a.starred
+            val refreshing by vm.refreshing.collectAsState()
+            PullToRefreshBox(isRefreshing = refreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                state = rememberSavableListState(),
+                contentPadding = PaddingValues(bottom = 160.dp),
+            ) {
                 item {
                     Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         AsyncImage(
-                            repo.coverArtUrl(a.coverArt, 512), a.name,
+                            repo.coverArtUrl(a.coverArt, 600), a.name,
                             modifier = Modifier.size(220.dp).clip(RoundedCornerShape(12.dp)),
                             contentScale = ContentScale.Crop,
                         )
                         Spacer(Modifier.height(12.dp))
                         Text(a.name, style = MaterialTheme.typography.headlineSmall)
                         Text(a.artist, style = MaterialTheme.typography.bodyMedium)
-                        Text("${a.songCount} songs · ${formatDuration(a.duration)}", style = MaterialTheme.typography.bodySmall)
+                        Text("${a.songCount} songs · ${formatDuration(a.durationSec)}", style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.height(12.dp))
                         Row {
-                            Button(onClick = { player.playAll(a.song) }) {
+                            Button(onClick = { player.playAll(a.tracks) }) {
                                 Icon(Icons.Default.PlayArrow, null); Text("Play")
                             }
                             Spacer(Modifier.padding(4.dp))
-                            OutlinedButton(onClick = { player.playAll(a.song, shuffle = true) }) {
+                            OutlinedButton(onClick = { player.playAll(a.tracks, shuffle = true) }) {
                                 Icon(Icons.Default.Shuffle, null); Text("Shuffle")
                             }
                             IconButton(onClick = { vm.toggleStar(starred) }) {
                                 Icon(if (starred) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite")
                             }
                         }
-                        OutlinedButton(onClick = { player.addAllToEnd(a.song) }) { Text("Add to queue") }
+                        OutlinedButton(onClick = { player.addAllToEnd(a.tracks) }) { Text("Add to queue") }
                     }
                 }
-                items(a.song, key = { it.id }) { song ->
+                items(a.tracks, key = { it.id }) { song ->
                     SongRow(song, repo.coverArtUrl(song.coverArt, 128), onClick = {
-                        player.playAll(a.song, a.song.indexOf(song))
+                        player.playAll(a.tracks, a.tracks.indexOf(song))
                     }, onMore = { player.playNext(song) })
                 }
+            }
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ArtistDetailScreen(
     vm: ArtistDetailViewModel = hiltViewModel(),
-    repo: MusicRepository,
+    repo: MusicDataRepository,
     onAlbum: (String) -> Unit,
 ) {
     val ui by vm.ui.collectAsState()
@@ -109,28 +121,45 @@ fun ArtistDetailScreen(
         is UiState.Empty -> EmptyBox("Artist not found")
         is UiState.Data -> {
             val a = s.value
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
+            val starred = a.starred
+            val refreshing by vm.refreshing.collectAsState()
+            PullToRefreshBox(isRefreshing = refreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                state = rememberSavableListState(),
+                contentPadding = PaddingValues(bottom = 160.dp),
+            ) {
                 item {
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        Text(a.name, style = MaterialTheme.typography.headlineSmall)
-                        Text("${a.albumCount} albums", style = MaterialTheme.typography.bodySmall)
+                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(a.name, style = MaterialTheme.typography.headlineSmall)
+                            Text("${a.albumCount} albums", style = MaterialTheme.typography.bodySmall)
+                        }
+                        IconButton(onClick = { vm.toggleStar(starred) }) {
+                            Icon(
+                                if (starred) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = "Favorite",
+                            )
+                        }
                     }
                 }
-                items(a.album, key = { it.id }) { al ->
+                items(a.albums, key = { it.id }) { al ->
                     Row(Modifier.fillMaxWidth().clickable { onAlbum(al.id) }.padding(16.dp, 8.dp)) {
                         Text("${al.name} (${al.year ?: "—"})")
                     }
                 }
             }
+            }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlaylistDetailScreen(
     vm: PlaylistDetailViewModel = hiltViewModel(),
     player: PlayerManager,
-    repo: MusicRepository,
+    repo: MusicDataRepository,
     onBack: () -> Unit,
 ) {
     val ui by vm.ui.collectAsState()
@@ -140,26 +169,33 @@ fun PlaylistDetailScreen(
         is UiState.Empty -> EmptyBox("Playlist not found")
         is UiState.Data -> {
             val p = s.value
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
+            val refreshing by vm.refreshing.collectAsState()
+            PullToRefreshBox(isRefreshing = refreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                state = rememberSavableListState(),
+                contentPadding = PaddingValues(bottom = 160.dp),
+            ) {
                 item {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         Text(p.name, style = MaterialTheme.typography.headlineSmall)
                         Text("${p.songCount} songs", style = MaterialTheme.typography.bodySmall)
                         Row {
-                            Button(onClick = { player.playAll(p.entry) }) { Text("Play") }
+                            Button(onClick = { player.playAll(p.tracks) }) { Text("Play") }
                             Spacer(Modifier.padding(4.dp))
-                            OutlinedButton(onClick = { player.playAll(p.entry, shuffle = true) }) { Text("Shuffle") }
+                            OutlinedButton(onClick = { player.playAll(p.tracks, shuffle = true) }) { Text("Shuffle") }
                             Spacer(Modifier.padding(4.dp))
                             OutlinedButton(onClick = { vm.delete(onBack) }) { Text("Delete") }
                         }
                     }
                 }
-                items(p.entry.size, key = { i -> p.entry[i].id + "_$i" }) { i ->
-                    val song = p.entry[i]
+                items(p.tracks.size, key = { i -> p.tracks[i].id + "_$i" }) { i ->
+                    val song = p.tracks[i]
                     SongRow(song, repo.coverArtUrl(song.coverArt, 128), onClick = {
-                        player.playAll(p.entry, i)
+                        player.playAll(p.tracks, i)
                     }, onMore = { vm.removeAt(i) })
                 }
+            }
             }
         }
     }

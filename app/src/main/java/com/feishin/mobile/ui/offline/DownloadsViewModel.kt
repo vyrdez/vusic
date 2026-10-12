@@ -4,8 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feishin.mobile.data.db.DownloadDao
 import com.feishin.mobile.data.db.DownloadedTrack
-import com.feishin.mobile.data.model.Song
-import com.feishin.mobile.data.repo.MusicRepository
+import com.feishin.mobile.domain.model.Track
+import com.feishin.mobile.domain.repo.MusicDataRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
@@ -21,14 +21,14 @@ import java.io.File
 @HiltViewModel
 class DownloadsViewModel @Inject constructor(
     private val dao: DownloadDao,
-    private val repo: MusicRepository,
+    private val repo: MusicDataRepository,
     private val client: OkHttpClient,
 ) : ViewModel() {
     val downloads = dao.observeAll()
     private val _busy = MutableStateFlow<Set<String>>(emptySet())
     val busy: StateFlow<Set<String>> = _busy.asStateFlow()
 
-    fun download(song: Song, dir: File) {
+    fun download(song: Track, dir: File) {
         viewModelScope.launch {
             _busy.value = _busy.value + song.id
             try {

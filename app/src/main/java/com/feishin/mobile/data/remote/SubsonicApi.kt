@@ -13,6 +13,7 @@ interface SubsonicApi {
         @Query("type") type: String,
         @Query("size") size: Int = 50,
         @Query("offset") offset: Int = 0,
+        @Query("genre") genre: String? = null,
     ): SubsonicEnvelope
 
     @GET("getAlbumList2.view")
@@ -20,6 +21,7 @@ interface SubsonicApi {
         @Query("type") type: String,
         @Query("size") size: Int = 50,
         @Query("offset") offset: Int = 0,
+        @Query("genre") genre: String? = null,
     ): SubsonicEnvelope
 
     @GET("search3.view")

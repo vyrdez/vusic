@@ -61,9 +61,34 @@ object NetworkModule {
     @Provides @Singleton
     fun provideApi(retrofit: Retrofit): SubsonicApi = retrofit.create(SubsonicApi::class.java)
 
+    /**
+     * Dedicated client for Coil: shares the dynamic trust manager (self-signed
+     * setting applies, no restart) but skips the host-rewrite/auth interceptors,
+     * since cover URLs are already absolute and signed with a stable salt.
+     */
+    @Provides @Singleton @javax.inject.Named("coil")
+    fun provideCoilOkHttp(tm: DynamicTrustManager): OkHttpClient {
+        val ssl = tm.sslContext()
+        return OkHttpClient.Builder()
+            .sslSocketFactory(ssl.socketFactory, tm)
+            .hostnameVerifier { hostname, session ->
+                if (tm.allowSelfSigned) true
+                else okhttp3.internal.tls.OkHostnameVerifier.verify(hostname, session)
+            }
+            .build()
+    }
+
     @Provides @Singleton
-    fun provideImageLoader(@ApplicationContext ctx: Context): ImageLoader =
+    fun provideImageLoader(
+        @ApplicationContext ctx: Context,
+        @javax.inject.Named("coil") coilClient: OkHttpClient,
+    ): ImageLoader =
         ImageLoader.Builder(ctx)
+            .okHttpClient(coilClient)
+            .crossfade(true)
+            .placeholder(com.feishin.mobile.R.drawable.art_placeholder)
+            .error(com.feishin.mobile.R.drawable.art_error)
+            .fallback(com.feishin.mobile.R.drawable.art_placeholder)
             .memoryCache { MemoryCache.Builder(ctx).maxSizePercent(0.25).build() }
             .diskCache { DiskCache.Builder().directory(ctx.cacheDir.resolve("coil")).maxSizeBytes(256L * 1024 * 1024).build() }
             .build()

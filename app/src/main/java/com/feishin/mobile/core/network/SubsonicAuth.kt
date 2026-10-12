@@ -29,6 +29,12 @@ object SubsonicAuth {
     /** Fresh random salt for every request. Hex without dashes. */
     fun newSalt(): String = UUID.randomUUID().toString().replace("-", "")
 
+    /**
+     * Stable salt derived from [key] (e.g. a cover-art id). Lets cacheable URLs
+     * stay identical across requests while remaining unique per key.
+     */
+    fun stableSalt(key: String): String = md5Hex("feishin:$key")
+
     /** Token for a request: md5 Hex of (password + salt). The plain password is never sent. */
     fun token(password: String, salt: String): String = md5Hex(password + salt)
 
@@ -110,7 +116,7 @@ object SubsonicAuth {
         }
     }
 
-    private fun md5Hex(input: String): String {
+    fun md5Hex(input: String): String {
         val md = MessageDigest.getInstance("MD5")
         val bytes = md.digest(input.toByteArray(Charsets.UTF_8))
         return bytes.joinToString("") { "%02x".format(it) }

@@ -4,8 +4,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import com.feishin.mobile.data.model.Song
-import com.feishin.mobile.data.repo.MusicRepository
+import com.feishin.mobile.domain.model.Track
+import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.data.settings.SettingsStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import android.content.Context
@@ -22,13 +22,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-data class QueueItem(val song: Song, val queueId: Long)
+data class QueueItem(val song: Track, val queueId: Long)
 
 @Singleton
 class PlayerManager @Inject constructor(
     @ApplicationContext private val context: Context,
     val player: ExoPlayer,
-    private val repo: MusicRepository,
+    private val repo: MusicDataRepository,
     private val settings: SettingsStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -37,8 +37,8 @@ class PlayerManager @Inject constructor(
     private val _queue = MutableStateFlow<List<QueueItem>>(emptyList())
     val queue: StateFlow<List<QueueItem>> = _queue.asStateFlow()
 
-    private val _current = MutableStateFlow<Song?>(null)
-    val current: StateFlow<Song?> = _current.asStateFlow()
+    private val _current = MutableStateFlow<Track?>(null)
+    val current: StateFlow<Track?> = _current.asStateFlow()
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
@@ -93,7 +93,7 @@ class PlayerManager @Inject constructor(
         return if (wifi) s.wifiBitrate to s.wifiFormat else s.mobileBitrate to s.mobileFormat
     }
 
-    private suspend fun Song.toMediaItem(): MediaItem {
+    private suspend fun Track.toMediaItem(): MediaItem {
         val (br, fmt) = streamParams()
         val url = repo.streamUrl(this, br, fmt)
         val meta = MediaMetadata.Builder()
@@ -105,7 +105,7 @@ class PlayerManager @Inject constructor(
         return MediaItem.Builder().setUri(url).setMediaId(id).setMediaMetadata(meta).build()
     }
 
-    fun playAll(songs: List<Song>, startIndex: Int = 0, shuffle: Boolean = false) {
+    fun playAll(songs: List<Track>, startIndex: Int = 0, shuffle: Boolean = false) {
         scope.launch {
             val list = if (shuffle) songs.shuffled() else songs
             _queue.value = list.map { QueueItem(it, queueSeq++) }
@@ -118,7 +118,7 @@ class PlayerManager @Inject constructor(
         }
     }
 
-    fun playNext(song: Song) {
+    fun playNext(song: Track) {
         scope.launch {
             val item = QueueItem(song, queueSeq++)
             val idx = player.currentMediaItemIndex
@@ -129,14 +129,14 @@ class PlayerManager @Inject constructor(
         }
     }
 
-    fun addToEnd(song: Song) {
+    fun addToEnd(song: Track) {
         scope.launch {
             _queue.value = _queue.value + QueueItem(song, queueSeq++)
             player.addMediaItem(song.toMediaItem())
         }
     }
 
-    fun addAllToEnd(songs: List<Song>) {
+    fun addAllToEnd(songs: List<Track>) {
         scope.launch {
             _queue.value = _queue.value + songs.map { QueueItem(it, queueSeq++) }
             songs.forEach { player.addMediaItem(it.toMediaItem()) }

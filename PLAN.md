@@ -31,7 +31,13 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   with splash-until-ready + popUpTo; self-signed toggle on login (no restart);
   cleartext allowed via network security config; .gitignore + untracked
   local.properties/build dirs; 0 lint errors)
-- [ ] M2 library browsing (home, library tabs, search, detail pages, paging/sort/grid toggle)
+- [x] M2 library browsing, search, cover art (DTOs with single-object quirk
+  tolerance; domain models + mappers, UI never sees DTOs; MusicDataRepository
+  interface + Hilt binding; CoverArtUrlProvider with stable per-cover salt; Coil
+  via Hilt on a self-signed-aware OkHttp client with crossfade/placeholder/error
+  art; album infinite scroll; artist grid/list; genre albums screen; optimistic
+  star with rollback; pull-to-refresh + rotation-safe scroll state everywhere;
+  37 unit tests; 0 lint errors; device-verified end to end)
 - [ ] M3 playback service (MediaSessionService, notification, focus, gapless, scrobble, star)
 - [ ] M4 queue+Now Playing (full/mini player, queue ops, lyrics, dynamic bg)
 - [ ] M5 offline+settings (downloads, stream cache, bitrate wifi/mobile, theme, cert toggle, logout)
@@ -66,3 +72,12 @@ playlists/genres/starred2 all OK. No adb physical device; emulator AVD `feishin_
 - ReplayGain: no native Media3 support; stored as volume-normalization preference
   documented as best-effort (server `getAlbum` may carry replayGain fields; applied as gain).
 - Credentials never committed; test config via local.properties/env only.
+- M2 device findings (fixed): Navidrome rejects getAlbumList type `alphabetical`
+  (now `alphabeticalByName`); genre names arrive in `value` not `name` (mapper
+  prefers `name`, falls back to `value`); empty `playlists:{}` correctly shows the
+  empty state; Navidrome's generic artist art is a real 546-byte WebP (not a bug).
+- M2 crash fixes: ViewModel `refreshing` state is now declared before
+  `init { refresh() }` (Main.immediate executes the first launch synchronously —
+  later field init caused an NPE that killed the app on detail/genre screens).
+- Track taps still start playback via the existing M3 player code (kept working
+  rather than stubbed with a snackbar); crossfade/ReplayGain remain best-effort.

@@ -30,6 +30,7 @@ import com.feishin.mobile.ui.detail.AlbumDetailScreen
 import com.feishin.mobile.ui.detail.ArtistDetailScreen
 import com.feishin.mobile.ui.detail.PlaylistDetailScreen
 import com.feishin.mobile.ui.home.HomeScreen
+import com.feishin.mobile.ui.library.GenreScreen
 import com.feishin.mobile.ui.library.LibraryScreen
 import com.feishin.mobile.ui.offline.DownloadsScreen
 import com.feishin.mobile.ui.player.MiniPlayer
@@ -48,9 +49,11 @@ object Routes {
     const val ARTIST = "artist/{id}"
     const val PLAYLIST = "playlist/{id}"
     const val DOWNLOADS = "downloads"
+    const val GENRE = "genre/{name}"
     fun album(id: String) = "album/$id"
     fun artist(id: String) = "artist/$id"
     fun playlist(id: String) = "playlist/$id"
+    fun genre(name: String) = "genre/$name"
 }
 
 @Composable
@@ -106,6 +109,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                         onAlbum = { nav.navigate(Routes.album(it)) },
                         onArtist = { nav.navigate(Routes.artist(it)) },
                         onPlaylist = { nav.navigate(Routes.playlist(it)) },
+                        onGenre = { nav.navigate(Routes.genre(it)) },
                     )
                 }
                 composable(Routes.SEARCH) {
@@ -128,6 +132,9 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     PlaylistDetailScreen(player = main.player, repo = main.repo, onBack = { nav.popBackStack() })
                 }
                 composable(Routes.DOWNLOADS) { DownloadsScreen() }
+                composable(Routes.GENRE) {
+                    GenreScreen(repo = main.repo, onAlbum = { nav.navigate(Routes.album(it)) })
+                }
             }
         }
     }

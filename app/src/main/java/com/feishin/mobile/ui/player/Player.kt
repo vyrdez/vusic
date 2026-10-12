@@ -56,8 +56,8 @@ import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
-import com.feishin.mobile.data.model.Song
-import com.feishin.mobile.data.repo.MusicRepository
+import com.feishin.mobile.domain.model.Track
+import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.core.common.Result
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -71,13 +71,13 @@ import kotlinx.coroutines.withContext
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
-    private val repo: MusicRepository,
+    private val repo: MusicDataRepository,
 ) : ViewModel() {
     private val _lyrics = MutableStateFlow<String?>(null)
     val lyrics: StateFlow<String?> = _lyrics.asStateFlow()
     private var lastId: String? = null
 
-    fun loadLyrics(song: Song?) {
+    fun loadLyrics(song: Track?) {
         if (song == null || song.id == lastId) return
         lastId = song.id
         _lyrics.value = null
@@ -86,16 +86,16 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    fun toggleStar(song: Song, onDone: () -> Unit = {}) {
+    fun toggleStar(song: Track, onDone: () -> Unit = {}) {
         viewModelScope.launch {
-            repo.starSong(song.id, song.starred == null)
+            repo.starTrack(song.id, !song.starred)
             onDone()
         }
     }
 }
 
 @Composable
-fun MiniPlayer(player: PlayerManager, repo: MusicRepository, onOpen: () -> Unit) {
+fun MiniPlayer(player: PlayerManager, repo: MusicDataRepository, onOpen: () -> Unit) {
     val current by player.current.collectAsState()
     val playing by player.isPlaying.collectAsState()
     val song = current ?: return
@@ -120,7 +120,7 @@ fun MiniPlayer(player: PlayerManager, repo: MusicRepository, onOpen: () -> Unit)
 @Composable
 fun NowPlayingSheet(
     player: PlayerManager,
-    repo: MusicRepository,
+    repo: MusicDataRepository,
     pvm: PlayerViewModel,
     onDismiss: () -> Unit,
     onOpenQueue: () -> Unit,
@@ -132,7 +132,7 @@ fun NowPlayingSheet(
 }
 
 @Composable
-fun NowPlayingContent(player: PlayerManager, repo: MusicRepository, pvm: PlayerViewModel, onOpenQueue: () -> Unit) {
+fun NowPlayingContent(player: PlayerManager, repo: MusicDataRepository, pvm: PlayerViewModel, onOpenQueue: () -> Unit) {
     val current by player.current.collectAsState()
     val playing by player.isPlaying.collectAsState()
     val pos by player.position.collectAsState()
@@ -201,9 +201,9 @@ fun NowPlayingContent(player: PlayerManager, repo: MusicRepository, pvm: PlayerV
                         IconButton(onClick = { player.cycleRepeat() }) { Icon(Icons.Default.Repeat, "Repeat") }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        var starred by remember(song.id) { mutableStateOf(song.starred != null) }
+                        var starred by remember(song.id) { mutableStateOf(song.starred) }
                         IconButton(onClick = {
-                            pvm.toggleStar(song.copy(starred = if (starred) "x" else null)) { starred = !starred }
+                            pvm.toggleStar(song.copy(starred = !starred)) { starred = !starred }
                         }) { Icon(if (starred) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Star") }
                         IconButton(onClick = onOpenQueue) { Icon(Icons.Default.RepeatOne, "Queue") }
                     }
