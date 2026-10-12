@@ -11,9 +11,6 @@ import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.exoplayer.ExoPlayer
-import com.feishin.mobile.data.remote.AuthInterceptor
-import com.feishin.mobile.data.remote.DynamicTrustManager
-import com.feishin.mobile.data.store.SettingsStore
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -21,12 +18,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import java.io.File
 import javax.inject.Singleton
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -45,8 +36,6 @@ object PlayerModule {
     fun provideExoPlayer(
         @ApplicationContext ctx: Context,
         cache: SimpleCache,
-        auth: AuthInterceptor,
-        tm: DynamicTrustManager,
     ): ExoPlayer {
         val httpFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)

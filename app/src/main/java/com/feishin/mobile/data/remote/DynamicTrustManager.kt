@@ -1,6 +1,6 @@
 package com.feishin.mobile.data.remote
 
-import com.feishin.mobile.data.store.SettingsStore
+import com.feishin.mobile.data.settings.SettingsStore
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import javax.inject.Inject

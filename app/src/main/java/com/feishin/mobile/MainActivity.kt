@@ -8,8 +8,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.feishin.mobile.data.store.ThemeMode
-import com.feishin.mobile.ui.FeishinNav
+import com.feishin.mobile.data.settings.ThemeMode
+import com.feishin.mobile.ui.navigation.AppNav
 import com.feishin.mobile.ui.MainViewModel
 import com.feishin.mobile.ui.theme.FeishinTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
             }
             FeishinTheme(dark = dark) {
-                FeishinNav(main = main)
+                AppNav(main = main)
             }
         }
     }

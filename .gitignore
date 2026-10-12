@@ -1,0 +1,19 @@
+# Android / Gradle
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+/app/build/
+/captures
+.externalNativeBuild
+.cxx/
+local.properties
+*.apk
+*.aab
+# Keystore / signing
+*.jks
+*.keystore
+# Test config with credentials (never commit live server details)
+nd_test.properties

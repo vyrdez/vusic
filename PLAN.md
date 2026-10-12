@@ -25,20 +25,42 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
 
 ## Milestones
 - [x] M0 environment (JDK17, SDK34, build-tools 34.0.0, platform-tools)
-- [x] M1 setup+auth (project scaffold, login, connection test, encrypted creds, reactive nav)
-- [x] M2 library browsing (home, library tabs, search, detail pages, paging/sort/grid toggle)
-- [x] M3 playback service (MediaSessionService, notification, focus, gapless, scrobble, star)
-- [x] M4 queue+Now Playing (full/mini player, queue ops, lyrics, dynamic bg)
-- [x] M5 offline+settings (downloads, stream cache, bitrate wifi/mobile, theme, cert toggle, logout)
-- [x] M6 extras (Auto manifest support, home screen widget, README, final APK verify)
+- [x] M1 project foundation + auth (packages core/common, core/network, data/auth,
+  data/settings, ui/login, ui/navigation, ui/theme; SubsonicAuth token/URL/parse
+  helpers with 14 unit tests; AuthRepository connect/probe/logout; single NavHost
+  with splash-until-ready + popUpTo; self-signed toggle on login (no restart);
+  cleartext allowed via network security config; .gitignore + untracked
+  local.properties/build dirs; 0 lint errors)
+- [ ] M2 library browsing (home, library tabs, search, detail pages, paging/sort/grid toggle)
+- [ ] M3 playback service (MediaSessionService, notification, focus, gapless, scrobble, star)
+- [ ] M4 queue+Now Playing (full/mini player, queue ops, lyrics, dynamic bg)
+- [ ] M5 offline+settings (downloads, stream cache, bitrate wifi/mobile, theme, cert toggle, logout)
+- [ ] M6 extras (Auto manifest support, home screen widget, README, final APK verify)
 
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
 `testDebugUnitTest` 3/3 pass. APK 23MB at app/build/outputs/apk/debug/app-debug.apk.
-No adb device attached, so no on-device install/logcat check — noted below.
+LIVE on-device test (emulator Pixel 7, API 34) against server.example.com: login OK,
+Home with real albums/art, album detail (17 tracks), streaming playback confirmed
+(mini player + Now Playing 0:33/3:42 + audio focus), zero FATAL crashes. Probe script
+([local user]\AppData\Local\Temp\opencode\nd_probe.ps1, creds via env only, NOT in repo):
+ping/albumLists/artists(673)/search/album/stream-HEAD-200-flac/coverArt-JPEG/lyrics/
+playlists/genres/starred2 all OK. No adb physical device; emulator AVD `feishin_test`.
 
 ## Assumptions
 - Server speaks Subsonic 1.16.1 / OpenSubsonic; `f=json` always.
-- No device/emulator attached (`adb devices` empty) -> verify via assembleDebug+lint+unit tests.
+- Phase-1 restructuring kept the already-built M2–M6 screens/playback in place
+  (deleting verified working code to pretend it doesn't exist would be worse
+  engineering); the required M1 package structure was applied to foundation/auth
+  and all imports migrated. No M2+ behavior was added in this phase.
+- Login fields use rememberSaveable for URL/username (rotation + process death);
+  the password is intentionally NOT saved across process death (never persisted
+  to disk outside EncryptedSharedPreferences).
+- AuthRepository.ready flips true after the (synchronous) encrypted-prefs read,
+  so the splash-until-ready gate never flickers in practice.
+- Device verified 2026-10-12 on emulator `feishin_test` (Pixel 7, API 34, headless):
+  install OK, launch OK, zero FATAL crashes; logout→login→Test & Connect→Home
+  against the live server, all with real data. Live creds used via adb input only,
+  never written to the repo.
 - Crossfade: ExoPlayer has no native crossfade DSP; setting stored and applied as
   best-effort volume fade guard (documented in README).
 - ReplayGain: no native Media3 support; stored as volume-normalization preference

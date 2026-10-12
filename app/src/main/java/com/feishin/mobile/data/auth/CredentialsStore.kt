@@ -1,4 +1,4 @@
-package com.feishin.mobile.data.store
+package com.feishin.mobile.data.auth
 
 import android.content.Context
 import android.content.SharedPreferences

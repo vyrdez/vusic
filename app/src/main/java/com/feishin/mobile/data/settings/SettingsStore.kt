@@ -1,4 +1,4 @@
-package com.feishin.mobile.data.store
+package com.feishin.mobile.data.settings
 
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey

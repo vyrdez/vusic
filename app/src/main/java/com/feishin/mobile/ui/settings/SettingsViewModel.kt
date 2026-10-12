@@ -2,8 +2,8 @@ package com.feishin.mobile.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.feishin.mobile.data.store.SettingsStore
-import com.feishin.mobile.data.store.ThemeMode
+import com.feishin.mobile.data.settings.SettingsStore
+import com.feishin.mobile.data.settings.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.launch

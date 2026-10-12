@@ -1,4 +1,4 @@
-package com.feishin.mobile.util
+package com.feishin.mobile.core.common
 
 sealed interface UiState<out T> {
     data object Loading : UiState<Nothing>

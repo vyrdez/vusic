@@ -6,8 +6,8 @@ import com.feishin.mobile.data.model.Album
 import com.feishin.mobile.data.model.Artist
 import com.feishin.mobile.data.model.Song
 import com.feishin.mobile.data.repo.MusicRepository
-import com.feishin.mobile.util.Result
-import com.feishin.mobile.util.UiState
+import com.feishin.mobile.core.common.Result
+import com.feishin.mobile.core.common.UiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job

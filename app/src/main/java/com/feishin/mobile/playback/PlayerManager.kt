@@ -6,7 +6,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.feishin.mobile.data.model.Song
 import com.feishin.mobile.data.repo.MusicRepository
-import com.feishin.mobile.data.store.SettingsStore
+import com.feishin.mobile.data.settings.SettingsStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import android.content.Context
 import android.net.ConnectivityManager

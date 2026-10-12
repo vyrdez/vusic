@@ -1,6 +1,6 @@
 package com.feishin.mobile.data.remote
 
-import com.feishin.mobile.data.store.CredentialsStore
+import com.feishin.mobile.data.auth.CredentialsStore
 import javax.inject.Inject
 import javax.inject.Singleton
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull

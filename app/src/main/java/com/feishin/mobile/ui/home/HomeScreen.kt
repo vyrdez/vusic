@@ -27,7 +27,7 @@ import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.EmptyBox
 import com.feishin.mobile.ui.ErrorBox
 import com.feishin.mobile.ui.LoadingBox
-import com.feishin.mobile.util.UiState
+import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.ui.components.AlbumCard
 import com.feishin.mobile.ui.components.SongRow
 

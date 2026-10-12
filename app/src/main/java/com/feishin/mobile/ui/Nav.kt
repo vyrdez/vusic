@@ -15,7 +15,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,8 +26,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.feishin.mobile.ui.auth.AuthViewModel
-import com.feishin.mobile.ui.auth.LoginScreen
 import com.feishin.mobile.ui.detail.AlbumDetailScreen
 import com.feishin.mobile.ui.detail.ArtistDetailScreen
 import com.feishin.mobile.ui.detail.PlaylistDetailScreen
@@ -57,16 +54,11 @@ object Routes {
 }
 
 @Composable
-fun FeishinNav(main: MainViewModel = hiltViewModel(), auth: AuthViewModel = hiltViewModel()) {
-    val creds by main.creds.state.collectAsState()
+fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     val nav = rememberNavController()
     var showNowPlaying by remember { mutableStateOf(false) }
     var showQueue by remember { mutableStateOf(false) }
 
-    if (creds == null) {
-        LoginScreen(onLoggedIn = {})
-        return
-    }
 
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
@@ -124,7 +116,7 @@ fun FeishinNav(main: MainViewModel = hiltViewModel(), auth: AuthViewModel = hilt
                     )
                 }
                 composable(Routes.SETTINGS) {
-                    SettingsScreen(onLogout = { auth.logout() }, onOpenDownloads = { nav.navigate(Routes.DOWNLOADS) })
+                    SettingsScreen(onLogout = onLogout, onOpenDownloads = { nav.navigate(Routes.DOWNLOADS) })
                 }
                 composable(Routes.ALBUM) {
                     AlbumDetailScreen(player = main.player, repo = main.repo, onArtist = { nav.navigate(Routes.artist(it)) })

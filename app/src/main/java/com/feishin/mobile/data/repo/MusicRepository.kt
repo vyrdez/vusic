@@ -9,9 +9,9 @@ import com.feishin.mobile.data.model.Playlist
 import com.feishin.mobile.data.model.Song
 import com.feishin.mobile.data.remote.AuthInterceptor
 import com.feishin.mobile.data.remote.SubsonicApi
-import com.feishin.mobile.data.store.CredentialsStore
-import com.feishin.mobile.util.Result
-import com.feishin.mobile.util.normalizeServerUrl
+import com.feishin.mobile.data.auth.CredentialsStore
+import com.feishin.mobile.core.common.Result
+import com.feishin.mobile.core.network.SubsonicAuth
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,7 +27,7 @@ class MusicRepository @Inject constructor(
 ) {
     private fun base(): String {
         val c = creds.state.value ?: throw IllegalStateException("Not logged in")
-        return normalizeServerUrl(c.serverUrl)
+        return SubsonicAuth.normalizeServerUrl(c.serverUrl)
     }
 
     private fun <T> unwrap(status: String, error: String?, get: () -> T): Result<T> =

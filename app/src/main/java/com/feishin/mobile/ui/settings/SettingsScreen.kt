@@ -26,7 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.feishin.mobile.data.store.ThemeMode
+import com.feishin.mobile.data.settings.ThemeMode
 
 val BITRATES = listOf(0, 64, 128, 192, 256, 320)
 val FORMATS = listOf("raw", "mp3", "opus", "aac")

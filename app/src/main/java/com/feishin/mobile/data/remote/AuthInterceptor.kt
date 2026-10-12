@@ -1,8 +1,7 @@
 package com.feishin.mobile.data.remote
 
-import com.feishin.mobile.data.store.CredentialsStore
-import com.feishin.mobile.util.md5Hex
-import java.util.UUID
+import com.feishin.mobile.core.network.SubsonicAuth
+import com.feishin.mobile.data.auth.CredentialsStore
 import javax.inject.Inject
 import javax.inject.Singleton
 import okhttp3.Interceptor
@@ -16,8 +15,9 @@ class AuthInterceptor @Inject constructor(
         val creds = credentialsStore.state.value
         val original = chain.request()
         if (creds == null) return chain.proceed(original)
-        val salt = UUID.randomUUID().toString().replace("-", "")
-        val token = md5Hex(creds.password + salt)
+        // Fresh random salt per request; the plain password is never sent.
+        val salt = SubsonicAuth.newSalt()
+        val token = SubsonicAuth.token(creds.password, salt)
         val url = original.url.newBuilder()
             .addQueryParameter("u", creds.username)
             .addQueryParameter("t", token)
@@ -34,10 +34,11 @@ class AuthInterceptor @Inject constructor(
         val creds = credentialsStore.state.value ?: return mapOf(
             "v" to "1.16.1", "c" to "FeishinMobile", "f" to "json",
         )
-        val salt = UUID.randomUUID().toString().replace("-", "")
+        // Fresh random salt per request; the plain password is never sent.
+        val salt = SubsonicAuth.newSalt()
         return mapOf(
             "u" to creds.username,
-            "t" to md5Hex(creds.password + salt),
+            "t" to SubsonicAuth.token(creds.password, salt),
             "s" to salt,
             "v" to "1.16.1",
             "c" to "FeishinMobile",
