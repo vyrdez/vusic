@@ -3,21 +3,20 @@
 package com.feishin.mobile.di
 
 import android.content.Context
-import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
-import androidx.media3.database.StandaloneDatabaseProvider
-import androidx.media3.exoplayer.ExoPlayer
+import com.feishin.mobile.data.remote.DynamicTrustManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import java.io.File
+import java.util.concurrent.TimeUnit
+import javax.inject.Named
 import javax.inject.Singleton
+import okhttp3.OkHttpClient
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -27,35 +26,25 @@ object PlayerModule {
     @Provides @Singleton
     fun provideCache(@ApplicationContext ctx: Context): SimpleCache {
         val dir = File(ctx.cacheDir, "stream_cache").apply { mkdirs() }
-        // Size is reconfigured at runtime; default 512MB here.
         return SimpleCache(dir, LeastRecentlyUsedCacheEvictor(512L * 1024 * 1024), StandaloneDatabaseProvider(ctx))
     }
 
-    @androidx.media3.common.util.UnstableApi
-    @Provides @Singleton
-    fun provideExoPlayer(
-        @ApplicationContext ctx: Context,
-        cache: SimpleCache,
-    ): ExoPlayer {
-        val httpFactory = DefaultHttpDataSource.Factory()
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(30_000)
-        val cacheSource = CacheDataSource.Factory()
-            .setCache(cache)
-            .setUpstreamDataSourceFactory(httpFactory)
-            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        val attrs = AudioAttributes.Builder()
-            .setUsage(C.USAGE_MEDIA)
-            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+    /**
+     * Streaming client used by the player. Stream URLs are already signed per
+     * request, so no auth interceptors are needed; the dynamic trust manager is
+     * still shared so the self-signed setting applies without a restart.
+     */
+    @Provides @Singleton @Named("streaming")
+    fun provideStreamingClient(tm: DynamicTrustManager): OkHttpClient =
+        OkHttpClient.Builder()
+            .sslSocketFactory(tm.sslContext().socketFactory, tm)
+            .hostnameVerifier { hostname, session ->
+                if (tm.allowSelfSigned) true
+                else okhttp3.internal.tls.OkHostnameVerifier.verify(hostname, session)
+            }
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            // Stream auth params are single-use; never let OkHttp replay a request.
+            .retryOnConnectionFailure(false)
             .build()
-        return ExoPlayer.Builder(ctx)
-            .setMediaSourceFactory(
-                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(ctx)
-                    .setDataSourceFactory(cacheSource),
-            )
-            .setAudioAttributes(attrs, true)
-            .setHandleAudioBecomingNoisy(true)
-            .build()
-    }
 }

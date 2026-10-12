@@ -39,6 +39,9 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -67,6 +70,7 @@ dependencies {
     implementation(libs.media3.common)
     implementation(libs.media3.datasource)
     implementation(libs.media3.database)
+    implementation(libs.media3.datasource.okhttp)
 
     implementation(libs.retrofit)
     implementation(libs.retrofit.kotlinx.serialization)

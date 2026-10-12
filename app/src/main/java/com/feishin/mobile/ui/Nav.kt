@@ -33,10 +33,8 @@ import com.feishin.mobile.ui.home.HomeScreen
 import com.feishin.mobile.ui.library.GenreScreen
 import com.feishin.mobile.ui.library.LibraryScreen
 import com.feishin.mobile.ui.offline.DownloadsScreen
-import com.feishin.mobile.ui.player.MiniPlayer
-import com.feishin.mobile.ui.player.NowPlayingSheet
+import com.feishin.mobile.ui.components.MiniPlayer
 import com.feishin.mobile.ui.player.PlayerViewModel
-import com.feishin.mobile.ui.player.QueueSheet
 import com.feishin.mobile.ui.search.SearchScreen
 import com.feishin.mobile.ui.settings.SettingsScreen
 
@@ -59,9 +57,6 @@ object Routes {
 @Composable
 fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     val nav = rememberNavController()
-    var showNowPlaying by remember { mutableStateOf(false) }
-    var showQueue by remember { mutableStateOf(false) }
-
 
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
@@ -70,7 +65,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     Scaffold(
         bottomBar = {
             Column {
-                MiniPlayer(main.player, main.repo) { showNowPlaying = true }
+                MiniPlayer(main.player)
                 if (route in topLevel || route == null) {
                     NavigationBar {
                         val items = listOf(
@@ -137,13 +132,5 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 }
             }
         }
-    }
-
-    if (showNowPlaying) {
-        val pvm: PlayerViewModel = hiltViewModel()
-        NowPlayingSheet(main.player, main.repo, pvm, onDismiss = { showNowPlaying = false }, onOpenQueue = { showQueue = true })
-    }
-    if (showQueue) {
-        QueueSheet(main.player, onDismiss = { showQueue = false })
     }
 }

@@ -38,7 +38,13 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   art; album infinite scroll; artist grid/list; genre albums screen; optimistic
   star with rollback; pull-to-refresh + rotation-safe scroll state everywhere;
   37 unit tests; 0 lint errors; device-verified end to end)
-- [ ] M3 playback service (MediaSessionService, notification, focus, gapless, scrobble, star)
+- [x] M3 playback service and scrobbling (PlayerService : MediaSessionService owns
+  ExoPlayer via OkHttpDataSource on the self-signed-aware streaming client,
+  WAKE_MODE_NETWORK, handleAudioBecomingNoisy, foreground mediaPlayback service,
+  runtime POST_NOTIFICATIONS prompt; app-side PlayerManager drives a MediaController
+  and exposes StateFlows; StreamUrlProvider with fresh salt + maxBitRate/format;
+  ScrobblePolicy submits at 50%-or-4min once per track and ignores seek jumps;
+  mini player with progress bar; 61 unit tests, 0 lint errors)
 - [ ] M4 queue+Now Playing (full/mini player, queue ops, lyrics, dynamic bg)
 - [ ] M5 offline+settings (downloads, stream cache, bitrate wifi/mobile, theme, cert toggle, logout)
 - [ ] M6 extras (Auto manifest support, home screen widget, README, final APK verify)
@@ -72,6 +78,19 @@ playlists/genres/starred2 all OK. No adb physical device; emulator AVD `feishin_
 - ReplayGain: no native Media3 support; stored as volume-normalization preference
   documented as best-effort (server `getAlbum` may carry replayGain fields; applied as gain).
 - Credentials never committed; test config via local.properties/env only.
+- M3 device verification (emulator Pixel 7, live server): album playback confirmed
+  via `dumpsys media_session` (state=PLAYING, metadata title/artist/album correct);
+  media notification present (category=transport, vis=PUBLIC, isForeground=true,
+  types=0x2 mediaPlayback); AUDIO_BECOMING_NOISY paused playback and abandoned
+  audio focus; playback continued for 5+ min with the screen Asleep and advanced
+  to the next track (mid=0→1) => gapless/auto-advance + WAKE_MODE_NETWORK work;
+  scrobbles verified through the API (getNowPlaying shows playerName=FeishinMobile
+  state=playing; Frozen Flower top of recently played; playCount incremented).
+- M3 notes: ExoPlayer owns audio focus and noisy handling; the service (not the UI)
+  drives scrobbling so it survives the app process. Emulator has no real audio
+  output, so "audio is audible" was verified via player state/position, not by ear.
+- Lint requires the androidx `@file:OptIn` marker form for Media3 `UnstableApi`
+  (plain `@file:OptIn` / class-level annotations leak to every caller).
 - M2 device findings (fixed): Navidrome rejects getAlbumList type `alphabetical`
   (now `alphabeticalByName`); genre names arrive in `value` not `name` (mapper
   prefers `name`, falls back to `value`); empty `playlists:{}` correctly shows the
