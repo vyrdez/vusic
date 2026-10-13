@@ -17,6 +17,7 @@ import com.feishin.mobile.domain.model.SearchResults
 import com.feishin.mobile.domain.model.StarredCollection
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
+import com.feishin.mobile.ui.home.InMemoryHomeCache
 import com.feishin.mobile.ui.home.HomeViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -97,34 +98,25 @@ class ViewModelStateTest {
         Dispatchers.resetMain()
     }
 
-    @Test
-    fun home_emptyServer_showsGlobalError() {
-        val vm = HomeViewModel(FakeMusicRepo(starred = Result.Err("down")), settings())
-        awaitHomeIdle(vm)
-        val ui = vm.ui.value
-        assertEquals(true, ui.globalError != null)
-    }
+    private fun homeVm(repo: FakeMusicRepo) = HomeViewModel(repo, settings(), InMemoryHomeCache())
 
     @Test
     fun home_withAlbums_fillsSections() {
-        val vm = HomeViewModel(
+        val vm = homeVm(
             FakeMusicRepo(
                 albums = Result.Ok(listOf(album("1", "N"))),
                 random = Result.Ok(listOf(track("t1", "T1"), track("t2", "T2"), track("t3", "T3"), track("t4", "T4"), track("t5", "T5"))),
             ),
-            settings(),
         )
         awaitHomeIdle(vm)
         val ui = vm.ui.value
         assertEquals(1, ui.recent.size)
         assertEquals(5, ui.quickPicks.size)
-        assertEquals(listOf("All"), ui.genres)
     }
 
     @Test
     fun home_genreFilter_reloadsWithGenre() {
-        val repo = FakeMusicRepo(albums = Result.Ok(listOf(album("1", "N"))))
-        val vm = HomeViewModel(repo, settings())
+        val vm = homeVm(FakeMusicRepo(albums = Result.Ok(listOf(album("1", "N")))))
         awaitHomeIdle(vm)
         assertEquals("All", vm.ui.value.selectedGenre)
         vm.selectGenre("Rock")
@@ -135,15 +127,16 @@ class ViewModelStateTest {
 
     @Test
     fun home_genres_sortedBySongCount() {
-        val repo = FakeMusicRepo(
-            genres = Result.Ok(
-                listOf(
-                    Genre("B", songCount = 1, albumCount = 1),
-                    Genre("A", songCount = 99, albumCount = 9),
+        val vm = homeVm(
+            FakeMusicRepo(
+                genres = Result.Ok(
+                    listOf(
+                        Genre("B", songCount = 1, albumCount = 1),
+                        Genre("A", songCount = 99, albumCount = 9),
+                    ),
                 ),
             ),
         )
-        val vm = HomeViewModel(repo, settings())
         awaitHomeIdle(vm)
         assertEquals(listOf("All", "A", "B"), vm.ui.value.genres)
     }

@@ -5,6 +5,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
 /**
  * Vusic design system: near-black background, elevated gray surfaces, white
@@ -18,6 +19,24 @@ object VusicColors {
     val SecondaryText = Color(0xFF9AA0A6)
     val Accent = Color.White
     val OnAccent = Color.Black
+}
+
+/**
+ * One place for vertical rhythm. Sections own their own spacing so no screen has
+ * to hand-tune gaps.
+ */
+object VusicSpacing {
+    /** Gap between two Home sections. */
+    val SectionGap = 32.dp
+
+    /** Gap between a section header and the content under it. */
+    val HeaderToContent = 12.dp
+
+    /** Standard screen side padding. */
+    val ScreenHorizontal = 16.dp
+
+    /** Bottom padding so content clears the mini player + nav bar. */
+    val ContentBottom = 160.dp
 }
 
 private val Dark = darkColorScheme(

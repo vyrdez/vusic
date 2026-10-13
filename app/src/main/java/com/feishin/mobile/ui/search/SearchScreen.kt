@@ -68,9 +68,14 @@ fun SearchScreen(
         if (ui is UiState.Data && q.isNotBlank()) settings.addRecentSearch(q)
     }
     Column(Modifier.fillMaxSize()) {
+        Text(
+            "Search",
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(start = 16.dp, top = 12.dp),
+        )
         OutlinedTextField(
             q, vm::onQuery,
-            label = { Text("Search artists, albums, songs") },
+            label = { Text("Artists, albums, songs") },
             modifier = Modifier.fillMaxWidth().padding(12.dp),
             singleLine = true,
         )

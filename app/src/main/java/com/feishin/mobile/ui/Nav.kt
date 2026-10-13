@@ -8,11 +8,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -20,7 +23,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -29,7 +35,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavHostController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -39,6 +47,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.feishin.mobile.ui.components.ActionTarget
 import com.feishin.mobile.ui.components.EntityActionsSheet
+import com.feishin.mobile.ui.components.MiniPlayer
 import com.feishin.mobile.ui.detail.AlbumDetailScreen
 import com.feishin.mobile.ui.detail.ArtistDetailScreen
 import com.feishin.mobile.ui.detail.PlaylistDetailScreen
@@ -47,8 +56,8 @@ import com.feishin.mobile.ui.library.GenreScreen
 import com.feishin.mobile.ui.library.GenresScreen
 import com.feishin.mobile.ui.library.LibraryScreen
 import com.feishin.mobile.ui.library.LibraryTab
+import com.feishin.mobile.ui.navigation.NavRules
 import com.feishin.mobile.ui.offline.DownloadsScreen
-import com.feishin.mobile.ui.components.MiniPlayer
 import com.feishin.mobile.ui.player.NowPlayingScreen
 import com.feishin.mobile.ui.search.SearchScreen
 import com.feishin.mobile.ui.settings.SettingsScreen
@@ -66,11 +75,17 @@ object Routes {
     const val GENRE = "genre/{name}"
     const val GENRES = "genres"
     fun library(tab: LibraryTab = LibraryTab.ALBUMS) = "library?tab=${tab.name}"
+
+    /** Route pattern, for comparing against the current destination. */
+    const val LIBRARY_PATTERN = "library?tab={tab}"
     fun album(id: String) = "album/$id"
     fun artist(id: String) = "artist/$id"
     fun playlist(id: String) = "playlist/$id"
     fun genre(name: String) = "genre/${android.net.Uri.encode(name)}"
 }
+
+/** Screens that get the shared back-arrow top app bar. */
+private val DETAIL_ROUTES = NavRules.DETAIL_ROUTES
 
 @Composable
 fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
@@ -79,6 +94,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     var actionsTarget by remember { mutableStateOf<ActionTarget?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val username by main.auth.loginState.collectAsState()
+    val topBar = remember { TopBarController() }
 
     LaunchedEffect(Unit) {
         main.messenger.messages.collect { snackbar.showSnackbar(it) }
@@ -86,164 +102,256 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
 
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
-    fun isLibraryRoute(): Boolean = route?.startsWith("library") == true
-    val topLevel = route == Routes.HOME || isLibraryRoute() || route == Routes.SEARCH || route == Routes.SETTINGS || route == null
+    val isDetail = route in DETAIL_ROUTES
+    LaunchedEffect(route) { if (!isDetail) topBar.reset() }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
-        containerColor = VusicColors.Background,
-        bottomBar = {
-            Column {
-                MiniPlayer(main.player, onOpen = { showNowPlaying = true })
-                if (topLevel) {
-                    NavigationBar(containerColor = Color.Black) {
-                        val items = listOf(
-                            Triple(Routes.HOME, "Home", Icons.Default.Home),
-                            Triple(Routes.library(), "Library", Icons.Default.LibraryMusic),
-                            Triple(Routes.SEARCH, "Search", Icons.Default.Search),
-                            Triple(Routes.SETTINGS, "Settings", Icons.Default.Settings),
+    CompositionLocalProvider(LocalTopBarController provides topBar) {
+        Box(Modifier.fillMaxSize()) {
+            Scaffold(
+                snackbarHost = { SnackbarHost(snackbar) },
+                containerColor = VusicColors.Background,
+                topBar = {
+                    if (isDetail) {
+                        AppTopBar(topBar, onBack = { nav.popBackStack() })
+                    }
+                },
+                bottomBar = {
+                    // Always visible: the nav bar and the mini player directly above it.
+                    Column {
+                        MiniPlayer(main.player, onOpen = { showNowPlaying = true })
+                        AppNavigationBar(
+                            currentRoute = route,
+                            onSelect = { target -> nav.goToTab(target) },
                         )
-                        items.forEach { (r, label, icon) ->
-                            val selected = when (label) {
-                                "Home" -> route == Routes.HOME || route == null
-                                "Library" -> isLibraryRoute()
-                                "Search" -> route == Routes.SEARCH
-                                else -> route == Routes.SETTINGS
-                            }
-                            NavigationBarItem(
-                                selected = selected,
-                                onClick = {
-                                    nav.navigate(r) {
-                                        popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                },
-                                icon = { Icon(icon, label) },
-                                label = { Text(label) },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = Color.White,
-                                    selectedTextColor = Color.White,
-                                    unselectedIconColor = VusicColors.SecondaryText,
-                                    unselectedTextColor = VusicColors.SecondaryText,
-                                    indicatorColor = Color(0xFF2A2A2A),
-                                ),
+                    }
+                },
+            ) { padding ->
+                Box(Modifier.fillMaxSize().padding(padding)) {
+                    NavHost(nav, startDestination = Routes.HOME) {
+                        composable(Routes.HOME) {
+                            HomeScreen(
+                                player = main.player, repo = main.repo, messenger = main.messenger,
+                                onAlbum = { nav.navigate(Routes.album(it)) },
+                                onArtist = { id -> nav.navigate(Routes.artist(id)) },
+                                onPlaylist = { id -> nav.navigate(Routes.playlist(id)) },
+                                onSettings = { nav.goToTab(Routes.SETTINGS) },
+                                onExplore = { tab -> nav.goToLibraryTab(tab) },
+                                onGenres = { nav.navigate(Routes.GENRES) },
+                                onActions = { actionsTarget = it },
+                                username = username?.username.orEmpty(),
                             )
+                        }
+                        composable(
+                            Routes.LIBRARY,
+                            arguments = listOf(
+                                navArgument("tab") {
+                                    type = NavType.StringType
+                                    defaultValue = LibraryTab.ALBUMS.name
+                                },
+                            ),
+                        ) { entry ->
+                            val tabArg = entry.arguments?.getString("tab")
+                            LibraryScreen(
+                                initialTab = tabArg?.let { name ->
+                                    runCatching { LibraryTab.valueOf(name) }.getOrNull()
+                                },
+                                player = main.player, repo = main.repo, messenger = main.messenger,
+                                onAlbum = { nav.navigate(Routes.album(it)) },
+                                onArtist = { nav.navigate(Routes.artist(it)) },
+                                onPlaylist = { nav.navigate(Routes.playlist(it)) },
+                                onGenre = { nav.navigate(Routes.genre(it)) },
+                                onActions = { actionsTarget = it },
+                            )
+                        }
+                        composable(Routes.SEARCH) {
+                            SearchScreen(
+                                player = main.player, repo = main.repo, messenger = main.messenger,
+                                settings = main.settings,
+                                onAlbum = { nav.navigate(Routes.album(it)) },
+                                onArtist = { nav.navigate(Routes.artist(it)) },
+                                onActions = { actionsTarget = it },
+                            )
+                        }
+                        composable(Routes.SETTINGS) {
+                            SettingsScreen(
+                                onLogout = onLogout,
+                                onOpenDownloads = { nav.navigate(Routes.DOWNLOADS) },
+                            )
+                        }
+                        composable(Routes.ALBUM) {
+                            AlbumDetailScreen(
+                                player = main.player, repo = main.repo, messenger = main.messenger,
+                                onArtist = { nav.navigate(Routes.artist(it)) },
+                                onActions = { actionsTarget = it },
+                            )
+                        }
+                        composable(Routes.ARTIST) {
+                            ArtistDetailScreen(
+                                player = main.player, repo = main.repo, messenger = main.messenger,
+                                onAlbum = { nav.navigate(Routes.album(it)) },
+                                onArtist = { nav.navigate(Routes.artist(it)) },
+                                onActions = { actionsTarget = it },
+                            )
+                        }
+                        composable(Routes.PLAYLIST) {
+                            PlaylistDetailScreen(
+                                player = main.player, repo = main.repo, messenger = main.messenger,
+                                onActions = { actionsTarget = it },
+                                onBack = { nav.popBackStack() },
+                            )
+                        }
+                        composable(Routes.DOWNLOADS) {
+                            DownloadsScreen(repo = main.repo)
+                        }
+                        composable(Routes.GENRE) {
+                            GenreScreen(repo = main.repo, onAlbum = { nav.navigate(Routes.album(it)) })
+                        }
+                        composable(Routes.GENRES) {
+                            GenresScreen(onGenre = { nav.navigate(Routes.genre(it)) })
                         }
                     }
                 }
             }
-        },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            NavHost(nav, startDestination = Routes.HOME) {
-                composable(Routes.HOME) {
-                    HomeScreen(
-                        player = main.player, repo = main.repo, messenger = main.messenger,
-                        onAlbum = { nav.navigate(Routes.album(it)) },
-                        onArtist = { id -> nav.navigate(Routes.artist(id)) },
-                        onPlaylist = { id -> nav.navigate(Routes.playlist(id)) },
-                        onSettings = { nav.navigate(Routes.SETTINGS) },
-                        onExplore = { tab -> nav.navigate(Routes.library(tab)) },
-                        onGenres = { nav.navigate(Routes.GENRES) },
-                        onActions = { actionsTarget = it },
-                        username = username?.username.orEmpty(),
-                    )
-                }
-                composable(
-                    Routes.LIBRARY,
-                    arguments = listOf(navArgument("tab") { type = NavType.StringType; defaultValue = LibraryTab.ALBUMS.name }),
-                ) {
-                    LibraryScreen(
-                        player = main.player, repo = main.repo, messenger = main.messenger,
-                        onAlbum = { nav.navigate(Routes.album(it)) },
-                        onArtist = { nav.navigate(Routes.artist(it)) },
-                        onPlaylist = { nav.navigate(Routes.playlist(it)) },
-                        onGenre = { nav.navigate(Routes.genre(it)) },
-                        onActions = { actionsTarget = it },
-                    )
-                }
-                composable(Routes.SEARCH) {
-                    SearchScreen(
-                        player = main.player, repo = main.repo, messenger = main.messenger,
-                        settings = main.settings,
-                        onAlbum = { nav.navigate(Routes.album(it)) },
-                        onArtist = { nav.navigate(Routes.artist(it)) },
-                        onActions = { actionsTarget = it },
-                    )
-                }
-                composable(Routes.SETTINGS) {
-                    SettingsScreen(onLogout = onLogout, onOpenDownloads = { nav.navigate(Routes.DOWNLOADS) })
-                }
-                composable(Routes.ALBUM) {
-                    AlbumDetailScreen(
-                        player = main.player, repo = main.repo, messenger = main.messenger,
-                        onArtist = { nav.navigate(Routes.artist(it)) },
-                        onActions = { actionsTarget = it },
-                    )
-                }
-                composable(Routes.ARTIST) {
-                    ArtistDetailScreen(
-                        player = main.player, repo = main.repo, messenger = main.messenger,
-                        onAlbum = { nav.navigate(Routes.album(it)) },
-                        onArtist = { nav.navigate(Routes.artist(it)) },
-                        onActions = { actionsTarget = it },
-                    )
-                }
-                composable(Routes.PLAYLIST) {
-                    PlaylistDetailScreen(
-                        player = main.player, repo = main.repo, messenger = main.messenger,
-                        onActions = { actionsTarget = it },
-                        onBack = { nav.popBackStack() },
-                    )
-                }
-                composable(Routes.DOWNLOADS) { DownloadsScreen(repo = main.repo) }
-                composable(Routes.GENRE) {
-                    GenreScreen(repo = main.repo, onAlbum = { nav.navigate(Routes.album(it)) })
-                }
-                composable(Routes.GENRES) {
-                    GenresScreen(onGenre = { nav.navigate(Routes.genre(it)) })
-                }
+
+            // Sheets and Now Playing draw above the scaffold (so they may cover the
+            // bottom bar), in a deliberate order: sheet, then full-screen player.
+            EntityActionsSheet(
+                target = actionsTarget,
+                onDismiss = { actionsTarget = null },
+                player = main.player,
+                repo = main.repo,
+                settings = main.settings,
+                messenger = main.messenger,
+                onAlbum = {
+                    actionsTarget = null
+                    showNowPlaying = false
+                    nav.navigate(Routes.album(it))
+                },
+                onArtist = {
+                    actionsTarget = null
+                    showNowPlaying = false
+                    nav.navigate(Routes.artist(it))
+                },
+            )
+
+            AnimatedVisibility(
+                visible = showNowPlaying,
+                enter = slideInVertically(initialOffsetY = { it }),
+                exit = slideOutVertically(targetOffsetY = { it }),
+            ) {
+                NowPlayingScreen(
+                    player = main.player,
+                    repo = main.repo,
+                    messenger = main.messenger,
+                    onClose = { showNowPlaying = false },
+                    onArtist = {
+                        showNowPlaying = false
+                        nav.navigate(Routes.artist(it))
+                    },
+                    onAlbum = {
+                        showNowPlaying = false
+                        nav.navigate(Routes.album(it))
+                    },
+                    onActions = { actionsTarget = it },
+                )
             }
         }
     }
+}
 
-    EntityActionsSheet(
-        target = actionsTarget,
-        onDismiss = { actionsTarget = null },
-        player = main.player,
-        repo = main.repo,
-        settings = main.settings,
-        messenger = main.messenger,
-        onAlbum = {
-            actionsTarget = null
-            nav.navigate(Routes.album(it))
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppTopBar(controller: TopBarController, onBack: () -> Unit) {
+    val title = controller.title
+    val showTitle = (controller.alwaysShowTitle || controller.scrolled) && title != null
+    TopAppBar(
+        title = {
+            if (showTitle) {
+                Text(title.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         },
-        onArtist = {
-            actionsTarget = null
-            nav.navigate(Routes.artist(it))
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
         },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = VusicColors.Background,
+            titleContentColor = Color.White,
+            navigationIconContentColor = Color.White,
+        ),
     )
+}
 
-    AnimatedVisibility(
-        visible = showNowPlaying,
-        enter = slideInVertically(initialOffsetY = { it }),
-        exit = slideOutVertically(targetOffsetY = { it }),
-    ) {
-        NowPlayingScreen(
-            player = main.player,
-            repo = main.repo,
-            messenger = main.messenger,
-            onClose = { showNowPlaying = false },
-            onArtist = {
-                showNowPlaying = false
-                nav.navigate(Routes.artist(it))
+@Composable
+private fun AppNavigationBar(currentRoute: String?, onSelect: (String) -> Unit) {
+    val items = NavRules.BOTTOM_NAV_LABELS.map { label ->
+        Triple(
+            NavRules.bottomNavTarget(label),
+            label,
+            when (label) {
+                "Home" -> Icons.Default.Home
+                "Library" -> Icons.Default.LibraryMusic
+                "Search" -> Icons.Default.Search
+                else -> Icons.Default.Settings
             },
-            onAlbum = {
-                showNowPlaying = false
-                nav.navigate(Routes.album(it))
-            },
-            onActions = { actionsTarget = it },
         )
+    }
+    NavigationBar(containerColor = Color.Black) {
+        items.forEach { (target, label, icon) ->
+            val selected = NavRules.selectedLabel(currentRoute) == label
+            NavigationBarItem(
+                selected = selected,
+                onClick = { onSelect(target) },
+                icon = { Icon(icon, label) },
+                label = { Text(label) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = Color.White,
+                    selectedTextColor = Color.White,
+                    unselectedIconColor = VusicColors.SecondaryText,
+                    unselectedTextColor = VusicColors.SecondaryText,
+                    indicatorColor = VusicColors.SurfaceHigh,
+                ),
+            )
+        }
+    }
+}
+
+/**
+ * The single way to move between top-level tabs. Using the same options for the
+ * bottom bar and the Home avatar keeps every tab reachable from anywhere (the
+ * old avatar path pushed a second Settings destination that broke the back stack).
+ *
+ * When a detail screen (album/artist/playlist/genre) sits above the tabs it is
+ * popped as its own step first. Folding it into the target tab's saved state via
+ * `popUpTo(saveState = true)` + `restoreState = true` made `restoreState` re-create
+ * the detail, so tapping Home from an album appeared to do nothing.
+ */
+private fun NavHostController.goToTab(route: String) {
+    if (NavRules.isDetail(currentDestination?.route)) {
+        popBackStack()
+    }
+    navigate(route) {
+        popUpTo(graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
+}
+
+/**
+ * Library tab switching must not be swallowed by restored state, so the existing
+ * Library entry is replaced when a different tab is requested.
+ */
+private fun NavHostController.goToLibraryTab(tab: LibraryTab) {
+    if (NavRules.libraryNeedsReplace(currentDestination?.route)) {
+        navigate(Routes.library(tab)) {
+            popUpTo(Routes.LIBRARY_PATTERN) { inclusive = true }
+            launchSingleTop = true
+        }
+    } else {
+        navigate(Routes.library(tab)) {
+            popUpTo(graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+        }
     }
 }

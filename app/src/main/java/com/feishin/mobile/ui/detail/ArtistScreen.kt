@@ -62,6 +62,7 @@ import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.EmptyBox
 import com.feishin.mobile.ui.ErrorBox
 import com.feishin.mobile.ui.LoadingBox
+import com.feishin.mobile.ui.LocalTopBarController
 import com.feishin.mobile.ui.components.ActionTarget
 import com.feishin.mobile.ui.components.AlbumCard
 import com.feishin.mobile.ui.components.CoverImage
@@ -72,6 +73,7 @@ import com.feishin.mobile.ui.components.TrackRow
 import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.components.rememberSavableListState
 import com.feishin.mobile.ui.theme.VusicColors
+import com.feishin.mobile.ui.theme.VusicSpacing
 import kotlinx.coroutines.launch
 
 /** Strips HTML tags + common entities for biographies. */
@@ -110,8 +112,17 @@ fun ArtistScreen(
             LaunchedEffect(a.id, a.name) { vm.loadExtras(a.name) }
             val refreshing by vm.refreshing.collectAsState()
             var topExpanded by remember(a.id) { mutableStateOf(false) }
+            val topBar = LocalTopBarController.current
             PullToRefreshBox(isRefreshing = refreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
                 val listState = rememberSavableListState()
+                // Publish the artist name so it fades into the shared top bar.
+                LaunchedEffect(a.name, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
+                    topBar.title = a.name
+                    // The hero is ~300dp tall: the title appears once it is gone,
+                    // matching the album/playlist header threshold.
+                    topBar.scrolled = listState.firstVisibleItemIndex > 0 ||
+                        listState.firstVisibleItemScrollOffset > 200
+                }
                 // Collapsing hero: image height shrinks as the list scrolls.
                 val scrollPx = listState.firstVisibleItemScrollOffset.toFloat()
                 val heroFraction = (1f - (scrollPx / 520f).coerceIn(0f, 1f))
@@ -119,7 +130,7 @@ fun ArtistScreen(
                 LazyColumn(
                     Modifier.fillMaxSize(),
                     state = listState,
-                    contentPadding = PaddingValues(bottom = 160.dp),
+                    contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom),
                 ) {
                     item {
                         ArtistHero(

@@ -31,6 +31,11 @@ import com.feishin.mobile.ui.theme.VusicColors
 @Composable
 fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRepository) {
     val list by vm.downloads.collectAsState(initial = emptyList())
+    val topBar = com.feishin.mobile.ui.LocalTopBarController.current
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        topBar.title = "Offline downloads"
+        topBar.alwaysShowTitle = true
+    }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Offline downloads (${list.size})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))

@@ -58,6 +58,7 @@ import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.Artist
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.ui.theme.VusicColors
+import com.feishin.mobile.ui.theme.VusicSpacing
 
 fun formatDuration(seconds: Int): String {
     val m = seconds / 60
@@ -130,7 +131,12 @@ fun SectionHeader(
     onOpen: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    Row(modifier.fillMaxWidth().padding(16.dp, 12.dp, 8.dp, 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, top = VusicSpacing.SectionGap, end = 8.dp, bottom = VusicSpacing.HeaderToContent),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         if (avatarUrl != null) {
             CoverImage(avatarUrl, title, modifier = Modifier.size(40.dp), roundedDp = 20.dp)
             Spacer(Modifier.width(12.dp))
@@ -390,9 +396,16 @@ fun SkeletonLoader(modifier: Modifier = Modifier, cardCount: Int = 3) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MarqueeTitle(text: String, style: androidx.compose.ui.text.TextStyle, color: Color, modifier: Modifier = Modifier) {
+fun MarqueeTitle(
+    text: String,
+    style: androidx.compose.ui.text.TextStyle,
+    color: Color,
+    modifier: Modifier = Modifier,
+    textAlign: androidx.compose.ui.text.style.TextAlign? = null,
+) {
     Text(
         text, style = style, color = color, maxLines = 1,
+        textAlign = textAlign,
         modifier = modifier.basicMarquee(iterations = Int.MAX_VALUE),
     )
 }

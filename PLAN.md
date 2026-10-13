@@ -66,11 +66,21 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   Playing-from row); queue screen (source header, Save-as-playlist, 56dp art);
   artist hero page (info/top-songs/similar/bio); cover IDs round-tripped through
   MediaItem extras; 113 unit tests)
+- [x] M4.6 navigation, titles, home performance, now playing and playlist fixes
+  (one scaffold keeps the nav bar + mini player on every screen with a shared
+  back-arrow top app bar for details; avatar and bottom nav share one tab-route
+  path; Go-to-album/artist collapses Now Playing first; Library/Search titles +
+  detached chip row; Home loads every section in parallel and independently with
+  stale-while-revalidate memory+disk cache and per-genre prefetch; standardized
+  spacing tokens; 2-page Speed dial pager with animated dots; rebuilt thin seek
+  bar with correct remaining time and TIME_UNSET handling; luminance-clamped
+  opaque Now Playing gradient; single queue drag handle; playlist covers from
+  server art or a count-aware collage; 124 unit tests)
 - [ ] M5 offline+settings (downloads, stream cache, bitrate wifi/mobile, theme, cert toggle, logout)
 - [ ] M6 extras (Auto manifest support, home screen widget, README, final APK verify)
 
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
-`testDebugUnitTest` 113/113 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
+`testDebugUnitTest` 124/124 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
 LIVE on-device test (emulator Pixel 7, API 34) against server.example.com: login OK,
 Home with real albums/art, album detail (17 tracks), streaming playback confirmed
 (mini player + Now Playing 0:33/3:42 + audio focus), zero FATAL crashes. Probe script
@@ -98,6 +108,45 @@ playlists/genres/starred2 all OK. No adb physical device; emulator AVD `feishin_
 - ReplayGain: no native Media3 support; stored as volume-normalization preference
   documented as best-effort (server `getAlbum` may carry replayGain fields; applied as gain).
 - Credentials never committed; test config via local.properties/env only.
+- M4.6 root causes (all fixed):
+  1. Bottom nav vanished on detail screens because `MiniPlayer` and
+     `NavigationBar` were rendered conditionally on `route in topLevel`, and each
+     detail screen supplied its own layout. Fixed by one Scaffold whose bottomBar
+     always renders both, plus a shared `AppTopBar` for detail routes.
+  2. Tapping Home from an album did nothing: `goToTab` used
+     `popUpTo(startDestination){saveState=true}` + `restoreState=true`, which
+     folded the popped detail into the target tab's saved state so `restoreState`
+     re-created it. Tapping Library worked only because it had no such state.
+     Fixed by popping the detail as its own step first.
+  3. Home's first load waited on the *mixes*: `loadAll` awaited 3 parallel
+     `getSimilarSongs2` calls before its single `_ui.value = HomeUi(...)`. That
+     endpoint measured 7.9-10.1s on this server while Home's real endpoints take
+     ~300ms, so skeletons stayed up for the whole window. Fixed by publishing each
+     section independently and treating mixes as non-blocking extra content.
+  4. The seek bar rendered as a full block and read "-0:00" because the player
+     exposes an unknown duration as 0, collapsing the slider range to `0f..1f`
+     where the coerced position saturated to 1f. Fixed with pure
+     `PlaybackProgress` math (unknown => 0 progress + "--:--", clamped remaining).
+  5. Light/white covers produced a washed-out grey backdrop because the raw
+     dominant colour was used and text flipped to dark. Fixed by clamping the
+     backdrop's relative luminance (hue preserved) so white text always clears
+     ~AA contrast; gradient stops are opaque.
+- M4.6 Home load timings (emulator, live server, measured via `HomePerf` logs):
+  BEFORE - first content only after the mixes resolved, so ~8-10s+ on skeletons
+  (matches the 7.9-10.1s similar-songs probe). AFTER - first content paint at
+  1.7-2.1s, all sections by ~2.05-2.6s; a Home revisit paints full content in
+  under 700ms from the memory cache, and a cold start paints the disk snapshot
+  before the network answers.
+- M4.6 verification: build + lint (0 errors) + 124/124 unit tests green. On device:
+  nav bar and back arrow on album/artist/playlist/genre, Home reachable from every
+  screen, avatar -> Settings -> Home works, playlist collage + album-style header,
+  Now Playing per spec (centred title, pill, three-dot far right, thin seek bar
+  with correct remaining), queue sheet with one drag handle and 56dp art, Lyrics
+  chip, rotation, zero FATALs.
+- M4.6 notes/limitations: drag-to-reorder still cannot be driven over adb (no
+  hold-then-move primitive); an independent review flagged the speed-dial collage
+  and a premature skeleton-drop, both then fixed; the share sheet and details
+  dialogs remain verified by inspection only (avoiding junk shares).
 - M3 device verification (emulator Pixel 7, live server): album playback confirmed
   via `dumpsys media_session` (state=PLAYING, metadata title/artist/album correct);
   media notification present (category=transport, vis=PUBLIC, isForeground=true,

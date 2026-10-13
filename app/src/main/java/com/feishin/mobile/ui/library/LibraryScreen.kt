@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -38,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.feishin.mobile.core.common.UiState
+import com.feishin.mobile.domain.model.PlaylistCover
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.EmptyBox
@@ -48,11 +50,13 @@ import com.feishin.mobile.ui.components.CoverImage
 import com.feishin.mobile.ui.components.EmptyState
 import com.feishin.mobile.ui.components.ErrorState
 import com.feishin.mobile.ui.components.FilterChipRow
+import com.feishin.mobile.ui.components.PlaylistCoverArt
 import com.feishin.mobile.ui.components.SectionHeader
 import com.feishin.mobile.ui.components.TrackRow
 import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.components.rememberSavableGridState
 import com.feishin.mobile.ui.components.rememberSavableListState
+import com.feishin.mobile.ui.theme.VusicSpacing
 
 private fun tabLabel(t: LibraryTab) = when (t) {
     LibraryTab.PLAYLISTS -> "Playlists"
@@ -64,6 +68,7 @@ private fun tabLabel(t: LibraryTab) = when (t) {
 
 @Composable
 fun LibraryScreen(
+    initialTab: LibraryTab? = null,
     vm: LibraryViewModel = hiltViewModel(),
     player: PlayerManager,
     repo: MusicDataRepository,
@@ -81,18 +86,26 @@ fun LibraryScreen(
     val nowPlaying by player.current.collectAsState()
     val isPlaying by player.isPlaying.collectAsState()
 
+    // The nav arg is authoritative when it changes (Explore pills / restored entry).
+    LaunchedEffect(initialTab) { initialTab?.let { vm.selectTab(it) } }
+
     Column(Modifier.fillMaxSize()) {
-        androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            FilterChipRow(
-                options = LibraryTab.entries.map(::tabLabel),
-                selected = tabLabel(tab),
-                onSelect = { label -> vm.selectTab(LibraryTab.entries.first { tabLabel(it) == label }) },
-                modifier = Modifier.weight(1f),
-            )
-            IconButton(onClick = { vm.toggleGrid() }) {
-                Icon(if (grid) Icons.Default.ViewList else Icons.Default.GridView, contentDescription = "Toggle view")
+        // Title row: title on the left, view/sort controls on the right, so the
+        // chip row below can scroll horizontally without colliding with them.
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Library", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+            IconButton(onClick = { vm.toggleGrid() }, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    if (grid) Icons.Default.ViewList else Icons.Default.GridView,
+                    contentDescription = "Toggle view",
+                )
             }
-            IconButton(onClick = { sortMenu = true }) { Text("⇅", style = MaterialTheme.typography.titleMedium) }
+            IconButton(onClick = { sortMenu = true }, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Default.Sort, contentDescription = "Sort")
+            }
             DropdownMenu(sortMenu, onDismissRequest = { sortMenu = false }) {
                 SortOrder.entries.forEach { s ->
                     DropdownMenuItem(
@@ -102,6 +115,12 @@ fun LibraryScreen(
                 }
             }
         }
+        // Chips own their line and scroll on their own.
+        FilterChipRow(
+            options = LibraryTab.entries.map(::tabLabel),
+            selected = tabLabel(tab),
+            onSelect = { label -> vm.selectTab(LibraryTab.entries.first { tabLabel(it) == label }) },
+        )
         LibraryPullToRefresh(vm, tab) {
             when (tab) {
                 LibraryTab.ALBUMS -> {
@@ -224,16 +243,34 @@ fun LibraryScreen(
                         is UiState.Loading -> com.feishin.mobile.ui.LoadingBox()
                         is UiState.Error -> ErrorState(s.message, vm::refresh)
                         is UiState.Empty -> EmptyState("No playlists")
-                        is UiState.Data -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
+                        is UiState.Data -> LazyColumn(
+                            Modifier.fillMaxSize(),
+                            state = rememberSavableListState(),
+                            contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom),
+                        ) {
                             items(s.value, key = { it.id }) { p ->
-                                androidx.compose.foundation.layout.Column(
+                                Row(
                                     Modifier.fillMaxWidth()
                                         .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
                                         .clickable(onClick = { onPlaylist(p.id) })
-                                        .padding(16.dp, 12.dp),
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text(p.name, style = MaterialTheme.typography.bodyLarge)
-                                    Text("${p.songCount} songs", style = MaterialTheme.typography.bodySmall)
+                                    PlaylistCoverArt(
+                                        cover = PlaylistCover.select(p.coverArt, emptyList()),
+                                        resolver = { id -> repo.coverArtUrl(id, 128) },
+                                        contentDescription = p.name,
+                                        modifier = Modifier.size(56.dp),
+                                        roundedDp = 4.dp,
+                                    )
+                                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                                        Text(p.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                        Text(
+                                            "${p.songCount} songs",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText,
+                                        )
+                                    }
                                 }
                             }
                         }

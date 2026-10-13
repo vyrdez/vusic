@@ -35,8 +35,13 @@ fun GenresScreen(
 ) {
     val ui by vm.genres.collectAsState()
     androidx.compose.runtime.LaunchedEffect(Unit) { vm.refreshGenres() }
+    // Simple list screen: show the title in the shared top bar immediately.
+    val topBar = com.feishin.mobile.ui.LocalTopBarController.current
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        topBar.title = "Genres"
+        topBar.alwaysShowTitle = true
+    }
     Column(Modifier.fillMaxSize()) {
-        SectionHeader(title = "Genres")
         when (val s = ui) {
             is UiState.Loading -> LoadingBox()
             is UiState.Error -> ErrorState(s.message, vm::refresh)

@@ -70,6 +70,7 @@ import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.AlbumDetail
 import com.feishin.mobile.domain.model.Artist
 import com.feishin.mobile.domain.model.Playlist
+import com.feishin.mobile.domain.model.PlaylistCover
 import com.feishin.mobile.domain.model.PlaylistDetail
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
@@ -633,22 +634,38 @@ fun PlaylistPickerSheet(
             } else {
                 LazyColumn(Modifier.fillMaxWidth()) {
                     items(list, key = { it.id }) { p ->
-                        SheetRow("${p.name} • ${p.songCount}", Icons.Default.QueueMusic, onClick = {
-                            if (busy) return@SheetRow
-                            busy = true
-                            scope.launch {
-                                when (repo.addToPlaylist(p.id, tracks.map { it.id })) {
-                                    is Result.Ok -> {
-                                        messenger.show("Saved ${tracks.size} to ${p.name}")
-                                        onDismiss()
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            // Server art when the playlist has any, else its tracks' art.
+                            val cover = PlaylistCover.select(p.coverArt, emptyList())
+                            PlaylistCoverArt(
+                                cover = cover,
+                                resolver = { id -> repo.coverArtUrl(id, 128) },
+                                contentDescription = p.name,
+                                modifier = Modifier.size(44.dp),
+                                roundedDp = 4.dp,
+                            )
+                            Box(Modifier.weight(1f)) {
+                                SheetRow("${p.name} • ${p.songCount}", Icons.Default.QueueMusic, onClick = {
+                                    if (busy) return@SheetRow
+                                    busy = true
+                                    scope.launch {
+                                        when (repo.addToPlaylist(p.id, tracks.map { it.id })) {
+                                            is Result.Ok -> {
+                                                messenger.show("Saved ${tracks.size} to ${p.name}")
+                                                onDismiss()
+                                            }
+                                            is Result.Err -> {
+                                                messenger.show("Could not save to ${p.name}")
+                                                busy = false
+                                            }
+                                        }
                                     }
-                                    is Result.Err -> {
-                                        messenger.show("Could not save to ${p.name}")
-                                        busy = false
-                                    }
-                                }
+                                })
                             }
-                        })
+                        }
                     }
                 }
             }

@@ -4,9 +4,12 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -57,8 +60,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -107,19 +108,16 @@ import com.feishin.mobile.ui.components.PlaylistPickerSheet
 import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.components.formatDuration
 import com.feishin.mobile.ui.components.shareText
+import com.feishin.mobile.core.common.PlaybackProgress
+import com.feishin.mobile.ui.theme.VusicColorMath
 import com.feishin.mobile.ui.theme.VusicColors
+import com.feishin.mobile.ui.theme.VusicSpacing
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyColumnState
 import kotlin.math.roundToInt
-
-private fun fmt(ms: Long): String {
-    if (ms <= 0) return "0:00"
-    val s = ms / 1000
-    return "%d:%02d".format(s / 60, s % 60)
-}
 
 /**
  * Full-screen Now Playing. Playback lives in the service, so rotation and the
@@ -147,31 +145,37 @@ fun NowPlayingScreen(
         return
     }
 
-    // Dynamic background from the cover art's dominant color.
-    // NOTE: explicit RGB constructor — hex literals above Int range resolve to the
-    // ULong overload with different channel packing, which renders translucent.
-    var targetBg by remember { mutableStateOf(Color(20, 26, 34)) }
+    // Dynamic background from the cover art's dominant colour, clamped dark enough
+    // that white text always has strong contrast (fixes washed-out light covers).
+    var targetBg by remember { mutableStateOf(VusicColors.Background) }
     val ctx = LocalContext.current
     val artUrl = player.coverArtUrl(current.coverArt, 512)
     LaunchedEffect(artUrl) {
         if (artUrl == null) {
-            targetBg = Color(20, 26, 34)
+            targetBg = VusicColors.Background
             return@LaunchedEffect
         }
-        withContext(Dispatchers.IO) {
+        val sampled = withContext(Dispatchers.IO) {
             runCatching {
-                val req = ImageRequest.Builder(ctx).data(artUrl).allowHardware(false).build()
+                // Small decode: we only need color statistics, not resolution.
+                val req = ImageRequest.Builder(ctx).data(artUrl).size(128, 128).allowHardware(false).build()
                 val bmp = (ctx.imageLoader.execute(req).drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
-                if (bmp != null) {
-                    val dominant = Palette.from(bmp).generate().getDominantColor(0xFF141A22.toInt())
-                    targetBg = Color(dominant)
-                }
-            }
+                bmp?.let { Palette.from(it).generate().getDominantColor(0) }
+            }.getOrNull()
+        }
+        if (sampled != null && sampled != 0) {
+            val raw = Color(sampled)
+            val (r, g, b) = VusicColorMath.clampToDark(raw.red, raw.green, raw.blue)
+            targetBg = Color(r, g, b)
         }
     }
     val bg by animateColorAsState(targetBg, label = "np-bg")
-    val content = if (bg.luminance() > 0.45f) Color(0xFF101418.toInt()) else Color.White
-    val dim = content.copy(alpha = 0.72f)
+    // Mid gradient stop: the same tint, darkened (opaque, so nothing bleeds through).
+    val bgMid = VusicColorMath.scale(bg.red, bg.green, bg.blue, 0.55f)
+        .let { (r, g, b) -> Color(r, g, b) }
+    // The backdrop is clamped dark, so the content is always white.
+    val content = Color.White
+    val dim = Color.White.copy(alpha = 0.72f)
 
     var showQueue by remember { mutableStateOf(false) }
     var lyricsMode by remember { mutableStateOf(false) }
@@ -182,22 +186,24 @@ fun NowPlayingScreen(
         Modifier
             .fillMaxSize()
             .background(
-                Brush.verticalGradient(
-                    listOf(bg.copy(alpha = 1f), MaterialTheme.colorScheme.background),
-                ),
+                // Every stop is OPAQUE: a translucent mid-stop let the screen
+                // behind bleed through. The tint fades to near-black instead.
+                Brush.verticalGradient(listOf(bg, bgMid, VusicColors.Background)),
             )
             .statusBarsPadding(),
     ) {
         Column(Modifier.fillMaxSize()) {
-            // Top row: collapse, Song|Lyrics toggle, overflow.
+            // Top row: collapse far left, Song|Lyrics pill centred, ⋮ far right.
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+                Modifier.fillMaxWidth().padding(horizontal = VusicSpacing.ScreenHorizontal, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.KeyboardArrowDown, "Close", tint = content)
                 }
-                SongLyricsToggle(lyricsMode = lyricsMode, onSelect = { lyricsMode = it }, dim = dim)
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    SongLyricsToggle(lyricsMode = lyricsMode, onSelect = { lyricsMode = it }, dim = dim)
+                }
                 IconButton(onClick = { onActions(ActionTarget.Track(current)) }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.MoreVert, "Options", tint = content)
                 }
@@ -224,22 +230,30 @@ fun NowPlayingScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Spacer(Modifier.height(8.dp))
+                // Cap the art so the title, chips, seek bar and controls always fit
+                // on screen (short devices / landscape otherwise push them off).
                 CoverImage(
                     artUrl, current.title,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                    modifier = Modifier.fillMaxWidth(0.82f).aspectRatio(1f),
                     roundedDp = 16.dp,
                 )
                 Spacer(Modifier.height(16.dp))
+                // Title row: balanced 48dp slots on both sides keep the text
+                // visually centred; short titles are centred, long ones marquee.
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.size(48.dp))
                     MarqueeTitle(
                         text = current.title,
                         style = MaterialTheme.typography.headlineSmall,
                         color = content,
+                        textAlign = TextAlign.Center,
                         modifier = Modifier.weight(1f),
                     )
-                    if (current.albumId?.isNotBlank() == true) {
-                        IconButton(onClick = { current.albumId?.let(onAlbum) }, modifier = Modifier.size(48.dp)) {
-                            Icon(Icons.Default.ChevronRight, "Go to album", tint = dim)
+                    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                        if (current.albumId?.isNotBlank() == true) {
+                            IconButton(onClick = { current.albumId?.let(onAlbum) }, modifier = Modifier.size(48.dp)) {
+                                Icon(Icons.Default.ChevronRight, "Go to album", tint = dim)
+                            }
                         }
                     }
                 }
@@ -362,31 +376,79 @@ private fun PlayingFromRow(player: PlayerManager, dim: Color, onClick: () -> Uni
 private fun SeekBar(player: PlayerManager, content: Color) {
     val pos by player.position.collectAsState()
     val dur by player.duration.collectAsState()
-    var scrub by remember { mutableStateOf<Float?>(null) }
-    val range = 0f..(dur.coerceAtLeast(1).toFloat())
+    var scrubMs by remember { mutableStateOf<Long?>(null) }
+    var dragging by remember { mutableStateOf(false) }
+
+    val known = !PlaybackProgress.isUnknown(dur)
+    val progress = PlaybackProgress.progressWithScrub(pos, dur, scrubMs)
+
     Column(Modifier.fillMaxWidth()) {
-        Slider(
-            value = scrub ?: pos.toFloat().coerceIn(range),
-            onValueChange = { scrub = it },
-            onValueChangeFinished = {
-                scrub?.let { player.seekTo(it.toLong()) }
-                scrub = null
-            },
-            valueRange = range,
-            colors = SliderDefaults.colors(
-                thumbColor = content,
-                activeTrackColor = content,
-                inactiveTrackColor = content.copy(alpha = 0.3f),
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        )
+        BoxWithConstraints(
+            Modifier
+                .fillMaxWidth()
+                .height(32.dp)
+                .pointerInput(known, dur) {
+                    if (!known) return@pointerInput
+                    fun msAt(x: Float): Long {
+                        val w = size.width
+                        if (w <= 0) return 0L
+                        return ((x / w).coerceIn(0f, 1f) * dur).toLong().coerceIn(0L, dur)
+                    }
+                    detectHorizontalDragGestures(
+                        onDragStart = { off -> dragging = true; scrubMs = msAt(off.x) },
+                        onHorizontalDrag = { change, _ -> scrubMs = msAt(change.position.x) },
+                        onDragEnd = {
+                            scrubMs?.let { player.seekTo(it) }
+                            scrubMs = null
+                            dragging = false
+                        },
+                        onDragCancel = { scrubMs = null; dragging = false },
+                    )
+                }
+                .pointerInput(known, dur) {
+                    if (!known) return@pointerInput
+                    detectTapGestures { off ->
+                        val w = size.width
+                        if (w > 0) {
+                            player.seekTo(((off.x / w).coerceIn(0f, 1f) * dur).toLong().coerceIn(0L, dur))
+                        }
+                    }
+                },
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            // 4dp track with the filled portion exactly matching progress.
+            Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(content.copy(alpha = 0.28f)))
+            Box(
+                Modifier
+                    .fillMaxWidth(progress.coerceIn(0f, 1f))
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(content),
+            )
+            // Circular thumb pinned to the end of the filled part; grows on drag.
+            val thumb = if (dragging) 18.dp else 12.dp
+            Box(
+                Modifier
+                    .offset(x = (maxWidth - thumb) * progress.coerceIn(0f, 1f))
+                    .size(thumb)
+                    .clip(CircleShape)
+                    .background(content),
+            )
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(fmt((scrub ?: pos.toFloat()).toLong()), color = content.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
-            val remaining = (dur - (scrub ?: pos.toFloat()).toLong()).coerceAtLeast(0)
-            Text("-" + fmt(remaining), color = content.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall)
+            Text(
+                PlaybackProgress.formatElapsed(scrubMs ?: pos),
+                color = dim75(content), style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                PlaybackProgress.formatRemaining(pos, dur, scrubMs),
+                color = dim75(content), style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }
+
+private fun dim75(color: Color) = color.copy(alpha = 0.85f)
 
 @Composable
 private fun ControlsRow(
@@ -536,9 +598,8 @@ fun QueueSheet(
     var showSaveDialog by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Box(Modifier.width(40.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(VusicColors.SecondaryText))
-            }
+            // Material3's ModalBottomSheet already draws the standard drag handle;
+            // adding our own produced a doubled bar.
             Spacer(Modifier.height(8.dp))
             Row(
                 Modifier.fillMaxWidth(),

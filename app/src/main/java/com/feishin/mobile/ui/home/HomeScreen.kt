@@ -1,5 +1,12 @@
 package com.feishin.mobile.ui.home
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -57,6 +64,7 @@ import com.feishin.mobile.ui.components.CoverImage
 import com.feishin.mobile.ui.components.EmptyState
 import com.feishin.mobile.ui.components.ErrorState
 import com.feishin.mobile.ui.components.FilterChipRow
+import com.feishin.mobile.ui.components.PlaylistCoverArt
 import com.feishin.mobile.ui.components.SectionHeader
 import com.feishin.mobile.ui.components.SkeletonLoader
 import com.feishin.mobile.ui.components.TrackRow
@@ -88,6 +96,7 @@ fun HomeScreen(
             state.loading && state.recent.isEmpty() -> {
                 Column(Modifier.fillMaxSize()) {
                     HomeTopBar(username, onSettings)
+                    SpeedDialSkeleton()
                     SkeletonLoader()
                     SkeletonLoader()
                 }
@@ -127,15 +136,16 @@ private fun HomeContent(
             FilterChipRow(options = state.genres, selected = state.selectedGenre, onSelect = vm::selectGenre)
         }
         if (state.speedDial.isNotEmpty()) {
-            item { SectionHeader(title = "Speed dial") }
             item {
-                SpeedDialGrid(
+                SpeedDialPager(
                     tiles = state.speedDial,
                     repo = repo,
                     onAlbum = onAlbum,
                     onPlaylist = { id ->
                         scope.launch {
-                            (repo.playlist(id) as? Result.Ok)?.value?.let { player.playAll(it.tracks, source = it.name) }
+                            (repo.playlist(id) as? Result.Ok)?.value?.let {
+                                player.playAll(it.tracks, source = it.name)
+                            }
                         }
                     },
                 )
@@ -246,6 +256,31 @@ private fun HomeContent(
     }
 }
 
+/**
+ * Shimmering placeholder for the speed-dial grid shown during the first load.
+ */
+@Composable
+private fun SpeedDialSkeleton() {
+    val t = rememberInfiniteTransition(label = "sd-skel")
+    val alpha by t.animateFloat(
+        initialValue = 0.35f, targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(tween(800), androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "sd-alpha",
+    )
+    val color = com.feishin.mobile.ui.theme.VusicColors.SurfaceHigh.copy(alpha = alpha)
+    Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 32.dp)) {
+        Box(Modifier.width(140.dp).height(24.dp).clip(RoundedCornerShape(4.dp)).background(color))
+        Spacer(Modifier.height(12.dp))
+        repeat(3) {
+            Row(Modifier.fillMaxWidth()) {
+                repeat(3) {
+                    Box(Modifier.weight(1f).aspectRatio(1f).padding(4.dp).clip(RoundedCornerShape(8.dp)).background(color))
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun HomeTopBar(username: String, onSettings: () -> Unit) {
     Row(
@@ -269,23 +304,57 @@ private fun HomeTopBar(username: String, onSettings: () -> Unit) {
     }
 }
 
+/**
+ * Speed dial as a 3x3 page pager (up to 2 pages / 18 tiles) with animated page
+ * dots, mirroring YouTube Music. The dots track the real page count and hide
+ * when there is only one page.
+ */
 @Composable
-private fun SpeedDialGrid(
+private fun SpeedDialPager(
     tiles: List<SpeedTile>,
     repo: MusicDataRepository,
     onAlbum: (String) -> Unit,
     onPlaylist: (String) -> Unit,
 ) {
-    BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-        val cell = maxWidth / 3
-        Column {
-            tiles.chunked(3).forEach { row ->
-                Row(Modifier.fillMaxWidth()) {
-                    row.forEach { tile ->
-                        Box(Modifier.width(cell).aspectRatio(1f).padding(4.dp)) {
-                            SpeedTile(tile, repo.coverArtUrl(tile.coverArt, 300), onAlbum, onPlaylist)
+    val pages = tiles.chunked(9).take(2)
+    if (pages.isEmpty()) return
+    val pager = rememberPagerState(pageCount = { pages.size })
+    Column(Modifier.fillMaxWidth()) {
+        SectionHeader(title = "Speed dial")
+        HorizontalPager(
+            state = pager,
+            modifier = Modifier.fillMaxWidth(),
+            pageSpacing = 8.dp,
+            contentPadding = PaddingValues(horizontal = 12.dp),
+        ) { page ->
+            Column(Modifier.fillMaxWidth()) {
+                pages[page].chunked(3).forEach { row ->
+                    Row(Modifier.fillMaxWidth()) {
+                        row.forEach { tile ->
+                            Box(Modifier.weight(1f).aspectRatio(1f).padding(4.dp)) {
+                                SpeedTile(tile, repo, onAlbum, onPlaylist)
+                            }
                         }
+                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
+                }
+            }
+        }
+        if (pages.size > 1) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                repeat(pages.size) { i ->
+                    val selected = i == pager.currentPage
+                    val size by animateDpAsState(if (selected) 8.dp else 6.dp, label = "dot")
+                    Box(
+                        Modifier
+                            .padding(horizontal = 3.dp)
+                            .size(size)
+                            .clip(CircleShape)
+                            .background(if (selected) Color.White else Color.White.copy(alpha = 0.35f)),
+                    )
                 }
             }
         }
@@ -293,7 +362,7 @@ private fun SpeedDialGrid(
 }
 
 @Composable
-private fun SpeedTile(tile: SpeedTile, artUrl: String?, onAlbum: (String) -> Unit, onPlaylist: (String) -> Unit) {
+private fun SpeedTile(tile: SpeedTile, repo: MusicDataRepository, onAlbum: (String) -> Unit, onPlaylist: (String) -> Unit) {
     Box(
         Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
             .clickable {
@@ -303,7 +372,17 @@ private fun SpeedTile(tile: SpeedTile, artUrl: String?, onAlbum: (String) -> Uni
                 }
             },
     ) {
-        CoverImage(artUrl, tile.title, modifier = Modifier.fillMaxSize(), roundedDp = 8.dp, contentScale = ContentScale.Crop)
+        if (tile.playlistCover != null) {
+            PlaylistCoverArt(
+                cover = tile.playlistCover,
+                resolver = { id -> repo.coverArtUrl(id, 300) },
+                contentDescription = tile.title,
+                modifier = Modifier.fillMaxSize(),
+                roundedDp = 8.dp,
+            )
+        } else {
+            CoverImage(repo.coverArtUrl(tile.coverArt, 300), tile.title, modifier = Modifier.fillMaxSize(), roundedDp = 8.dp, contentScale = ContentScale.Crop)
+        }
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))),
