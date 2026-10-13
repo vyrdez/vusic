@@ -31,15 +31,20 @@ data class PersistedTrack(
     val genre: String? = null,
     val suffix: String? = null,
     val starred: Boolean = false,
+    val sizeBytes: Long = 0,
+    val bitRate: Int? = null,
+    val path: String = "",
 ) {
     fun toDomain() = Track(
         id, title, album, albumId, artist, artistId, coverArt, durationSec, trackNo, year, genre, suffix, starred,
+        sizeBytes, bitRate, path,
     )
 
     companion object {
         fun from(t: Track) = PersistedTrack(
             t.id, t.title, t.album, t.albumId, t.artist, t.artistId, t.coverArt,
             t.durationSec, t.trackNo, t.year, t.genre, t.suffix, t.starred,
+            t.sizeBytes, t.bitRate, t.path,
         )
     }
 }
@@ -49,6 +54,7 @@ data class QueueSnapshot(
     val tracks: List<PersistedTrack> = emptyList(),
     val currentIndex: Int = 0,
     val positionMs: Long = 0,
+    val sourceName: String? = null,
 )
 
 /**
@@ -66,7 +72,7 @@ class QueueStore internal constructor(
     private val json = Json { ignoreUnknownKeys = true }
     private val key: Preferences.Key<String> = stringPreferencesKey("queue_snapshot")
 
-    suspend fun save(tracks: List<Track>, currentIndex: Int, positionMs: Long) {
+    suspend fun save(tracks: List<Track>, currentIndex: Int, positionMs: Long, sourceName: String? = null) {
         if (tracks.isEmpty()) {
             clear()
             return
@@ -75,6 +81,7 @@ class QueueStore internal constructor(
             tracks = tracks.map(PersistedTrack::from),
             currentIndex = currentIndex.coerceIn(0, tracks.size - 1),
             positionMs = positionMs.coerceAtLeast(0),
+            sourceName = sourceName,
         )
         runCatching { store.edit { it[key] = json.encodeToString(QueueSnapshot.serializer(), snapshot) } }
     }

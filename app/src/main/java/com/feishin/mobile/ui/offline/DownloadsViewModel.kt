@@ -48,6 +48,7 @@ class DownloadsViewModel @Inject constructor(
                                 album = song.album,
                                 filePath = file.absolutePath,
                                 sizeBytes = file.length(),
+                                coverArt = song.coverArt,
                             ),
                         )
                     }

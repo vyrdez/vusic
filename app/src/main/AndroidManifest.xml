@@ -14,7 +14,7 @@
         android:name=".FeishinApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
-        android:label="Feishin"
+        android:label="@string/app_name"
         android:supportsRtl="true"
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.Feishin">
@@ -47,7 +47,7 @@
         <receiver
             android:name=".widget.NowPlayingWidget"
             android:exported="false"
-            android:label="Feishin Now Playing">
+            android:label="Vusic Now Playing">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

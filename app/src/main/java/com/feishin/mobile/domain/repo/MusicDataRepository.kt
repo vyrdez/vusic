@@ -5,6 +5,7 @@ import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.AlbumDetail
 import com.feishin.mobile.domain.model.Artist
 import com.feishin.mobile.domain.model.ArtistDetail
+import com.feishin.mobile.domain.model.ArtistInfo
 import com.feishin.mobile.domain.model.Genre
 import com.feishin.mobile.domain.model.Playlist
 import com.feishin.mobile.domain.model.PlaylistDetail
@@ -23,6 +24,10 @@ interface MusicDataRepository {
     suspend fun search(query: String): Result<SearchResults>
     suspend fun album(id: String): Result<AlbumDetail>
     suspend fun artist(id: String): Result<ArtistDetail>
+    suspend fun artistInfo(id: String): Result<ArtistInfo>
+    suspend fun randomSongs(size: Int = 20, genre: String? = null): Result<List<Track>>
+    suspend fun topSongs(artist: String, count: Int = 10): Result<List<Track>>
+    suspend fun similarSongs(songId: String?, artistId: String?, count: Int = 25): Result<List<Track>>
     suspend fun playlist(id: String): Result<PlaylistDetail>
     suspend fun starred(): Result<StarredCollection>
     suspend fun starTrack(id: String, starred: Boolean): Result<Unit>

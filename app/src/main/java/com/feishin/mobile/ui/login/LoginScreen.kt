@@ -42,7 +42,7 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
         Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("Feishin", style = MaterialTheme.typography.displaySmall)
+        Text("Vusic", style = MaterialTheme.typography.displaySmall)
         Text("Connect to your Navidrome server", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(url, { url = it }, label = { Text("Server URL (https://host:4533/music)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)

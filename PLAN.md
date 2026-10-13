@@ -54,11 +54,23 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   OpenSubsonic synced lyrics with fallback chain + in-memory cache; upgraded mini
   player (tap/swipe-up open, swipe L/R skip, hidden when empty); track overflow
   menus + detail header menus with snackbar confirmations; 89 unit tests)
+- [x] M4.5 Vusic branding, YouTube Music-style redesign, cover fixes, artist page
+  (Vusic wordmark/avatar/login/manifest/widget/notification channel; #0F0F0F theme
+  with white accents; shared SectionHeader/AlbumCard/TrackRow/FilterChipRow/
+  Empty/Error/skeleton/EQ/marquee components; Home with genre chips, Speed dial
+  (local pins), Listen again, Quick picks pager, New releases, Forgotten
+  favorites, More-from-artist, mixes, Discover, Most played, Explore pills;
+  Library chips + Songs tab + genres list screen; Search with recent searches;
+  full TrackActionsSheet + album/artist/playlist sheets, playlist picker, share,
+  details dialogs; NP per reference (Song|Lyrics pill, chips, white play circle,
+  Playing-from row); queue screen (source header, Save-as-playlist, 56dp art);
+  artist hero page (info/top-songs/similar/bio); cover IDs round-tripped through
+  MediaItem extras; 113 unit tests)
 - [ ] M5 offline+settings (downloads, stream cache, bitrate wifi/mobile, theme, cert toggle, logout)
 - [ ] M6 extras (Auto manifest support, home screen widget, README, final APK verify)
 
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
-`testDebugUnitTest` 3/3 pass. APK 23MB at app/build/outputs/apk/debug/app-debug.apk.
+`testDebugUnitTest` 113/113 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
 LIVE on-device test (emulator Pixel 7, API 34) against server.example.com: login OK,
 Home with real albums/art, album detail (17 tracks), streaming playback confirmed
 (mini player + Now Playing 0:33/3:42 + audio focus), zero FATAL crashes. Probe script
@@ -123,3 +135,19 @@ playlists/genres/starred2 all OK. No adb physical device; emulator AVD `feishin_
   reorderable wiring keeps header outside the list so lazy indices == queue
   indices; queue edits never touched the current item's playback (positions
   advanced monotonically throughout).
+- M4.5 device verification (emulator Pixel 7, live server): Home renders all
+  sections with live data; genre chips filter; speed-dial pin appears after
+  refresh (fixed reactive rebuild + a launch NPE from field-init order); mix
+  collages fixed (were passing raw cover IDs); track sheet matches reference;
+  NP matches reference (pill toggle, chips, white play circle, Playing-from);
+  queue art present incl. after kill+restore; save-as-playlist verified via API
+  (24 tracks) and cleaned up; addToPlaylist contract verified via API; star both
+  ways via API; rotation keeps state; NP inset fixed (pill was under status bar).
+  Zero FATALs after fixes.
+- M4.5 notes/limitations: package/applicationId unchanged (Vusic branding is
+  label-only); Subsonic client ID stays FeishinMobile (preserves scrobble history
+  attribution); playlist picker/add-to-playlist verified via API probe, share and
+  details dialogs verified by code inspection only; artist pages for empty artist
+  records render a clean empty hero (server data quirk, names can mismatch);
+  similar-artist circles use placeholder art (last.fm provides none); Library SONGS
+  tab is getRandomSongs(500) — Subsonic has no all-songs endpoint.

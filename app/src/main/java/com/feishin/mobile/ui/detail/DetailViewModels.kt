@@ -5,7 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feishin.mobile.domain.model.AlbumDetail
 import com.feishin.mobile.domain.model.ArtistDetail
+import com.feishin.mobile.domain.model.ArtistInfo
 import com.feishin.mobile.domain.model.PlaylistDetail
+import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.common.UiState
@@ -87,6 +89,22 @@ class ArtistDetailViewModel @Inject constructor(
             when (repo.starArtist(id, !starred)) {
                 is Result.Ok -> Unit
                 is Result.Err -> _ui.value = UiState.Data(current)
+            }
+        }
+    }
+
+    private val _info = MutableStateFlow<ArtistInfo?>(null)
+    val info: StateFlow<ArtistInfo?> = _info.asStateFlow()
+
+    private val _topSongs = MutableStateFlow<UiState<List<Track>>>(UiState.Loading)
+    val topSongs: StateFlow<UiState<List<Track>>> = _topSongs.asStateFlow()
+
+    fun loadExtras(artistName: String) {
+        viewModelScope.launch {
+            _info.value = (repo.artistInfo(id) as? Result.Ok)?.value
+            _topSongs.value = when (val r = repo.topSongs(artistName, 10)) {
+                is Result.Ok -> if (r.value.isEmpty()) UiState.Empty else UiState.Data(r.value)
+                is Result.Err -> UiState.Empty
             }
         }
     }

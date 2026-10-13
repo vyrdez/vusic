@@ -44,6 +44,9 @@ data class Track(
     val genre: String?,
     val suffix: String?,
     val starred: Boolean,
+    val sizeBytes: Long = 0,
+    val bitRate: Int? = null,
+    val path: String = "",
 )
 
 data class Artist(
@@ -95,4 +98,10 @@ data class SearchResults(
     val artists: List<Artist> = emptyList(),
     val albums: List<Album> = emptyList(),
     val tracks: List<Track> = emptyList(),
+)
+
+data class ArtistInfo(
+    val biography: String = "",
+    val imageUrl: String? = null,
+    val similarArtists: List<Artist> = emptyList(),
 )

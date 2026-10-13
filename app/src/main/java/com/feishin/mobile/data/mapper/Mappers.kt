@@ -4,6 +4,7 @@ import com.feishin.mobile.data.model.AlbumDetailDto
 import com.feishin.mobile.data.model.AlbumDto
 import com.feishin.mobile.data.model.ArtistDetailDto
 import com.feishin.mobile.data.model.ArtistDto
+import com.feishin.mobile.data.model.ArtistInfo2Dto
 import com.feishin.mobile.data.model.GenreDto
 import com.feishin.mobile.data.model.PlaylistDetailDto
 import com.feishin.mobile.data.model.PlaylistDto
@@ -12,6 +13,7 @@ import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.AlbumDetail
 import com.feishin.mobile.domain.model.Artist
 import com.feishin.mobile.domain.model.ArtistDetail
+import com.feishin.mobile.domain.model.ArtistInfo
 import com.feishin.mobile.domain.model.Genre
 import com.feishin.mobile.domain.model.Playlist
 import com.feishin.mobile.domain.model.PlaylistDetail
@@ -59,6 +61,9 @@ fun SongDto.toDomain() = Track(
     genre = genre,
     suffix = suffix,
     starred = starred != null,
+    sizeBytes = size,
+    bitRate = bitRate,
+    path = path,
 )
 
 fun ArtistDto.toDomain() = Artist(
@@ -98,4 +103,10 @@ fun GenreDto.toDomain() = Genre(
     name = name.ifBlank { value }.ifBlank { "Unknown" },
     songCount = songCount,
     albumCount = albumCount,
+)
+
+fun ArtistInfo2Dto.toDomain() = ArtistInfo(
+    biography = biography,
+    imageUrl = largeImage ?: mediumImage ?: smallImage,
+    similarArtists = similarArtist.map { it.toDomain() },
 )

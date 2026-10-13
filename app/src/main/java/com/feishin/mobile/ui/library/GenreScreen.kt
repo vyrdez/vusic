@@ -37,7 +37,13 @@ class GenreViewModel @Inject constructor(
     private val repo: MusicDataRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
-    val genre: String = savedStateHandle.get<String>("name") ?: ""
+    // Genre names contain spaces and "&" (e.g. "Film & Animation"), so the route
+    // carries them percent-encoded. Decode only when encoded, so a framework
+    // that already decodes never gets double-decoded.
+    val genre: String = run {
+        val raw = savedStateHandle.get<String>("name") ?: ""
+        if ('%' in raw) runCatching { android.net.Uri.decode(raw) }.getOrDefault(raw) else raw
+    }
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
     private val _ui = MutableStateFlow<UiState<List<Album>>>(UiState.Loading)

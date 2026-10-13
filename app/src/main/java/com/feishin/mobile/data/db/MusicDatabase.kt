@@ -17,6 +17,7 @@ data class DownloadedTrack(
     val album: String,
     val filePath: String,
     val sizeBytes: Long = 0,
+    val coverArt: String? = null,
     val downloadedAt: Long = System.currentTimeMillis(),
 )
 
@@ -38,7 +39,7 @@ interface DownloadDao {
     suspend fun clear()
 }
 
-@androidx.room.Database(entities = [DownloadedTrack::class], version = 1, exportSchema = false)
+@androidx.room.Database(entities = [DownloadedTrack::class], version = 2, exportSchema = false)
 abstract class MusicDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
 }

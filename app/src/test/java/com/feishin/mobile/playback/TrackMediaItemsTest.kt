@@ -82,6 +82,17 @@ class TrackMediaItemsTest {
     }
 
     @Test
+    fun extrasMap_carriesCoverArtAndNavIds() {
+        // Bundle itself is stubbed on the JVM, so the mapping is tested as a pure
+        // Map; the Bundle round-trip is verified on-device (queue art after restore).
+        val info = TrackMediaItems.toMediaInfo(track, streamUrl, coverUrl)
+        val packed = TrackMediaItems.extrasMap(info)
+        assertEquals("al-1", packed[TrackMediaItems.EXTRA_COVER_ART])
+        assertEquals("ar1", packed[TrackMediaItems.EXTRA_ARTIST_ID])
+        assertEquals("al1", packed[TrackMediaItems.EXTRA_ALBUM_ID])
+    }
+
+    @Test
     fun toTrack_returnsNullForItemWithoutId() {
         assertNull(TrackMediaItems.toTrack(androidx.media3.common.MediaItem.Builder().setUri("https://host/x").build()))
     }

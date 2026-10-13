@@ -8,12 +8,14 @@ import com.feishin.mobile.core.network.SyncedLyrics
 import com.feishin.mobile.core.network.SubsonicAuth
 import com.feishin.mobile.data.auth.CredentialsStore
 import com.feishin.mobile.data.mapper.toDomain
+import com.feishin.mobile.data.model.ArtistInfo2Dto
 import com.feishin.mobile.data.remote.AuthInterceptor
 import com.feishin.mobile.data.remote.SubsonicApi
 import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.AlbumDetail
 import com.feishin.mobile.domain.model.Artist
 import com.feishin.mobile.domain.model.ArtistDetail
+import com.feishin.mobile.domain.model.ArtistInfo
 import com.feishin.mobile.domain.model.Genre
 import com.feishin.mobile.domain.model.Playlist
 import com.feishin.mobile.domain.model.PlaylistDetail
@@ -105,6 +107,33 @@ class MusicRepository @Inject constructor(
     override suspend fun artist(id: String): Result<ArtistDetail> = call {
         val r = api.getArtist(id).response
         unwrap(r.status, r.error?.message) { requireNotNull(r.artist).toDomain() }
+    }
+
+    override suspend fun artistInfo(id: String): Result<ArtistInfo> = call {
+        val r = runCatching { api.getArtistInfo2(id).response }.getOrNull()
+            ?: return@call Result.Err("Artist info not available")
+        unwrap(r.status, r.error?.message) { (r.artistInfo2 ?: ArtistInfo2Dto()).toDomain() }
+    }
+
+    override suspend fun randomSongs(size: Int, genre: String?): Result<List<Track>> = call {
+        val r = api.getRandomSongs(size, genre).response
+        unwrap(r.status, r.error?.message) { r.randomSongs?.song.orEmpty().map { it.toDomain() } }
+    }
+
+    override suspend fun topSongs(artist: String, count: Int): Result<List<Track>> = call {
+        val r = runCatching { api.getTopSongs(artist, count).response }.getOrNull()
+            ?: return@call Result.Err("Top songs not available")
+        unwrap(r.status, r.error?.message) {
+            ((r.topSongs?.track ?: emptyList()) + (r.topSongs?.song ?: emptyList()))
+                .distinctBy { it.id }.map { it.toDomain() }
+        }
+    }
+
+    override suspend fun similarSongs(songId: String?, artistId: String?, count: Int): Result<List<Track>> = call {
+        val seed = songId ?: artistId
+        val r = runCatching { api.getSimilarSongs2(seed, count).response }.getOrNull()
+            ?: return@call Result.Err("Similar songs not available")
+        unwrap(r.status, r.error?.message) { r.similarSongs2?.song.orEmpty().map { it.toDomain() } }
     }
 
     override suspend fun playlist(id: String): Result<PlaylistDetail> = call {

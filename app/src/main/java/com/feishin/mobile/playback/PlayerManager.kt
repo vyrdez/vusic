@@ -80,6 +80,10 @@ class PlayerManager @Inject constructor(
     private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
     val repeatMode: StateFlow<Int> = _repeatMode.asStateFlow()
 
+    private val _sourceName = MutableStateFlow<String?>(null)
+    /** Where the current queue is playing from (album, playlist, mix, ...). */
+    val sourceName: StateFlow<String?> = _sourceName.asStateFlow()
+
     init {
         connect()
         scope.launch {
@@ -188,6 +192,7 @@ class PlayerManager @Inject constructor(
         c.pause()
         _currentIndex.value = index
         _current.value = tracks.getOrNull(index)
+        _sourceName.value = snapshot.sourceName
         _position.value = snapshot.positionMs
         _duration.value = c.duration.takeIf { it > 0 } ?: 0L
         restored = true
@@ -200,7 +205,7 @@ class PlayerManager @Inject constructor(
             return
         }
         runCatching {
-            queueStore.save(q.map { it.song }, _currentIndex.value.coerceIn(0, q.size - 1), _position.value)
+            queueStore.save(q.map { it.song }, _currentIndex.value.coerceIn(0, q.size - 1), _position.value, _sourceName.value)
         }
     }
 
@@ -241,7 +246,7 @@ class PlayerManager @Inject constructor(
     }
 
     /** Plays [tracks] starting at [startIndex]; the caller's list is the queue. */
-    fun playAll(tracks: List<Track>, startIndex: Int = 0, shuffle: Boolean = false) {
+    fun playAll(tracks: List<Track>, startIndex: Int = 0, shuffle: Boolean = false, source: String? = null) {
         scope.launch {
             val c = controller ?: return@launch
             if (tracks.isEmpty()) return@launch
@@ -256,6 +261,7 @@ class PlayerManager @Inject constructor(
             _currentIndex.value = start
             _current.value = ordered.getOrNull(start)
             _shuffle.value = shuffle
+            if (source != null) _sourceName.value = source
             persist()
         }
     }
@@ -333,6 +339,7 @@ class PlayerManager @Inject constructor(
         _queue.value = emptyList()
         _currentIndex.value = 0
         _current.value = null
+        _sourceName.value = null
         _isPlaying.value = false
         _position.value = 0
         _duration.value = 0

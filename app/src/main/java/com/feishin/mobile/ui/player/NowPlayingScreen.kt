@@ -16,33 +16,47 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SwipeToDismissBox
@@ -58,6 +72,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +80,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -79,8 +95,20 @@ import androidx.palette.graphics.Palette
 import coil.compose.AsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
+import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.network.SyncedLyrics
+import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
+import com.feishin.mobile.ui.components.ActionTarget
+import com.feishin.mobile.ui.components.CoverImage
+import com.feishin.mobile.ui.components.EqualizerOverlay
+import com.feishin.mobile.ui.components.MarqueeTitle
+import com.feishin.mobile.ui.components.PlaylistPickerSheet
+import com.feishin.mobile.ui.components.UiMessenger
+import com.feishin.mobile.ui.components.formatDuration
+import com.feishin.mobile.ui.components.shareText
+import com.feishin.mobile.ui.theme.VusicColors
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import sh.calvin.reorderable.ReorderableItem
@@ -101,9 +129,12 @@ private fun fmt(ms: Long): String {
 fun NowPlayingScreen(
     player: PlayerManager,
     lyricsVm: LyricsViewModel = hiltViewModel(),
+    repo: MusicDataRepository,
+    messenger: com.feishin.mobile.ui.components.UiMessenger,
     onClose: () -> Unit,
     onArtist: (String) -> Unit,
     onAlbum: (String) -> Unit,
+    onActions: (ActionTarget) -> Unit,
 ) {
     BackHandler(onBack = onClose)
     val song by player.current.collectAsState()
@@ -143,6 +174,9 @@ fun NowPlayingScreen(
     val dim = content.copy(alpha = 0.72f)
 
     var showQueue by remember { mutableStateOf(false) }
+    var lyricsMode by remember { mutableStateOf(false) }
+    var showPicker by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Box(
         Modifier
@@ -151,26 +185,26 @@ fun NowPlayingScreen(
                 Brush.verticalGradient(
                     listOf(bg.copy(alpha = 1f), MaterialTheme.colorScheme.background),
                 ),
-            ),
+            )
+            .statusBarsPadding(),
     ) {
         Column(Modifier.fillMaxSize()) {
-            // Top bar.
+            // Top row: collapse, Song|Lyrics toggle, overflow.
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onClose) { Icon(Icons.Default.KeyboardArrowDown, "Close", tint = content) }
-                Text(
-                    "NOW PLAYING",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = dim,
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.Center,
-                )
-                IconButton(onClick = { showQueue = true }) { Icon(Icons.Default.QueueMusic, "Queue", tint = content) }
+                IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.KeyboardArrowDown, "Close", tint = content)
+                }
+                SongLyricsToggle(lyricsMode = lyricsMode, onSelect = { lyricsMode = it }, dim = dim)
+                IconButton(onClick = { onActions(ActionTarget.Track(current)) }, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.MoreVert, "Options", tint = content)
+                }
             }
-            // Swipe-down-to-close area: art, titles, seek, controls.
+            // Swipe-down-to-close area: art, titles, chips, seek, controls.
             var dragOffset by remember { mutableFloatStateOf(0f) }
+            if (!lyricsMode) {
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -190,13 +224,25 @@ fun NowPlayingScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Spacer(Modifier.height(8.dp))
-                AsyncImage(
+                CoverImage(
                     artUrl, current.title,
-                    modifier = Modifier.size(280.dp).clip(RoundedCornerShape(16.dp)),
-                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                    roundedDp = 16.dp,
                 )
                 Spacer(Modifier.height(16.dp))
-                Text(current.title, style = MaterialTheme.typography.headlineSmall, color = content, maxLines = 2, textAlign = TextAlign.Center)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    MarqueeTitle(
+                        text = current.title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = content,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (current.albumId?.isNotBlank() == true) {
+                        IconButton(onClick = { current.albumId?.let(onAlbum) }, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.Default.ChevronRight, "Go to album", tint = dim)
+                        }
+                    }
+                }
                 Text(
                     current.artist, style = MaterialTheme.typography.bodyLarge, color = dim, maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -204,25 +250,111 @@ fun NowPlayingScreen(
                         current.artistId?.let { onArtist(it) }
                     },
                 )
-                Text(
-                    current.album, style = MaterialTheme.typography.bodyMedium, color = dim, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.clickable(enabled = current.albumId?.isNotBlank() == true) {
-                        current.albumId?.let { onAlbum(it) }
-                    },
+                Spacer(Modifier.height(12.dp))
+                NpChipsRow(
+                    content = content,
+                    onLyrics = { lyricsMode = true },
+                    onSave = { showPicker = true },
+                    onShare = { shareText(context, "${current.title} - ${current.artist}") },
                 )
                 Spacer(Modifier.height(8.dp))
                 SeekBar(player, content)
                 Spacer(Modifier.height(4.dp))
                 ControlsRow(player, lyricsVm, current, content, dim, onOpenQueue = { showQueue = true })
+                Spacer(Modifier.height(4.dp))
+                PlayingFromRow(player = player, dim = dim, onClick = { showQueue = true })
             }
-            // Lyrics fill the rest.
-            LyricsPanel(lyricsVm, player, content, dim, modifier = Modifier.weight(1f))
+            } else {
+                LyricsPanel(lyricsVm, player, content, dim, modifier = Modifier.weight(1f))
+            }
         }
     }
 
     if (showQueue) {
-        QueueSheet(player = player, content = content, onDismiss = { showQueue = false })
+        QueueSheet(
+            player = player, repo = repo, messenger = messenger,
+            content = content, onDismiss = { showQueue = false },
+        )
+    }
+    if (showPicker) {
+        PlaylistPickerSheet(
+            tracks = listOf(current), title = current.title,
+            onDismiss = { showPicker = false }, repo = repo, messenger = messenger,
+        )
+    }
+}
+
+@Composable
+private fun SongLyricsToggle(lyricsMode: Boolean, onSelect: (Boolean) -> Unit, dim: Color) {
+    Row(
+        Modifier.clip(RoundedCornerShape(20.dp)).background(dim.copy(alpha = 0.18f)).padding(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        listOf("Song" to false, "Lyrics" to true).forEach { (label, value) ->
+            val selected = lyricsMode == value
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (selected) Color.Black else dim,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(17.dp))
+                    .background(if (selected) Color.White else Color.Transparent)
+                    .clickable { onSelect(value) }
+                    .padding(horizontal = 16.dp, vertical = 7.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun NpChipsRow(content: Color, onLyrics: () -> Unit, onSave: () -> Unit, onShare: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        NpChip("Lyrics", Icons.Default.MusicNote, content, onLyrics)
+        NpChip("Save", Icons.Default.Save, content, onSave)
+        NpChip("Share", Icons.Default.Share, content, onShare)
+        NpChip("Download", Icons.Default.Download, content, onClick = {}, enabled = false)
+    }
+}
+
+@Composable
+private fun NpChip(label: String, icon: ImageVector, content: Color, onClick: () -> Unit, enabled: Boolean = true) {
+    Row(
+        Modifier.clip(RoundedCornerShape(20.dp))
+            .background(content.copy(alpha = if (enabled) 0.14f else 0.07f))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, label, tint = content.copy(alpha = if (enabled) 1f else 0.4f), modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            if (enabled) label else "$label • soon",
+            style = MaterialTheme.typography.labelLarge,
+            color = content.copy(alpha = if (enabled) 1f else 0.4f),
+        )
+    }
+}
+
+@Composable
+private fun PlayingFromRow(player: PlayerManager, dim: Color, onClick: () -> Unit) {
+    val source by player.sourceName.collectAsState()
+    Column(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.width(40.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(dim.copy(alpha = 0.5f)))
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Playing from ${source ?: "Queue"}",
+            style = MaterialTheme.typography.bodySmall, color = dim,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -283,11 +415,16 @@ private fun ControlsRow(
         IconButton(onClick = { player.skipToPrevious() }) {
             Icon(Icons.Default.SkipPrevious, "Previous", tint = content, modifier = Modifier.size(36.dp))
         }
-        IconButton(onClick = { player.togglePlayPause() }, modifier = Modifier.size(72.dp)) {
-            Icon(
-                if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play",
-                tint = content, modifier = Modifier.size(56.dp),
-            )
+        IconButton(onClick = { player.togglePlayPause() }, modifier = Modifier.size(76.dp)) {
+            Box(
+                Modifier.size(72.dp).clip(CircleShape).background(Color.White),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play",
+                    tint = Color.Black, modifier = Modifier.size(40.dp),
+                )
+            }
         }
         IconButton(onClick = { player.skipToNext() }) {
             Icon(Icons.Default.SkipNext, "Next", tint = content, modifier = Modifier.size(36.dp))
@@ -385,21 +522,47 @@ private fun SyncedLyricsList(
 @Composable
 fun QueueSheet(
     player: PlayerManager,
+    repo: MusicDataRepository,
+    messenger: UiMessenger,
     content: Color = MaterialTheme.colorScheme.onSurface,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val queue by player.queue.collectAsState()
     val currentIndex by player.currentIndex.collectAsState()
+    val sourceName by player.sourceName.collectAsState()
+    val isPlaying by player.isPlaying.collectAsState()
+    val scope = rememberCoroutineScope()
+    var showSaveDialog by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Box(Modifier.width(40.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(VusicColors.SecondaryText))
+            }
+            Spacer(Modifier.height(8.dp))
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Queue (${queue.size})", style = MaterialTheme.typography.titleMedium)
+                Column(Modifier.weight(1f)) {
+                    Text("Playing from", style = MaterialTheme.typography.labelMedium, color = VusicColors.SecondaryText)
+                    Text(
+                        sourceName ?: "Queue (${queue.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Save",
+                        style = MaterialTheme.typography.labelLarge, color = Color.Black,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp)).background(Color.White)
+                            .clickable { showSaveDialog = true }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
                     TextButton(onClick = { player.clear() }) { Text("Clear") }
                     IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close") }
                 }
@@ -442,13 +605,23 @@ fun QueueSheet(
                                     .padding(12.dp, 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                val artUrl = player.coverArtUrl(item.song.coverArt, 128)
+                                Box(Modifier.size(56.dp), contentAlignment = Alignment.BottomStart) {
+                                    CoverImage(artUrl, item.song.title, modifier = Modifier.size(56.dp), roundedDp = 4.dp)
+                                    if (idx == currentIndex && isPlaying) {
+                                        EqualizerOverlay(Modifier.padding(6.dp))
+                                    }
+                                }
+                                Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(
                                         item.song.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                         fontWeight = if (idx == currentIndex) FontWeight.Bold else null,
                                     )
                                     Text(
-                                        item.song.artist, style = MaterialTheme.typography.bodySmall,
+                                        "${item.song.artist} • ${formatDuration(item.song.durationSec)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = VusicColors.SecondaryText,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     )
                                 }
@@ -465,5 +638,42 @@ fun QueueSheet(
             }
             Spacer(Modifier.height(32.dp))
         }
+    }
+
+    if (showSaveDialog) {
+        var name by remember { mutableStateOf("") }
+        var busy by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { showSaveDialog = false },
+            title = { Text("Save queue as playlist") },
+            text = {
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it },
+                    label = { Text("Playlist name") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = name.isNotBlank() && !busy && queue.isNotEmpty(),
+                    onClick = {
+                        busy = true
+                        scope.launch {
+                            when (repo.createPlaylist(name.trim(), queue.map { it.song.id })) {
+                                is Result.Ok -> {
+                                    messenger.show("Saved playlist $name")
+                                    showSaveDialog = false
+                                }
+                                is Result.Err -> {
+                                    messenger.show("Could not save playlist")
+                                    busy = false
+                                }
+                            }
+                        }
+                    },
+                ) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") } },
+        )
     }
 }

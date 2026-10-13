@@ -53,6 +53,10 @@ data class SubsonicResponse(
     val genres: GenresDto? = null,
     val lyrics: LyricsDto? = null,
     val lyricsList: LyricsListDto? = null,
+    val randomSongs: RandomSongsDto? = null,
+    val topSongs: TopSongsDto? = null,
+    val similarSongs2: SimilarSongs2Dto? = null,
+    val artistInfo2: ArtistInfo2Dto? = null,
 )
 
 @Serializable
@@ -248,3 +252,41 @@ object SyncedLineDtoListSerializer : SingleOrListSerializer<SyncedLineDto>(Synce
 
 @Serializable
 data class PlainLyricsDto(val value: String = "")
+
+@Serializable
+data class RandomSongsDto(
+    @Serializable(with = SongDtoListSerializer::class)
+    val song: List<SongDto> = emptyList(),
+)
+
+/**
+ * getTopSongs: Subsonic returns `track` elements; some servers return `song`.
+ * Both are accepted and merged.
+ */
+@Serializable
+data class TopSongsDto(
+    val artist: String = "",
+    @Serializable(with = SongDtoListSerializer::class)
+    val track: List<SongDto> = emptyList(),
+    @Serializable(with = SongDtoListSerializer::class)
+    val song: List<SongDto> = emptyList(),
+)
+
+@Serializable
+data class SimilarSongs2Dto(
+    @Serializable(with = SongDtoListSerializer::class)
+    val song: List<SongDto> = emptyList(),
+)
+
+/** getArtistInfo2. Every field is optional; servers differ wildly. */
+@Serializable
+data class ArtistInfo2Dto(
+    val biography: String = "",
+    val musicBrainzId: String? = null,
+    val lastFmUrl: String? = null,
+    val smallImage: String? = null,
+    val mediumImage: String? = null,
+    val largeImage: String? = null,
+    @Serializable(with = ArtistDtoListSerializer::class)
+    val similarArtist: List<ArtistDto> = emptyList(),
+)

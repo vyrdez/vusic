@@ -103,4 +103,25 @@ interface SubsonicApi {
     /** OpenSubsonic structured lyrics (synced lines when the server has them). */
     @GET("getLyricsBySongId.view")
     suspend fun getLyricsBySongId(@Query("id") id: String): SubsonicEnvelope
+
+    @GET("getRandomSongs.view")
+    suspend fun getRandomSongs(
+        @Query("size") size: Int = 20,
+        @Query("genre") genre: String? = null,
+    ): SubsonicEnvelope
+
+    @GET("getTopSongs.view")
+    suspend fun getTopSongs(
+        @Query("artist") artist: String,
+        @Query("count") count: Int = 10,
+    ): SubsonicEnvelope
+
+    @GET("getSimilarSongs2.view")
+    suspend fun getSimilarSongs2(
+        @Query("id") id: String? = null,
+        @Query("count") count: Int = 25,
+    ): SubsonicEnvelope
+
+    @GET("getArtistInfo2.view")
+    suspend fun getArtistInfo2(@Query("id") id: String): SubsonicEnvelope
 }

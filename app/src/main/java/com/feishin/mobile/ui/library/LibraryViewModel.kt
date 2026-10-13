@@ -1,5 +1,6 @@
 package com.feishin.mobile.ui.library
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feishin.mobile.domain.model.Album
@@ -18,12 +19,18 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-enum class LibraryTab { ALBUMS, ARTISTS, GENRES, PLAYLISTS, FAVORITES }
+enum class LibraryTab { PLAYLISTS, ALBUMS, ARTISTS, SONGS, FAVORITES }
 enum class SortOrder { NAME_ASC, NAME_DESC, YEAR_DESC, PLAYS_DESC }
 
 @HiltViewModel
-class LibraryViewModel @Inject constructor(private val repo: MusicDataRepository) : ViewModel() {
-    private val _tab = MutableStateFlow(LibraryTab.ALBUMS)
+class LibraryViewModel @Inject constructor(
+    private val repo: MusicDataRepository,
+    savedStateHandle: SavedStateHandle,
+) : ViewModel() {
+    private val _tab = MutableStateFlow(
+        runCatching { LibraryTab.valueOf(savedStateHandle.get<String>("tab") ?: "ALBUMS") }
+            .getOrDefault(LibraryTab.ALBUMS),
+    )
     val tab: StateFlow<LibraryTab> = _tab.asStateFlow()
 
     private val _grid = MutableStateFlow(true)
@@ -47,6 +54,9 @@ class LibraryViewModel @Inject constructor(private val repo: MusicDataRepository
     private val _favs = MutableStateFlow<UiState<StarredCollection>>(UiState.Loading)
     val favs: StateFlow<UiState<StarredCollection>> = _favs.asStateFlow()
 
+    private val _songs = MutableStateFlow<UiState<List<Track>>>(UiState.Loading)
+    val songs: StateFlow<UiState<List<Track>>> = _songs.asStateFlow()
+
     private var albumOffset = 0
     private val albumAccum = mutableListOf<Album>()
     private var albumEnd = false
@@ -65,9 +75,10 @@ class LibraryViewModel @Inject constructor(private val repo: MusicDataRepository
     fun refresh() {
         loadAlbums(reset = true)
         loadArtists()
-        loadGenres()
+        refreshGenres()
         loadPlaylists()
         loadFavs()
+        loadSongs()
     }
 
     fun loadAlbums(reset: Boolean = false) {
@@ -114,7 +125,7 @@ class LibraryViewModel @Inject constructor(private val repo: MusicDataRepository
         }
     }
 
-    private fun loadGenres() {
+    fun refreshGenres() {
         viewModelScope.launch {
             _genres.value = UiState.Loading
             _genres.value = when (val r = repo.genres()) {
@@ -142,6 +153,16 @@ class LibraryViewModel @Inject constructor(private val repo: MusicDataRepository
                     val v = r.value
                     if (v.artists.isEmpty() && v.albums.isEmpty() && v.tracks.isEmpty()) UiState.Empty else UiState.Data(v)
                 }
+                is Result.Err -> UiState.Error(r.message)
+            }
+        }
+    }
+
+    private fun loadSongs() {
+        viewModelScope.launch {
+            _songs.value = UiState.Loading
+            _songs.value = when (val r = repo.randomSongs(500)) {
+                is Result.Ok -> if (r.value.isEmpty()) UiState.Empty else UiState.Data(r.value)
                 is Result.Err -> UiState.Error(r.message)
             }
         }

@@ -9,9 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -27,13 +24,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.ContentScale
 import com.feishin.mobile.playback.PlayerManager
 
-/** Docked above the bottom nav. Tap opens Now Playing, swipe up expands it,
+/** Docked directly above the nav bar. Tap or swipe up opens Now Playing,
  *  swipe left/right skips tracks. Hidden when the queue is empty. */
 @Composable
 fun MiniPlayer(player: PlayerManager, onOpen: () -> Unit, modifier: Modifier = Modifier) {
@@ -50,7 +48,7 @@ fun MiniPlayer(player: PlayerManager, onOpen: () -> Unit, modifier: Modifier = M
     Column(
         modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .padding(horizontal = 8.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable(onClick = onOpen)
@@ -80,11 +78,9 @@ fun MiniPlayer(player: PlayerManager, onOpen: () -> Unit, modifier: Modifier = M
             Modifier.fillMaxWidth().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AsyncImage(
-                player.coverArtUrl(song.coverArt, 128),
-                song.title,
-                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)),
-                contentScale = ContentScale.Crop,
+            CoverImage(
+                player.coverArtUrl(song.coverArt, 128), song.title,
+                modifier = Modifier.size(48.dp), roundedDp = 8.dp,
             )
             Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
                 Text(
@@ -107,23 +103,19 @@ fun MiniPlayer(player: PlayerManager, onOpen: () -> Unit, modifier: Modifier = M
                 Icon(Icons.Default.SkipNext, "Next track")
             }
         }
-        Row(
-            Modifier.fillMaxWidth().height(2.dp).padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
+        Row(Modifier.fillMaxWidth().height(2.dp)) {
+            androidx.compose.foundation.layout.Box(
                 Modifier
                     .weight(progress.coerceAtLeast(0.001f))
                     .height(2.dp)
                     .background(MaterialTheme.colorScheme.primary),
-            ) {}
-            Column(
+            )
+            androidx.compose.foundation.layout.Box(
                 Modifier
                     .weight((1f - progress).coerceAtLeast(0.001f))
                     .height(2.dp)
                     .background(MaterialTheme.colorScheme.surface),
-            ) {}
+            )
         }
-        androidx.compose.foundation.layout.Spacer(Modifier.height(2.dp))
     }
 }

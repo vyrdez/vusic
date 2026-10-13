@@ -1,4 +1,4 @@
-# Feishin Mobile
+# Vusic
 
 Android music player streaming from a Navidrome server via the Subsonic/OpenSubsonic API.
 Kotlin, Jetpack Compose + Material 3 (dark default), Hilt, Retrofit, Media3, Coil, DataStore, Room.
