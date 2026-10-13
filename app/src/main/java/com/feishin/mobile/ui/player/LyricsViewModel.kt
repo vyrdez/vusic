@@ -71,17 +71,4 @@ class LyricsViewModel @Inject constructor(
             }
         }
     }
-
-    /**
-     * Sets the star state optimistically: the caller flips its UI first, and this
-     * reports back the confirmed state (reverted on server failure).
-     */
-    fun setStarred(track: Track, starred: Boolean, onDone: (Boolean) -> Unit = {}) {
-        viewModelScope.launch {
-            when (repo.starTrack(track.id, starred)) {
-                is Result.Ok -> onDone(starred)
-                is Result.Err -> onDone(track.starred)
-            }
-        }
-    }
 }

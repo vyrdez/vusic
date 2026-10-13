@@ -63,7 +63,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.feishin.mobile.core.common.PlaylistDuplicates
 import com.feishin.mobile.core.common.Result
+import com.feishin.mobile.data.favorites.FAVORITE_SONGS_PLAYLIST_ID
+import com.feishin.mobile.data.favorites.FavoritesStore
+import com.feishin.mobile.data.favorites.PlaylistEvent
+import com.feishin.mobile.data.favorites.PlaylistEvents
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.data.settings.speedDialKey
 import com.feishin.mobile.domain.model.Album
@@ -100,6 +105,9 @@ fun EntityActionsSheet(
     repo: MusicDataRepository,
     settings: SettingsStore,
     messenger: UiMessenger,
+    favs: FavoritesStore,
+    playlistEvents: PlaylistEvents? = null,
+    onStartRadio: () -> Unit = {},
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
 ) {
@@ -107,10 +115,10 @@ fun EntityActionsSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         when (target) {
-            is ActionTarget.Track -> TrackSheetContent(target.track, onDismiss, player, repo, settings, messenger, onAlbum, onArtist)
-            is ActionTarget.Album -> AlbumSheetContent(target.album, target.tracks, onDismiss, player, repo, settings, messenger, onAlbum, onArtist)
-            is ActionTarget.Artist -> ArtistSheetContent(target.artist, onDismiss, player, repo, settings, messenger, onAlbum, onArtist)
-            is ActionTarget.Playlist -> PlaylistSheetContent(target.playlist, target.tracks, onDismiss, player, repo, settings, messenger, onAlbum, onArtist)
+            is ActionTarget.Track -> TrackSheetContent(target.track, onDismiss, player, repo, settings, messenger, favs, playlistEvents, onStartRadio, onAlbum, onArtist)
+            is ActionTarget.Album -> AlbumSheetContent(target.album, target.tracks, onDismiss, player, repo, settings, messenger, playlistEvents, onStartRadio, onAlbum, onArtist)
+            is ActionTarget.Artist -> ArtistSheetContent(target.artist, onDismiss, player, repo, settings, messenger, playlistEvents, onStartRadio, onAlbum, onArtist)
+            is ActionTarget.Playlist -> PlaylistSheetContent(target.playlist, target.tracks, onDismiss, player, repo, settings, messenger, playlistEvents, onAlbum, onArtist)
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -214,12 +222,25 @@ private fun TrackSheetContent(
     repo: MusicDataRepository,
     settings: SettingsStore,
     messenger: UiMessenger,
+    favs: FavoritesStore,
+    playlistEvents: PlaylistEvents?,
+    onStartRadio: () -> Unit,
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var starred by remember(track.id) { mutableStateOf(track.starred) }
+    // Guarded optimistic star + convergence to the server collection, like the
+    // Now Playing chip: the passed track snapshot can be stale.
+    var starring by remember(track.id) { mutableStateOf(false) }
+    val favTracks by favs.tracks.collectAsState()
+    val favsLoaded by favs.loaded.collectAsState()
+    LaunchedEffect(track.id, favTracks, favsLoaded) {
+        if (favsLoaded && !starring) {
+            starred = favTracks.any { it.id == track.id }
+        }
+    }
     var showPicker by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
     val pins by settings.flow.collectAsState(initial = null)
@@ -234,16 +255,19 @@ private fun TrackSheetContent(
     SheetHeader(
         title = track.title, subtitle = track.artist, starred = starred, starEnabled = true,
         onStar = {
+            if (starring) return@SheetHeader
             val next = !starred
             starred = next
+            starring = true
             scope.launch {
-                when (repo.starTrack(track.id, next)) {
+                when (favs.setTrackStarred(track.id, next)) {
                     is Result.Ok -> messenger.show(if (next) "Saved to library" else "Removed from library")
                     is Result.Err -> {
                         starred = !next
                         messenger.show("Could not update favorite")
                     }
                 }
+                starring = false
             }
         },
         onClose = onDismiss,
@@ -261,17 +285,11 @@ private fun TrackSheetContent(
         },
     )
     SheetRow("Start radio", Icons.Default.Radio, onClick = {
-        scope.launch {
-            when (val r = repo.similarSongs(track.id, track.artistId, 25)) {
-                is Result.Ok -> {
-                    if (r.value.isEmpty()) messenger.show("No similar songs found")
-                    else player.playNextAll(r.value)
-                    messenger.show("Radio: ${track.title}")
-                }
-                is Result.Err -> messenger.show("Radio unavailable")
-            }
-            onDismiss()
-        }
+        // The seed starts instantly as item 1; the 20-song batch fills in
+        // behind it and endless appends keep it going.
+        player.startRadio(track) { messenger.show("Your library is empty") }
+        onDismiss()
+        onStartRadio()
     })
     SheetRow("Add to queue", Icons.Default.QueueMusic, onClick = {
         player.addToEnd(track)
@@ -281,16 +299,19 @@ private fun TrackSheetContent(
     SheetRow(if (starred) "Remove from library" else "Save to library",
         if (starred) Icons.Default.BookmarkAdded else Icons.Default.BookmarkAdd,
         onClick = {
+            if (starring) return@SheetRow
             val next = !starred
             starred = next
+            starring = true
             scope.launch {
-                when (repo.starTrack(track.id, next)) {
+                when (favs.setTrackStarred(track.id, next)) {
                     is Result.Ok -> messenger.show(if (next) "Saved to library" else "Removed from library")
                     is Result.Err -> {
                         starred = !next
                         messenger.show("Could not update favorite")
                     }
                 }
+                starring = false
             }
         })
     SheetRow("Download", Icons.Default.Download, onClick = {}, enabled = false, trailing = "Coming soon")
@@ -309,7 +330,7 @@ private fun TrackSheetContent(
     })
 
     if (showPicker) {
-        PlaylistPickerSheet(tracks = listOf(track), title = track.title, onDismiss = { showPicker = false }, repo = repo, messenger = messenger)
+        PlaylistPickerSheet(tracks = listOf(track), title = track.title, onDismiss = { showPicker = false }, repo = repo, messenger = messenger, playlistEvents = playlistEvents)
     }
     if (showDetails) {
         TrackDetailsDialog(track = track, onDismiss = { showDetails = false })
@@ -327,6 +348,8 @@ private fun AlbumSheetContent(
     repo: MusicDataRepository,
     settings: SettingsStore,
     messenger: UiMessenger,
+    playlistEvents: PlaylistEvents?,
+    onStartRadio: () -> Unit,
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
 ) {
@@ -362,7 +385,7 @@ private fun AlbumSheetContent(
             starred = next
             scope.launch {
                 when (repo.starAlbum(album.id, next)) {
-                    is Result.Ok -> Unit
+                    is Result.Ok -> playlistEvents?.emit(PlaylistEvent.FavoritesChanged)
                     is Result.Err -> {
                         starred = !next
                         messenger.show("Could not update favorite")
@@ -400,16 +423,17 @@ private fun AlbumSheetContent(
         onDismiss()
     })
     SheetRow("Start radio", Icons.Default.Radio, onClick = {
+        // The album's first song is the seed and starts instantly.
         scope.launch {
-            val seed = tracks.firstOrNull()?.id ?: album.id
-            when (val r = repo.similarSongs(seed, album.artistId, 25)) {
-                is Result.Ok -> {
-                    if (r.value.isEmpty()) messenger.show("No similar songs found")
-                    else player.playAll(r.value, source = "Radio: ${album.name}")
-                }
-                is Result.Err -> messenger.show("Radio unavailable")
+            val seed = tracks.firstOrNull()
+                ?: (repo.album(album.id) as? Result.Ok)?.value?.tracks?.firstOrNull()
+            if (seed == null) {
+                messenger.show("No tracks found for ${album.name}")
+            } else {
+                player.startRadio(seed) { messenger.show("Your library is empty") }
+                onDismiss()
+                onStartRadio()
             }
-            onDismiss()
         }
     })
     SheetRow("Download", Icons.Default.Download, onClick = {}, enabled = false, trailing = "Coming soon")
@@ -425,7 +449,7 @@ private fun AlbumSheetContent(
     })
 
     if (showPicker) {
-        PlaylistPickerSheet(tracks = tracks, title = album.name, onDismiss = { showPicker = false }, repo = repo, messenger = messenger)
+        PlaylistPickerSheet(tracks = tracks, title = album.name, onDismiss = { showPicker = false }, repo = repo, messenger = messenger, playlistEvents = playlistEvents)
     }
     if (showDetails && knownDetail != null) {
         AlbumDetailsDialog(detail = knownDetail, onDismiss = { showDetails = false })
@@ -448,6 +472,8 @@ private fun ArtistSheetContent(
     repo: MusicDataRepository,
     settings: SettingsStore,
     messenger: UiMessenger,
+    playlistEvents: PlaylistEvents?,
+    onStartRadio: () -> Unit,
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
 ) {
@@ -490,7 +516,7 @@ private fun ArtistSheetContent(
             starred = next
             scope.launch {
                 when (repo.starArtist(artist.id, next)) {
-                    is Result.Ok -> Unit
+                    is Result.Ok -> playlistEvents?.emit(PlaylistEvent.FavoritesChanged)
                     is Result.Err -> {
                         starred = !next
                         messenger.show("Could not update favorite")
@@ -512,15 +538,16 @@ private fun ArtistSheetContent(
     SheetRow("Shuffle all", Icons.Default.Shuffle, onClick = { withTracks { player.playAll(it, shuffle = true, source = artist.name) } }, enabled = !gathering)
     SheetRow("Add all to queue", Icons.Default.QueueMusic, onClick = { withTracks { player.addAllToEnd(it) } }, enabled = !gathering)
     SheetRow("Start radio", Icons.Default.Radio, onClick = {
+        // Seed with one of the artist's top songs; it starts instantly.
         scope.launch {
-            when (val r = repo.similarSongs(null, artist.id, 25)) {
-                is Result.Ok -> {
-                    if (r.value.isEmpty()) messenger.show("No similar songs found")
-                    else player.playAll(r.value, source = "Radio: ${artist.name}")
-                }
-                is Result.Err -> messenger.show("Radio unavailable")
+            val seed = (repo.topSongs(artist.name, 5) as? Result.Ok)?.value?.firstOrNull()
+            if (seed == null) {
+                messenger.show("No tracks found for ${artist.name}")
+            } else {
+                player.startRadio(seed) { messenger.show("Your library is empty") }
+                onDismiss()
+                onStartRadio()
             }
-            onDismiss()
         }
     })
 }
@@ -536,9 +563,11 @@ private fun PlaylistSheetContent(
     repo: MusicDataRepository,
     settings: SettingsStore,
     messenger: UiMessenger,
+    playlistEvents: PlaylistEvents?,
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
 ) {
+    val isVirtual = playlist.id == FAVORITE_SONGS_PLAYLIST_ID
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var showPicker by remember { mutableStateOf(false) }
@@ -585,15 +614,27 @@ private fun PlaylistSheetContent(
         messenger.show("Added to queue: ${playlist.name}")
         onDismiss()
     })
-    SheetRow(if (pinned) "Unpin from Speed dial" else "Pin to Speed dial", Icons.Default.PushPin, onClick = {
-        scope.launch {
-            settings.setPinned(pinKey, !pinned)
-            messenger.show(if (!pinned) "Pinned to Speed dial" else "Unpinned from Speed dial")
-        }
-    })
+    if (isVirtual && tracks.isNotEmpty()) {
+        // The Favorite songs collection can't be deleted or renamed; its menu
+        // offers playback plus collecting into other playlists.
+        SheetRow("Play next", Icons.AutoMirrored.Filled.PlaylistPlay, onClick = {
+            player.playNextAll(tracks)
+            messenger.show("Playing next: ${playlist.name}")
+            onDismiss()
+        })
+        SheetRow("Add all to playlist", Icons.AutoMirrored.Filled.PlaylistAdd, onClick = { showPicker = true })
+    }
+    if (!isVirtual) {
+        SheetRow(if (pinned) "Unpin from Speed dial" else "Pin to Speed dial", Icons.Default.PushPin, onClick = {
+            scope.launch {
+                settings.setPinned(pinKey, !pinned)
+                messenger.show(if (!pinned) "Pinned to Speed dial" else "Unpinned from Speed dial")
+            }
+        })
+    }
 
     if (showPicker) {
-        PlaylistPickerSheet(tracks = tracks, title = playlist.name, onDismiss = { showPicker = false }, repo = repo, messenger = messenger)
+        PlaylistPickerSheet(tracks = tracks, title = playlist.name, onDismiss = { showPicker = false }, repo = repo, messenger = messenger, playlistEvents = playlistEvents)
     }
 }
 
@@ -607,15 +648,41 @@ fun PlaylistPickerSheet(
     onDismiss: () -> Unit,
     repo: MusicDataRepository,
     messenger: UiMessenger,
+    playlistEvents: PlaylistEvents? = null,
 ) {
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
     var playlists by remember { mutableStateOf<List<Playlist>?>(null) }
     var showNew by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    var pending by remember { mutableStateOf<PendingDupCheck?>(null) }
 
     LaunchedEffect(Unit) {
         playlists = (repo.playlists() as? Result.Ok)?.value
+    }
+
+    suspend fun addAndReport(playlistId: String, playlistName: String, toAdd: List<Track>, skipped: Int) {
+        // Skip-only (everything was already there) needs no server call.
+        if (toAdd.isEmpty()) {
+            messenger.show(if (skipped > 0) "Skipped $skipped" else "Nothing to add")
+            busy = false
+            onDismiss()
+            return
+        }
+        when (repo.addToPlaylist(playlistId, toAdd.map { it.id })) {
+            is Result.Ok -> {
+                messenger.show(
+                    if (skipped > 0) "Added ${toAdd.size}, skipped $skipped"
+                    else "Saved ${toAdd.size} to $playlistName",
+                )
+                playlistEvents?.emit(PlaylistEvent.TracksAdded(playlistId))
+                onDismiss()
+            }
+            is Result.Err -> {
+                messenger.show("Could not save to $playlistName")
+                busy = false
+            }
+        }
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -652,15 +719,21 @@ fun PlaylistPickerSheet(
                                     if (busy) return@SheetRow
                                     busy = true
                                     scope.launch {
-                                        when (repo.addToPlaylist(p.id, tracks.map { it.id })) {
-                                            is Result.Ok -> {
-                                                messenger.show("Saved ${tracks.size} to ${p.name}")
-                                                onDismiss()
-                                            }
-                                            is Result.Err -> {
-                                                messenger.show("Could not save to ${p.name}")
-                                                busy = false
-                                            }
+                                        val detail = (repo.playlist(p.id) as? Result.Ok)?.value
+                                        if (detail == null) {
+                                            messenger.show("Could not open ${p.name}")
+                                            busy = false
+                                            return@launch
+                                        }
+                                        val part = PlaylistDuplicates.partition(
+                                            detail.tracks.map { it.id }.toSet(), tracks,
+                                        )
+                                        if (part.duplicates.isEmpty()) {
+                                            addAndReport(p.id, p.name, part.fresh, 0)
+                                        } else {
+                                            // Ask before adding: skip, add anyway, or cancel.
+                                            pending = PendingDupCheck(p.id, p.name, part)
+                                            busy = false
                                         }
                                     }
                                 })
@@ -671,6 +744,24 @@ fun PlaylistPickerSheet(
             }
             Spacer(Modifier.height(24.dp))
         }
+    }
+
+    pending?.let { pd ->
+        DuplicateConfirmDialog(
+            dupCount = pd.partition.duplicates.size,
+            playlistName = pd.playlistName,
+            onSkip = {
+                pending = null
+                busy = true
+                scope.launch { addAndReport(pd.playlistId, pd.playlistName, pd.partition.fresh, pd.partition.duplicates.size) }
+            },
+            onAddAnyway = {
+                pending = null
+                busy = true
+                scope.launch { addAndReport(pd.playlistId, pd.playlistName, tracks, 0) }
+            },
+            onCancel = { pending = null },
+        )
     }
 
     if (showNew) {
@@ -708,6 +799,44 @@ fun PlaylistPickerSheet(
             dismissButton = { TextButton(onClick = { showNew = false }) { Text("Cancel") } },
         )
     }
+}
+
+// ---------- Duplicate confirmation ----------
+
+private data class PendingDupCheck(
+    val playlistId: String,
+    val playlistName: String,
+    val partition: PlaylistDuplicates.Partition,
+)
+
+/**
+ * "X songs are already in this playlist": skip the duplicates, add everything
+ * anyway, or cancel.
+ */
+@Composable
+fun DuplicateConfirmDialog(
+    dupCount: Int,
+    playlistName: String,
+    onSkip: () -> Unit,
+    onAddAnyway: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Already in playlist") },
+        text = {
+            Text(
+                "$dupCount song${if (dupCount == 1) " is" else "s are"} already in \"$playlistName\".",
+            )
+        },
+        confirmButton = { TextButton(onClick = onSkip) { Text("Skip duplicates") } },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onAddAnyway) { Text("Add anyway") }
+                TextButton(onClick = onCancel) { Text("Cancel") }
+            }
+        },
+    )
 }
 
 // ---------- Details dialogs ----------

@@ -16,12 +16,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,7 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
@@ -41,10 +41,8 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Save
@@ -80,10 +78,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -93,10 +89,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.common.Player
 import androidx.palette.graphics.Palette
-import coil.compose.AsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
 import com.feishin.mobile.core.common.Result
+import com.feishin.mobile.data.favorites.FavoritesStore
+import com.feishin.mobile.data.favorites.PlaylistEvents
 import com.feishin.mobile.core.network.SyncedLyrics
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
@@ -128,6 +125,8 @@ fun NowPlayingScreen(
     player: PlayerManager,
     lyricsVm: LyricsViewModel = hiltViewModel(),
     repo: MusicDataRepository,
+    favs: FavoritesStore,
+    playlistEvents: PlaylistEvents,
     messenger: com.feishin.mobile.ui.components.UiMessenger,
     onClose: () -> Unit,
     onArtist: (String) -> Unit,
@@ -139,9 +138,11 @@ fun NowPlayingScreen(
     val current = song
     LaunchedEffect(current?.id) { lyricsVm.load(current) }
     if (current == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Nothing playing", color = MaterialTheme.colorScheme.onSurface)
-        }
+        // Unreachable while the scaffold only shows this overlay when something
+        // is playing. Never render a placeholder here: a transparent box with
+        // text would overlay whatever screen is underneath. Just close.
+        LaunchedEffect(Unit) { onClose() }
+        Box(Modifier.fillMaxSize())
         return
     }
 
@@ -181,6 +182,20 @@ fun NowPlayingScreen(
     var lyricsMode by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // A fresh queue (empty -> non-empty, e.g. playback after Clear) must not
+    // inherit a stale open-sheet flag from the previous session.
+    val queue by player.queue.collectAsState()
+    var hadEmptyQueue by remember { mutableStateOf(queue.isEmpty()) }
+    LaunchedEffect(queue.isEmpty()) {
+        if (queue.isEmpty()) {
+            hadEmptyQueue = true
+        } else if (hadEmptyQueue) {
+            hadEmptyQueue = false
+            showQueue = false
+            showPicker = false
+        }
+    }
 
     Box(
         Modifier
@@ -190,7 +205,8 @@ fun NowPlayingScreen(
                 // behind bleed through. The tint fades to near-black instead.
                 Brush.verticalGradient(listOf(bg, bgMid, VusicColors.Background)),
             )
-            .statusBarsPadding(),
+            .statusBarsPadding()
+            .navigationBarsPadding(),
     ) {
         Column(Modifier.fillMaxSize()) {
             // Top row: collapse far left, Song|Lyrics pill centred, ⋮ far right.
@@ -211,72 +227,123 @@ fun NowPlayingScreen(
             // Swipe-down-to-close area: art, titles, chips, seek, controls.
             var dragOffset by remember { mutableFloatStateOf(0f) }
             if (!lyricsMode) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .offset { IntOffset(0, dragOffset.roundToInt()) }
-                    .pointerInput(Unit) {
-                        detectVerticalDragGestures(
-                            onDragEnd = {
-                                if (dragOffset > 260f) onClose()
-                                dragOffset = 0f
-                            },
-                            onVerticalDrag = { _, amount ->
-                                if (amount > 0) dragOffset = (dragOffset + amount).coerceAtMost(700f)
-                            },
-                        )
-                    }
-                    .padding(horizontal = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Spacer(Modifier.height(8.dp))
-                // Cap the art so the title, chips, seek bar and controls always fit
-                // on screen (short devices / landscape otherwise push them off).
-                CoverImage(
-                    artUrl, current.title,
-                    modifier = Modifier.fillMaxWidth(0.82f).aspectRatio(1f),
-                    roundedDp = 16.dp,
-                )
-                Spacer(Modifier.height(16.dp))
-                // Title row: balanced 48dp slots on both sides keep the text
-                // visually centred; short titles are centred, long ones marquee.
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Spacer(Modifier.size(48.dp))
-                    MarqueeTitle(
-                        text = current.title,
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = content,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f),
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                // Nearly full-width art (16dp gutters) that still leaves room
+                // for everything below it on short screens: capped by height.
+                // Landscape/short screens get a compact budget instead.
+                val compact = maxHeight < 600.dp
+                val artSide = if (compact) {
+                    minOf(maxWidth * 0.5f, maxHeight * 0.30f)
+                } else {
+                    minOf(maxWidth - 32.dp, maxHeight * 0.42f)
+                }
+                val gapTop = if (compact) 12.dp else 24.dp
+                val gapArtTitle = if (compact) 8.dp else 12.dp
+                val gapArtistChips = if (compact) 8.dp else 18.dp
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .offset { IntOffset(0, dragOffset.roundToInt()) }
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures(
+                                onDragEnd = {
+                                    if (dragOffset > 260f) onClose()
+                                    dragOffset = 0f
+                                },
+                                onVerticalDrag = { _, amount ->
+                                    if (amount > 0) dragOffset = (dragOffset + amount).coerceAtMost(700f)
+                                },
+                            )
+                        }
+                        .padding(horizontal = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Spacer(Modifier.height(gapTop))
+                    CoverImage(
+                        artUrl, current.title,
+                        modifier = Modifier.size(artSide),
+                        roundedDp = 16.dp,
                     )
-                    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                        if (current.albumId?.isNotBlank() == true) {
-                            IconButton(onClick = { current.albumId?.let(onAlbum) }, modifier = Modifier.size(48.dp)) {
-                                Icon(Icons.Default.ChevronRight, "Go to album", tint = dim)
+                    Spacer(Modifier.height(gapArtTitle))
+                    // Title row: balanced 48dp slots on both sides keep the text
+                    // visually centred; short titles are centred, long ones marquee.
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(Modifier.size(48.dp))
+                        MarqueeTitle(
+                            text = current.title,
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = content,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                            if (current.albumId?.isNotBlank() == true) {
+                                IconButton(onClick = { current.albumId?.let(onAlbum) }, modifier = Modifier.size(48.dp)) {
+                                    Icon(Icons.Default.ChevronRight, "Go to album", tint = dim)
+                                }
                             }
                         }
                     }
+                    // Artist: centred when short, marquee with a clean ellipsis
+                    // when long (multi-artist "A / B / C" included).
+                    MarqueeTitle(
+                        text = current.artist,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = dim,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                            .clickable(enabled = current.artistId?.isNotBlank() == true) {
+                                current.artistId?.let { onArtist(it) }
+                            },
+                    )
+                    Spacer(Modifier.height(gapArtistChips))
+                    // Optimistic favorite toggle with rollback; guarded so fast
+                    // taps can't interleave requests. Converges to the server
+                    // collection once loaded (the queue's snapshot can be stale).
+                    var starred by remember(current.id) { mutableStateOf(current.starred) }
+                    var starring by remember(current.id) { mutableStateOf(false) }
+                    val favTracks by favs.tracks.collectAsState()
+                    val favsLoaded by favs.loaded.collectAsState()
+                    LaunchedEffect(current.id, favTracks, favsLoaded) {
+                        if (favsLoaded && !starring) {
+                            starred = favTracks.any { it.id == current.id }
+                        }
+                    }
+                    LaunchedEffect(current.id) {
+                        scope.launch { favs.refresh() }
+                    }
+                    NpChipsRow(
+                        content = content,
+                        starred = starred,
+                        onFavorite = {
+                            if (starring) return@NpChipsRow
+                            val next = !starred
+                            starred = next
+                            starring = true
+                            scope.launch {
+                                when (favs.setTrackStarred(current.id, next)) {
+                                    is Result.Ok -> Unit
+                                    is Result.Err -> {
+                                        starred = !next
+                                        messenger.show("Could not update favorite")
+                                    }
+                                }
+                                starring = false
+                            }
+                        },
+                        onSave = { showPicker = true },
+                        onShare = { shareText(context, "${current.title} - ${current.artist}") },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    SeekBar(player, content)
+                    Spacer(Modifier.height(4.dp))
+                    ControlsRow(player, content)
+                    // The queue entry sits near the bottom edge, above the
+                    // gesture bar: tappable and swipe-up draggable.
+                    Spacer(Modifier.weight(1f))
+                    PlayingFromBottom(player = player, dim = dim, onClick = { showQueue = true })
+                    Spacer(Modifier.height(8.dp))
                 }
-                Text(
-                    current.artist, style = MaterialTheme.typography.bodyLarge, color = dim, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.clickable(enabled = current.artistId?.isNotBlank() == true) {
-                        current.artistId?.let { onArtist(it) }
-                    },
-                )
-                Spacer(Modifier.height(12.dp))
-                NpChipsRow(
-                    content = content,
-                    onLyrics = { lyricsMode = true },
-                    onSave = { showPicker = true },
-                    onShare = { shareText(context, "${current.title} - ${current.artist}") },
-                )
-                Spacer(Modifier.height(8.dp))
-                SeekBar(player, content)
-                Spacer(Modifier.height(4.dp))
-                ControlsRow(player, lyricsVm, current, content, dim, onOpenQueue = { showQueue = true })
-                Spacer(Modifier.height(4.dp))
-                PlayingFromRow(player = player, dim = dim, onClick = { showQueue = true })
             }
             } else {
                 LyricsPanel(lyricsVm, player, content, dim, modifier = Modifier.weight(1f))
@@ -287,13 +354,15 @@ fun NowPlayingScreen(
     if (showQueue) {
         QueueSheet(
             player = player, repo = repo, messenger = messenger,
-            content = content, onDismiss = { showQueue = false },
+            content = content, playlistEvents = playlistEvents,
+            onDismiss = { showQueue = false },
         )
     }
     if (showPicker) {
         PlaylistPickerSheet(
             tracks = listOf(current), title = current.title,
             onDismiss = { showPicker = false }, repo = repo, messenger = messenger,
+            playlistEvents = playlistEvents,
         )
     }
 }
@@ -321,20 +390,42 @@ private fun SongLyricsToggle(lyricsMode: Boolean, onSelect: (Boolean) -> Unit, d
 }
 
 @Composable
-private fun NpChipsRow(content: Color, onLyrics: () -> Unit, onSave: () -> Unit, onShare: () -> Unit) {
+private fun NpChipsRow(
+    content: Color,
+    starred: Boolean,
+    onFavorite: () -> Unit,
+    onSave: () -> Unit,
+    onShare: () -> Unit,
+) {
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
     ) {
-        NpChip("Lyrics", Icons.Default.MusicNote, content, onLyrics)
+        NpChip(
+            label = if (starred) "Favorited" else "Favorite",
+            icon = if (starred) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+            content = content,
+            accent = if (starred) FavoriteRed else null,
+            onClick = onFavorite,
+        )
         NpChip("Save", Icons.Default.Save, content, onSave)
         NpChip("Share", Icons.Default.Share, content, onShare)
         NpChip("Download", Icons.Default.Download, content, onClick = {}, enabled = false)
     }
 }
 
+private val FavoriteRed = Color(0xFFFF6B6B)
+
 @Composable
-private fun NpChip(label: String, icon: ImageVector, content: Color, onClick: () -> Unit, enabled: Boolean = true) {
+private fun NpChip(
+    label: String,
+    icon: ImageVector,
+    content: Color,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    accent: Color? = null,
+) {
+    val tint = accent ?: content
     Row(
         Modifier.clip(RoundedCornerShape(20.dp))
             .background(content.copy(alpha = if (enabled) 0.14f else 0.07f))
@@ -342,32 +433,43 @@ private fun NpChip(label: String, icon: ImageVector, content: Color, onClick: ()
             .padding(horizontal = 16.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, label, tint = content.copy(alpha = if (enabled) 1f else 0.4f), modifier = Modifier.size(18.dp))
+        Icon(icon, label, tint = tint.copy(alpha = if (enabled) 1f else 0.4f), modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(6.dp))
         Text(
             if (enabled) label else "$label • soon",
             style = MaterialTheme.typography.labelLarge,
-            color = content.copy(alpha = if (enabled) 1f else 0.4f),
+            color = tint.copy(alpha = if (enabled) 1f else 0.4f),
         )
     }
 }
 
 @Composable
-private fun PlayingFromRow(player: PlayerManager, dim: Color, onClick: () -> Unit) {
+private fun PlayingFromBottom(player: PlayerManager, dim: Color, onClick: () -> Unit) {
     val source by player.sourceName.collectAsState()
+    // Whole area is tappable and swipe-up draggable to open the queue. The
+    // parent swipe-down-to-close only tracks downward drags, so the two never
+    // fight: up opens here, down closes there.
     Column(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onDragEnd = {},
+                    onVerticalDrag = { _, amount -> if (amount < -8) onClick() },
+                )
+            }
             .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.width(40.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(dim.copy(alpha = 0.5f)))
         Spacer(Modifier.height(6.dp))
-        Text(
-            "Playing from ${source ?: "Queue"}",
-            style = MaterialTheme.typography.bodySmall, color = dim,
-            maxLines = 1, overflow = TextOverflow.Ellipsis,
+        MarqueeTitle(
+            text = "Playing from ${source ?: "Queue"}",
+            style = MaterialTheme.typography.bodySmall,
+            color = dim,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
@@ -451,21 +553,15 @@ private fun SeekBar(player: PlayerManager, content: Color) {
 private fun dim75(color: Color) = color.copy(alpha = 0.85f)
 
 @Composable
-private fun ControlsRow(
-    player: PlayerManager,
-    lyricsVm: LyricsViewModel,
-    song: com.feishin.mobile.domain.model.Track,
-    content: Color,
-    dim: Color,
-    onOpenQueue: () -> Unit,
-) {
+private fun ControlsRow(player: PlayerManager, content: Color) {
     val playing by player.isPlaying.collectAsState()
     val shuffle by player.shuffleEnabled.collectAsState()
     val repeat by player.repeatMode.collectAsState()
     val active = content
     val idle = content.copy(alpha = 0.55f)
-    var starred by remember(song.id) { mutableStateOf(song.starred) }
 
+    // The favorite toggle lives in the chip row now and the queue opens from
+    // the bottom area, so this row is transport only.
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -499,20 +595,6 @@ private fun ControlsRow(
                 tint = if (mode == Player.REPEAT_MODE_OFF) idle else active,
             )
         }
-    }
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = {
-            val next = !starred
-            starred = next
-            lyricsVm.setStarred(song, next) { starred = it }
-        }) {
-            Icon(if (starred) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Star", tint = content)
-        }
-        IconButton(onClick = onOpenQueue) { Icon(Icons.Default.QueueMusic, "Queue", tint = content) }
     }
 }
 
@@ -587,46 +669,69 @@ fun QueueSheet(
     repo: MusicDataRepository,
     messenger: UiMessenger,
     content: Color = MaterialTheme.colorScheme.onSurface,
+    playlistEvents: PlaylistEvents? = null,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val queue by player.queue.collectAsState()
     val currentIndex by player.currentIndex.collectAsState()
     val sourceName by player.sourceName.collectAsState()
+    val radioActive by player.radioActive.collectAsState()
     val isPlaying by player.isPlaying.collectAsState()
     val scope = rememberCoroutineScope()
     var showSaveDialog by remember { mutableStateOf(false) }
+    var showPicker by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        if (queue.isEmpty()) {
+            // The last item is gone: close the sheet. The scaffold gate then
+            // closes Now Playing, returning to the previous screen.
+            LaunchedEffect(Unit) { onDismiss() }
+            return@ModalBottomSheet
+        }
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             // Material3's ModalBottomSheet already draws the standard drag handle;
             // adding our own produced a doubled bar.
             Spacer(Modifier.height(8.dp))
+            // Source on its own line with a marquee; buttons in an aligned row
+            // below it with breathing room, so long titles never crush them.
+            Text("Playing from", style = MaterialTheme.typography.labelMedium, color = VusicColors.SecondaryText)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                MarqueeTitle(
+                    text = sourceName ?: "Queue (${queue.size})",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = content,
+                    modifier = Modifier.weight(1f),
+                )
+                if (radioActive) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Radio",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = FavoriteRed,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(FavoriteRed.copy(alpha = 0.14f))
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(14.dp))
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Playing from", style = MaterialTheme.typography.labelMedium, color = VusicColors.SecondaryText)
-                    Text(
-                        sourceName ?: "Queue (${queue.size})",
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Save",
-                        style = MaterialTheme.typography.labelLarge, color = Color.Black,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp)).background(Color.White)
-                            .clickable { showSaveDialog = true }
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    TextButton(onClick = { player.clear() }) { Text("Clear") }
-                    IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close") }
-                }
+                Text(
+                    "Save",
+                    style = MaterialTheme.typography.labelLarge, color = Color.Black,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp)).background(Color.White)
+                        .clickable { showSaveDialog = true }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+                TextButton(onClick = { player.clear() }) { Text("Clear") }
+                IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close") }
             }
             val listState = rememberLazyListState()
             val reorderState = rememberReorderableLazyColumnState(listState) { from, to ->
@@ -734,7 +839,22 @@ fun QueueSheet(
                     },
                 ) { Text("Save") }
             },
-            dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") } },
+            dismissButton = {
+                Row {
+                    // A new playlist can't have duplicates, but adding the queue
+                    // (radio included) to an existing one goes through the
+                    // duplicate check in the picker.
+                    TextButton(onClick = { showSaveDialog = false; showPicker = true }) { Text("Existing…") }
+                    TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") }
+                }
+            },
+        )
+    }
+    if (showPicker && queue.isNotEmpty()) {
+        PlaylistPickerSheet(
+            tracks = queue.map { it.song }, title = "Queue (${queue.size})",
+            onDismiss = { showPicker = false }, repo = repo, messenger = messenger,
+            playlistEvents = playlistEvents,
         )
     }
 }

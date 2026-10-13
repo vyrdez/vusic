@@ -7,8 +7,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -406,6 +407,9 @@ fun MarqueeTitle(
     Text(
         text, style = style, color = color, maxLines = 1,
         textAlign = textAlign,
-        modifier = modifier.basicMarquee(iterations = Int.MAX_VALUE),
+        // Clip OUTSIDE the marquee: the clip is the outer modifier, so the
+        // scrolling text is confined to its viewport instead of painting over
+        // neighbouring content.
+        modifier = modifier.clipToBounds().basicMarquee(iterations = Int.MAX_VALUE),
     )
 }

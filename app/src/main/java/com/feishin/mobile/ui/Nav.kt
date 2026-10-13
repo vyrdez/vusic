@@ -105,6 +105,12 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     val isDetail = route in DETAIL_ROUTES
     LaunchedEffect(route) { if (!isDetail) topBar.reset() }
 
+    // Empty queue => nothing playing => the Now Playing overlay must go away.
+    // Without this, clearing the queue leaves its transparent "Nothing playing"
+    // placeholder stretched over every screen.
+    val currentTrack by main.player.current.collectAsState()
+    LaunchedEffect(currentTrack) { if (currentTrack == null) showNowPlaying = false }
+
     CompositionLocalProvider(LocalTopBarController provides topBar) {
         Box(Modifier.fillMaxSize()) {
             Scaffold(
@@ -213,35 +219,20 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 }
             }
 
-            // Sheets and Now Playing draw above the scaffold (so they may cover the
-            // bottom bar), in a deliberate order: sheet, then full-screen player.
-            EntityActionsSheet(
-                target = actionsTarget,
-                onDismiss = { actionsTarget = null },
-                player = main.player,
-                repo = main.repo,
-                settings = main.settings,
-                messenger = main.messenger,
-                onAlbum = {
-                    actionsTarget = null
-                    showNowPlaying = false
-                    nav.navigate(Routes.album(it))
-                },
-                onArtist = {
-                    actionsTarget = null
-                    showNowPlaying = false
-                    nav.navigate(Routes.artist(it))
-                },
-            )
-
+            // Overlays draw above the scaffold in z-order: full-screen player
+            // first, then action sheets on top of everything (a sheet opened
+            // from Now Playing's ⋮ menu must be visible and tappable, which it
+            // isn't when composed underneath the player's opaque background).
             AnimatedVisibility(
-                visible = showNowPlaying,
+                visible = NavRules.shouldShowNowPlaying(showNowPlaying, currentTrack == null),
                 enter = slideInVertically(initialOffsetY = { it }),
                 exit = slideOutVertically(targetOffsetY = { it }),
             ) {
                 NowPlayingScreen(
                     player = main.player,
                     repo = main.repo,
+                    favs = main.favs,
+                    playlistEvents = main.playlistEvents,
                     messenger = main.messenger,
                     onClose = { showNowPlaying = false },
                     onArtist = {
@@ -255,6 +246,28 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     onActions = { actionsTarget = it },
                 )
             }
+
+            EntityActionsSheet(
+                target = actionsTarget,
+                onDismiss = { actionsTarget = null },
+                player = main.player,
+                repo = main.repo,
+                settings = main.settings,
+                messenger = main.messenger,
+                favs = main.favs,
+                playlistEvents = main.playlistEvents,
+                onStartRadio = { showNowPlaying = true },
+                onAlbum = {
+                    actionsTarget = null
+                    showNowPlaying = false
+                    nav.navigate(Routes.album(it))
+                },
+                onArtist = {
+                    actionsTarget = null
+                    showNowPlaying = false
+                    nav.navigate(Routes.artist(it))
+                },
+            )
         }
     }
 }

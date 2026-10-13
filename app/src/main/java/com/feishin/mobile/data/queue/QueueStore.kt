@@ -55,6 +55,9 @@ data class QueueSnapshot(
     val currentIndex: Int = 0,
     val positionMs: Long = 0,
     val sourceName: String? = null,
+    /** Radio auto-DJ survives restarts: keep appending after a process kill. */
+    val radioActive: Boolean = false,
+    val radioSeedId: String? = null,
 )
 
 /**
@@ -72,7 +75,14 @@ class QueueStore internal constructor(
     private val json = Json { ignoreUnknownKeys = true }
     private val key: Preferences.Key<String> = stringPreferencesKey("queue_snapshot")
 
-    suspend fun save(tracks: List<Track>, currentIndex: Int, positionMs: Long, sourceName: String? = null) {
+    suspend fun save(
+        tracks: List<Track>,
+        currentIndex: Int,
+        positionMs: Long,
+        sourceName: String? = null,
+        radioActive: Boolean = false,
+        radioSeedId: String? = null,
+    ) {
         if (tracks.isEmpty()) {
             clear()
             return
@@ -82,6 +92,8 @@ class QueueStore internal constructor(
             currentIndex = currentIndex.coerceIn(0, tracks.size - 1),
             positionMs = positionMs.coerceAtLeast(0),
             sourceName = sourceName,
+            radioActive = radioActive,
+            radioSeedId = radioSeedId,
         )
         runCatching { store.edit { it[key] = json.encodeToString(QueueSnapshot.serializer(), snapshot) } }
     }

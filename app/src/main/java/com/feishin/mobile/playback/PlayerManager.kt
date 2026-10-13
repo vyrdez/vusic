@@ -12,12 +12,17 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.feishin.mobile.core.common.QueueOps
+import com.feishin.mobile.core.common.RadioProgrammer
+import com.feishin.mobile.core.common.RadioTrigger
+import com.feishin.mobile.core.common.RadioMemory
+import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.network.CoverArtUrlProvider
 import com.feishin.mobile.core.network.StreamUrlProvider
 import com.feishin.mobile.data.auth.CredentialsStore
 import com.feishin.mobile.data.queue.QueueStore
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.Track
+import com.feishin.mobile.domain.repo.MusicDataRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -49,10 +54,23 @@ class PlayerManager @Inject constructor(
     private val creds: CredentialsStore,
     private val settings: SettingsStore,
     private val queueStore: QueueStore,
+    private val repo: MusicDataRepository,
+    private val fetcher: RadioFetcher,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var queueSeq = 0L
     private var restored = false
+
+    /** Last played song ids (cap [RadioProgrammer.RECENT_HISTORY_CAP]) for radio de-dup. */
+    private val recentTracks = ArrayDeque<Track>()
+    /**
+     * Every song radio has played or queued this session. Unlike [recentTracks]
+     * this is scoped to the radio session (not the last 50 plays), so a long
+     * session never loops back to songs it already played.
+     */
+    private val radioPlayedIds = RadioMemory()
+    private val radioTrigger = RadioTrigger()
+    private var radioFailures = 0
 
     @Volatile private var controller: MediaController? = null
 
@@ -83,6 +101,13 @@ class PlayerManager @Inject constructor(
     private val _sourceName = MutableStateFlow<String?>(null)
     /** Where the current queue is playing from (album, playlist, mix, ...). */
     val sourceName: StateFlow<String?> = _sourceName.asStateFlow()
+
+    private val _radioActive = MutableStateFlow(false)
+    /** Radio auto-DJ stays on until the user starts something else or clears. */
+    val radioActive: StateFlow<Boolean> = _radioActive.asStateFlow()
+
+    private val _radioSeed = MutableStateFlow<Track?>(null)
+    val radioSeed: StateFlow<Track?> = _radioSeed.asStateFlow()
 
     init {
         connect()
@@ -119,6 +144,8 @@ class PlayerManager @Inject constructor(
                     _currentIndex.value = idx.coerceIn(0, maxOf(0, _queue.value.size - 1))
                     _current.value = _queue.value.getOrNull(_currentIndex.value)?.song
                         ?: mediaItem?.let { TrackMediaItems.toTrack(it) }
+                    _current.value?.let { recordRecent(it) }
+                    maybeAppendRadio()
                     scope.launch { persist() }
                 }
 
@@ -193,6 +220,8 @@ class PlayerManager @Inject constructor(
         _currentIndex.value = index
         _current.value = tracks.getOrNull(index)
         _sourceName.value = snapshot.sourceName
+        _radioActive.value = snapshot.radioActive
+        _radioSeed.value = snapshot.radioSeedId?.let { id -> tracks.find { it.id == id } }
         _position.value = snapshot.positionMs
         _duration.value = c.duration.takeIf { it > 0 } ?: 0L
         restored = true
@@ -205,7 +234,14 @@ class PlayerManager @Inject constructor(
             return
         }
         runCatching {
-            queueStore.save(q.map { it.song }, _currentIndex.value.coerceIn(0, q.size - 1), _position.value, _sourceName.value)
+            queueStore.save(
+                q.map { it.song },
+                _currentIndex.value.coerceIn(0, q.size - 1),
+                _position.value,
+                _sourceName.value,
+                _radioActive.value,
+                _radioSeed.value?.id,
+            )
         }
     }
 
@@ -247,6 +283,7 @@ class PlayerManager @Inject constructor(
 
     /** Plays [tracks] starting at [startIndex]; the caller's list is the queue. */
     fun playAll(tracks: List<Track>, startIndex: Int = 0, shuffle: Boolean = false, source: String? = null) {
+        cancelRadio()
         scope.launch {
             val c = controller ?: return@launch
             if (tracks.isEmpty()) return@launch
@@ -260,10 +297,150 @@ class PlayerManager @Inject constructor(
             c.play()
             _currentIndex.value = start
             _current.value = ordered.getOrNull(start)
+            _current.value?.let { recordRecent(it) }
             _shuffle.value = shuffle
             if (source != null) _sourceName.value = source
             persist()
         }
+    }
+
+    /**
+     * Starts radio auto-DJ: the seed plays instantly as item 1 with source
+     * "Radio • <title>", and 20 more songs are fetched in the background.
+     * Any previous radio session is cancelled first (fast taps can't stack).
+     *
+     * The initial fill holds the trigger, so the seed's own track transition
+     * can't start a second concurrent fetch for the same generation.
+     */
+    fun startRadio(seed: Track, onLibraryEmpty: () -> Unit = {}) {
+        if (controller == null) return
+        playAll(listOf(seed), source = "Radio • ${seed.title}")
+        val gen = radioTrigger.newSession()
+        _radioActive.value = true
+        _radioSeed.value = seed
+        radioFailures = 0
+        radioPlayedIds.clear()
+        rememberRadioPlayed(seed.id)
+        recordRecent(seed)
+        scope.launch {
+            if (!radioTrigger.tryBegin(gen)) return@launch
+            try {
+                var attempts = 0
+                var filled = false
+                var transientFailure = false
+                while (gen == radioTrigger.currentGeneration() && !filled && attempts < 4) {
+                    attempts++
+                    when (val result = fetcher.fetchBatch(seed, exclusions(), RadioProgrammer.BATCH_SIZE)) {
+                        is Result.Ok -> {
+                            val batch = result.value
+                            if (gen != radioTrigger.currentGeneration()) break
+                            if (batch.isNotEmpty()) {
+                                radioFailures = 0
+                                appendRadioBatch(batch, gen)
+                                persist()
+                                filled = true
+                            } else {
+                                break // Library truly yielded nothing.
+                            }
+                        }
+                        is Result.Err -> {
+                            // Transient (network/rate limit): back off quietly
+                            // and retry; radio stays on and later transitions
+                            // re-arm even if these attempts run out.
+                            transientFailure = true
+                            radioFailures++
+                            delay(minOf(15_000L * radioFailures, 120_000L))
+                        }
+                    }
+                }
+                if (!filled && !transientFailure) onLibraryEmpty()
+            } finally {
+                radioTrigger.end(gen)
+            }
+        }
+    }
+
+    /** Stops radio mode (new user playback or cleared queue). Stale batches die. */
+    private fun cancelRadio() {
+        radioTrigger.cancel()
+        _radioActive.value = false
+        _radioSeed.value = null
+        radioPlayedIds.clear()
+    }
+
+    private fun rememberRadioPlayed(id: String) {
+        radioPlayedIds.remember(id)
+    }
+
+    private fun recordRecent(track: Track) {
+        recentTracks.removeAll { it.id == track.id }
+        recentTracks.addLast(track)
+        while (recentTracks.size > RadioProgrammer.RECENT_HISTORY_CAP) recentTracks.removeFirst()
+        if (_radioActive.value) rememberRadioPlayed(track.id)
+    }
+
+    private fun exclusions(): Set<String> =
+        _queue.value.map { it.song.id }.toSet() + recentTracks.map { it.id }.toSet() + radioPlayedIds.snapshot()
+
+    /**
+     * Endless radio: when playback is within two songs of the queue end, fetch
+     * and append another 20 seeded from recent plays. Appending touches only
+     * the tail, so playback, the current item and gapless are never disturbed.
+     * Failures back off quietly and retry in the same job (bounded), so radio
+     * can't die at the end of the queue; the next transition re-arms anyway.
+     */
+    private fun maybeAppendRadio() {
+        if (!_radioActive.value) return
+        if (!RadioProgrammer.shouldAppend(_currentIndex.value, _queue.value.size)) return
+        val gen = radioTrigger.currentGeneration()
+        if (!radioTrigger.tryBegin(gen)) return
+        scope.launch {
+            try {
+                var attempts = 0
+                var appended = false
+                while (gen == radioTrigger.currentGeneration() && _radioActive.value &&
+                    RadioProgrammer.shouldAppend(_currentIndex.value, _queue.value.size) && attempts < 6 && !appended
+                ) {
+                    attempts++
+                    val seed = recentTracks.lastOrNull { it.id != _current.value?.id }
+                        ?: _radioSeed.value ?: _current.value
+                    if (seed == null) break
+                    when (val result = fetcher.fetchBatch(seed, exclusions(), RadioProgrammer.BATCH_SIZE)) {
+                        is Result.Ok -> {
+                            if (gen != radioTrigger.currentGeneration()) break
+                            if (result.value.isNotEmpty()) {
+                                radioFailures = 0
+                                appendRadioBatch(result.value, gen)
+                                persist()
+                                appended = true
+                            } else {
+                                break // Nothing to add; stop silently.
+                            }
+                        }
+                        is Result.Err -> {
+                            radioFailures++
+                            delay(minOf(15_000L * radioFailures, 120_000L))
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                radioFailures++
+            } finally {
+                radioTrigger.end(gen)
+            }
+        }
+    }
+
+    /** Tail-only append: never touches the current item or playback state. */
+    private suspend fun appendRadioBatch(batch: List<Track>, gen: Int) {
+        val c = controller ?: return
+        if (gen != radioTrigger.currentGeneration() || !_radioActive.value) return
+        if (batch.isEmpty() || _queue.value.isEmpty()) return
+        val pairs = batch.mapNotNull { t -> toMediaItem(t)?.let { it to t } }
+        if (pairs.isEmpty() || gen != radioTrigger.currentGeneration()) return
+        c.addMediaItems(pairs.map { it.first })
+        _queue.value = QueueOps.appendAll(_queue.value, pairs.map { QueueItem(it.second, queueSeq++) })
+        pairs.forEach { rememberRadioPlayed(it.second.id) }
     }
 
     fun playNext(track: Track) {
@@ -292,7 +469,8 @@ class PlayerManager @Inject constructor(
         }
     }
 
-    fun addToEnd(track: Track) {        scope.launch {
+    fun addToEnd(track: Track) {
+        scope.launch {
             val c = controller ?: return@launch
             val item = toMediaItem(track) ?: return@launch
             c.addMediaItem(item)
@@ -336,6 +514,7 @@ class PlayerManager @Inject constructor(
     fun clear() {
         controller?.clearMediaItems()
         controller?.stop()
+        cancelRadio()
         _queue.value = emptyList()
         _currentIndex.value = 0
         _current.value = null

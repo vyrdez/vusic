@@ -2,6 +2,8 @@ package com.feishin.mobile.ui
 
 import androidx.lifecycle.ViewModel
 import com.feishin.mobile.data.auth.AuthRepository
+import com.feishin.mobile.data.favorites.FavoritesStore
+import com.feishin.mobile.data.favorites.PlaylistEvents
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.playback.PlayerManager
@@ -16,4 +18,6 @@ class MainViewModel @Inject constructor(
     val auth: AuthRepository,
     val settings: SettingsStore,
     val messenger: UiMessenger,
+    val favs: FavoritesStore,
+    val playlistEvents: PlaylistEvents,
 ) : ViewModel()

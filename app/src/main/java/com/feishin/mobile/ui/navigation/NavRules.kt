@@ -50,4 +50,18 @@ object NavRules {
 
     /** The mini player and nav bar are hidden only by these overlays. */
     fun overlaysCoverBottomBar(showNowPlaying: Boolean): Boolean = showNowPlaying
+
+    /**
+     * The mini player shows whenever a queue exists. An empty queue hides it
+     * completely (zero height, so the content area gets its padding back).
+     */
+    fun shouldShowMiniPlayer(queueEmpty: Boolean): Boolean = !queueEmpty
+
+    /**
+     * The Now Playing overlay is only allowed while something is playing.
+     * Clearing the queue nulls the current track, which must dismiss the
+     * overlay instead of leaving a placeholder over every screen.
+     */
+    fun shouldShowNowPlaying(requested: Boolean, currentTrackNull: Boolean): Boolean =
+        requested && !currentTrackNull
 }

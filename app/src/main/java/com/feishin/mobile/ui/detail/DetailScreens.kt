@@ -226,10 +226,11 @@ fun PlaylistDetailScreen(
     val ui by vm.ui.collectAsState()
     val nowPlaying by player.current.collectAsState()
     val isPlaying by player.isPlaying.collectAsState()
+    val isVirtual = vm.isVirtualFavorites
     when (val s = ui) {
         is UiState.Loading -> LoadingBox()
         is UiState.Error -> ErrorBox(s.message, vm::refresh)
-        is UiState.Empty -> EmptyBox("Playlist not found")
+        is UiState.Empty -> EmptyBox(if (isVirtual) "Nothing starred yet" else "Playlist not found")
         is UiState.Data -> {
             val p = s.value
             val refreshing by vm.refreshing.collectAsState()
@@ -240,10 +241,16 @@ fun PlaylistDetailScreen(
                 topBar.scrolled = listState.firstVisibleItemIndex > 0 ||
                     listState.firstVisibleItemScrollOffset > 120
             }
-            val cover = PlaylistCover.select(
-                serverCoverArtId = null,
-                trackCoverArtIds = p.tracks.map { it.coverArt },
-            )
+            val cover = if (isVirtual) {
+                PlaylistCover.Favorites(
+                    p.tracks.mapNotNull { it.coverArt }.distinct().take(4),
+                )
+            } else {
+                PlaylistCover.select(
+                    serverCoverArtId = null,
+                    trackCoverArtIds = p.tracks.map { it.coverArt },
+                )
+            }
             PullToRefreshBox(isRefreshing = refreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
                     Modifier.fillMaxSize(),
@@ -284,7 +291,10 @@ fun PlaylistDetailScreen(
                             Modifier.fillMaxWidth().padding(horizontal = VusicSpacing.ScreenHorizontal),
                             horizontalArrangement = Arrangement.Center,
                         ) {
-                            OutlinedButton(onClick = { vm.delete(onBack) }) { Text("Delete playlist") }
+                            // The virtual collection can't be deleted or renamed.
+                            if (!isVirtual) {
+                                OutlinedButton(onClick = { vm.delete(onBack) }) { Text("Delete playlist") }
+                            }
                         }
                     }
                     items(p.tracks.size, key = { i -> p.tracks[i].id + "_$i" }) { i ->
@@ -293,7 +303,7 @@ fun PlaylistDetailScreen(
                             track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),
                             onClick = { player.playAll(p.tracks, i, source = p.name) },
                             onActions = { onActions(ActionTarget.Track(song)) },
-                            onRemove = { vm.removeAt(i) },
+                            onRemove = if (isVirtual) null else ({ vm.removeAt(i) }),
                             isCurrent = song.id == nowPlaying?.id, isPlaying = isPlaying,
                         )
                     }

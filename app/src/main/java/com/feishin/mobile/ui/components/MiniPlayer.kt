@@ -28,7 +28,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.layout.ContentScale
 import com.feishin.mobile.playback.PlayerManager
 
 /** Docked directly above the nav bar. Tap or swipe up opens Now Playing,
@@ -40,6 +39,10 @@ fun MiniPlayer(player: PlayerManager, onOpen: () -> Unit, modifier: Modifier = M
     val isPlaying by player.isPlaying.collectAsState()
     val position by player.position.collectAsState()
     val duration by player.duration.collectAsState()
+    // Hidden when the queue is empty: zero height, so the content area gets its
+    // bottom padding back. (NavRules.shouldShowMiniPlayer documents the same
+    // rule for tests; the inline check here avoids a ui.components ->
+    // ui.navigation edge, since navigation already depends on components.)
     if (queue.isEmpty()) return
     val song = current ?: return
 

@@ -12,6 +12,8 @@ import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.common.UiState
+import com.feishin.mobile.data.favorites.PlaylistEvent
+import com.feishin.mobile.data.favorites.PlaylistEvents
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +27,7 @@ enum class SortOrder { NAME_ASC, NAME_DESC, YEAR_DESC, PLAYS_DESC }
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val repo: MusicDataRepository,
+    private val playlistEvents: PlaylistEvents,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     private val _tab = MutableStateFlow(
@@ -61,7 +64,20 @@ class LibraryViewModel @Inject constructor(
     private val albumAccum = mutableListOf<Album>()
     private var albumEnd = false
 
-    init { refresh() }
+    init {
+        refresh()
+        // Stay in sync: starring anywhere refreshes favorites, and adding
+        // tracks to a playlist refreshes covers/counts.
+        viewModelScope.launch {
+            playlistEvents.events.collect { e ->
+                when (e) {
+                    is PlaylistEvent.FavoritesChanged -> loadFavs()
+                    // Silent: adding tracks shouldn't flash the list to Loading.
+                    is PlaylistEvent.TracksAdded -> loadPlaylists(silent = true)
+                }
+            }
+        }
+    }
 
     fun selectTab(t: LibraryTab) { _tab.value = t }
 
@@ -135,9 +151,9 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    fun loadPlaylists() {
+    fun loadPlaylists(silent: Boolean = false) {
         viewModelScope.launch {
-            _playlists.value = UiState.Loading
+            if (!silent) _playlists.value = UiState.Loading
             _playlists.value = when (val r = repo.playlists()) {
                 is Result.Ok -> if (r.value.isEmpty()) UiState.Empty else UiState.Data(r.value)
                 is Result.Err -> UiState.Error(r.message)

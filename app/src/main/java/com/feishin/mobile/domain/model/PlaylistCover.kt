@@ -14,6 +14,12 @@ sealed interface PlaylistCover {
     /** 1..4 distinct track artwork ids; rendered as 1 cover or a 2x2 collage. */
     data class Collage(val coverArtIds: List<String>) : PlaylistCover
 
+    /**
+     * Built-in Favorite songs: a heart on a gradient, or a collage of the
+     * latest favorites with a heart badge.
+     */
+    data class Favorites(val coverArtIds: List<String>) : PlaylistCover
+
     /** No artwork anywhere; render a styled music-note placeholder. */
     data object Placeholder : PlaylistCover
 

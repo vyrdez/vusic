@@ -74,4 +74,19 @@ class NavRulesTest {
         assertTrue(NavRules.overlaysCoverBottomBar(showNowPlaying = true))
         assertFalse(NavRules.overlaysCoverBottomBar(showNowPlaying = false))
     }
+
+    @Test
+    fun miniPlayer_hiddenWhenQueueEmpty() {
+        assertFalse(NavRules.shouldShowMiniPlayer(queueEmpty = true))
+        assertTrue(NavRules.shouldShowMiniPlayer(queueEmpty = false))
+    }
+
+    @Test
+    fun nowPlaying_dismissedWhenNothingPlaying() {
+        // Clearing the queue must close the overlay, never show a placeholder.
+        assertFalse(NavRules.shouldShowNowPlaying(requested = true, currentTrackNull = true))
+        assertFalse(NavRules.shouldShowNowPlaying(requested = false, currentTrackNull = true))
+        assertFalse(NavRules.shouldShowNowPlaying(requested = false, currentTrackNull = false))
+        assertTrue(NavRules.shouldShowNowPlaying(requested = true, currentTrackNull = false))
+    }
 }

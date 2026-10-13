@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.data.settings.SettingsStore
+import com.feishin.mobile.data.favorites.PlaylistEvents
 import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.AlbumDetail
 import com.feishin.mobile.domain.model.Artist
@@ -152,6 +153,7 @@ class ViewModelStateTest {
     fun library_tabSortAndGrid_transitions() {
         val vm = LibraryViewModel(
             FakeMusicRepo(albums = Result.Ok(listOf(album("1", "b"), album("2", "a")))),
+            PlaylistEvents(),
             SavedStateHandle(),
         )
         assertEquals(LibraryTab.ALBUMS, vm.tab.value)
@@ -166,7 +168,7 @@ class ViewModelStateTest {
 
     @Test
     fun library_initialTab_fromSavedState() {
-        val vm = LibraryViewModel(FakeMusicRepo(), SavedStateHandle(mapOf("tab" to "PLAYLISTS")))
+        val vm = LibraryViewModel(FakeMusicRepo(), PlaylistEvents(), SavedStateHandle(mapOf("tab" to "PLAYLISTS")))
         assertEquals(LibraryTab.PLAYLISTS, vm.tab.value)
     }
 
@@ -174,6 +176,7 @@ class ViewModelStateTest {
     fun library_albumSort_ordersNames() {
         val vm = LibraryViewModel(
             FakeMusicRepo(albums = Result.Ok(listOf(album("1", "b"), album("2", "a")))),
+            PlaylistEvents(),
             SavedStateHandle(),
         )
         val state = vm.albums.value
@@ -187,7 +190,7 @@ class ViewModelStateTest {
 
     @Test
     fun library_albumError_mapsToError() {
-        val vm = LibraryViewModel(FakeMusicRepo(albums = Result.Err("boom")), SavedStateHandle())
+        val vm = LibraryViewModel(FakeMusicRepo(albums = Result.Err("boom")), PlaylistEvents(), SavedStateHandle())
         assertTrue(vm.albums.value is UiState.Error)
         assertEquals("boom", (vm.albums.value as UiState.Error).message)
     }

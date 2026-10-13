@@ -39,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.feishin.mobile.core.common.UiState
+import com.feishin.mobile.data.favorites.FAVORITE_SONGS_PLAYLIST_ID
 import com.feishin.mobile.domain.model.PlaylistCover
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
@@ -239,15 +240,33 @@ fun LibraryScreen(
                 }
                 LibraryTab.PLAYLISTS -> {
                     val ui by vm.playlists.collectAsState()
+                    val favsUi by vm.favs.collectAsState()
+                    val favTracks = (favsUi as? UiState.Data)?.value?.tracks.orEmpty()
                     when (val s = ui) {
                         is UiState.Loading -> com.feishin.mobile.ui.LoadingBox()
                         is UiState.Error -> ErrorState(s.message, vm::refresh)
-                        is UiState.Empty -> EmptyState("No playlists")
+                        is UiState.Empty -> {
+                            // Even with no server playlists, Favorite songs is pinned.
+                            FavoriteSongsRow(
+                                count = favTracks.size,
+                                covers = favTracks.map { it.coverArt },
+                                repo = repo,
+                                onClick = { onPlaylist(FAVORITE_SONGS_PLAYLIST_ID) },
+                            )
+                        }
                         is UiState.Data -> LazyColumn(
                             Modifier.fillMaxSize(),
                             state = rememberSavableListState(),
                             contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom),
                         ) {
+                            item(key = "favorites") {
+                                FavoriteSongsRow(
+                                    count = favTracks.size,
+                                    covers = favTracks.map { it.coverArt },
+                                    repo = repo,
+                                    onClick = { onPlaylist(FAVORITE_SONGS_PLAYLIST_ID) },
+                                )
+                            }
                             items(s.value, key = { it.id }) { p ->
                                 Row(
                                     Modifier.fillMaxWidth()
@@ -285,6 +304,16 @@ fun LibraryScreen(
                         is UiState.Data -> {
                             val favs = s.value
                             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
+                                if (favs.tracks.isNotEmpty()) {
+                                    item(key = "fav-songs") {
+                                        FavoriteSongsRow(
+                                            count = favs.tracks.size,
+                                            covers = favs.tracks.map { it.coverArt },
+                                            repo = repo,
+                                            onClick = { onPlaylist(FAVORITE_SONGS_PLAYLIST_ID) },
+                                        )
+                                    }
+                                }
                                 if (favs.albums.isNotEmpty()) {
                                     item { SectionHeader(title = "Albums") }
                                     items(favs.albums, key = { "al${it.id}" }) { a ->
@@ -321,6 +350,42 @@ fun LibraryScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Pinned "Favorite songs" row: heart-on-gradient cover, or a collage of the
+ * latest favorites. Opens the built-in collection page.
+ */
+@Composable
+private fun FavoriteSongsRow(
+    count: Int,
+    covers: List<String?>,
+    repo: MusicDataRepository,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PlaylistCoverArt(
+            cover = PlaylistCover.Favorites(covers.filterNotNull().distinct().take(4)),
+            resolver = { id -> repo.coverArtUrl(id, 128) },
+            contentDescription = "Favorite songs",
+            modifier = Modifier.size(56.dp),
+            roundedDp = 4.dp,
+        )
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text("Favorite songs", style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Text(
+                "$count songs",
+                style = MaterialTheme.typography.bodySmall,
+                color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText,
+            )
         }
     }
 }

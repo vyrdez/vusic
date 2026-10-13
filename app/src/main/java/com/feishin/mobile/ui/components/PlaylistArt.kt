@@ -8,15 +8,19 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
@@ -89,6 +93,51 @@ fun PlaylistCoverArt(
                 tint = VusicColors.SecondaryText,
                 modifier = Modifier.size(36.dp),
             )
+        }
+
+        is PlaylistCover.Favorites -> {
+            val urls = cover.coverArtIds.map { resolver(it) }.filterNotNull().take(4)
+            if (urls.isEmpty()) {
+                Box(
+                    modifier.clip(shape)
+                        .background(
+                            Brush.linearGradient(
+                                listOf(Color(0xFF8E2DE2), Color(0xFFFF6B6B)),
+                            ),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Default.Favorite, contentDescription,
+                        tint = Color.White,
+                        modifier = Modifier.size(36.dp),
+                    )
+                }
+            } else {
+                // Collage of the latest favorites with a heart badge.
+                Box(modifier.clip(shape)) {
+                    PlaylistCoverArt(
+                        cover = PlaylistCover.Collage(urls),
+                        resolver = resolver,
+                        contentDescription = contentDescription,
+                        modifier = Modifier.fillMaxSize(),
+                        roundedDp = 0.dp,
+                    )
+                    Box(
+                        Modifier.align(Alignment.BottomEnd).padding(6.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.55f))
+                            .padding(6.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Favorite, contentDescription,
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
+            }
         }
     }
 }

@@ -76,11 +76,21 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   bar with correct remaining time and TIME_UNSET handling; luminance-clamped
   opaque Now Playing gradient; single queue drag handle; playlist covers from
   server art or a count-aware collage; 124 unit tests)
+- [x] M4.7 radio auto-DJ, Now Playing layout, queue, favorites collection
+  (radio replaces the queue with the seed as item 1 and fills 20 more in the
+  background with similar->genre->random fallthrough, session-scoped no-repeat
+  memory, trigger-guarded appends within 2 of the end with quiet backoff, and
+  persisted radio flag+seed; Now Playing matches the reference with large art,
+  centered titles, Favorite chip, transport-only controls, bottom queue entry
+  with marquee; queue sheet with source marquee, button row, Radio pill and
+  auto-dismiss on Clear; server-backed Favorite songs collection with gradient
+  or collage cover, reactive star sync, and duplicate detection with
+  Skip/Add-anyway/Cancel on every add-to-playlist flow; 157 unit tests)
 - [ ] M5 offline+settings (downloads, stream cache, bitrate wifi/mobile, theme, cert toggle, logout)
 - [ ] M6 extras (Auto manifest support, home screen widget, README, final APK verify)
 
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
-`testDebugUnitTest` 124/124 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
+`testDebugUnitTest` 157/157 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
 LIVE on-device test (emulator Pixel 7, API 34) against server.example.com: login OK,
 Home with real albums/art, album detail (17 tracks), streaming playback confirmed
 (mini player + Now Playing 0:33/3:42 + audio focus), zero FATAL crashes. Probe script
@@ -108,6 +118,56 @@ playlists/genres/starred2 all OK. No adb physical device; emulator AVD `feishin_
 - ReplayGain: no native Media3 support; stored as volume-normalization preference
   documented as best-effort (server `getAlbum` may carry replayGain fields; applied as gain).
 - Credentials never committed; test config via local.properties/env only.
+- M4.7 root cause (the "Nothing playing" text): after Clear the queue is empty
+  so `player.current` becomes null, but `showNowPlaying` stayed true and the
+  Now Playing overlay's null branch rendered a transparent box with
+  "Nothing playing" stretched over every screen. Fixed at three levels: the
+  scaffold only shows the overlay while a track exists
+  (`NavRules.shouldShowNowPlaying`) and retracts `showNowPlaying` on null, the
+  NP null branch now just closes with no placeholder, and the queue sheet
+  auto-dismisses on empty. The mini player already returned early on empty
+  (zero height, padding reclaimed). Verified: no stray text on Home/Library/
+  Search/Settings, restart clean, queue cleared from the persisted store too.
+- M4.7 radio: `PlayerManager.startRadio` plays the seed instantly as item 1
+  (source "Radio • <title>") and fills 20 in the background via `RadioFetcher`
+  (similar count=50, same-genre randoms, plain randoms, silent fallthrough,
+  error-vs-empty distinguished so transient failures retry with backoff
+  instead of claiming an empty library). Appends fire within 2 songs of the
+  end (index>=size-3), tail-only so gapless/current item are untouched, with a
+  generation trigger preventing double-appends; a `RadioMemory` session set
+  plus the 50-song rolling history keeps repeats out, and artist spread caps 2
+  in a row. Radio stays on until playAll/clear; flag+seed persist for restart;
+  the queue sheet shows a Radio pill. Device: radio started from a track
+  sheet, played instantly, filled to 21 in the background, appended without a
+  gap at the end, and kept playing across rotation; logcat zero app FATALs.
+- M4.7 Now Playing per the YouTube Music reference: 24dp top gap, near-full
+  width 16dp-corner art capped by height (compact budget under 600dp so small
+  screens and landscape keep the controls), 18dp artist-to-chip gap, centered
+  short title/artist with long-text marquee (clip outside the marquee so the
+  scroll stays in its viewport), multi-artist line centered, Favorite chip
+  (guarded optimistic toggle converging to the server collection, rollback on
+  error), heart/queue row removed, queue entry at the bottom with marquee and
+  tap+swipe-up, pill centered and three-dot far right kept. Queue sheet: source
+  on its own marquee line, buttons in an aligned row below with 14dp gap,
+  single handle, smooth dismiss.
+- M4.7 favorites: a virtual "Favorite songs" page backed by `getStarred2`,
+  pinned in Library>Playlists and the Favorites chip with a heart-gradient or
+  latest-4 collage cover, Play/Shuffle/queue/Play-next/Add-all menu, no
+  delete/rename. Every star goes through `FavoritesStore` (reactive refresh via
+  shared events); album/artist stars emit too so the Favorites tab stays fresh.
+  Every add-to-playlist flow partitions by song id and asks on duplicates
+  (Skip/Add anyway/Cancel), reports "Added X, skipped Y", refreshes covers.
+  Device: favorited on device and confirmed on the server API, dup dialog
+  shown, skip kept 4 songs, add-anyway made 5, duplicate removed again and the
+  cover/header refreshed.
+- M4.7 notes/limitations: drag-to-reorder and the share sheet still verified
+  by inspection only (no adb gesture primitive; avoiding junk shares); the
+  details dialogs likewise; the no-similar-songs fallback path is unit-tested
+  plus the genre/random legs were exercised live; three independent free-model
+  reviews caught 5 real defects (NP sheet z-order, double-fetch trigger hole,
+  transient-vs-empty conflation, marquee clip order, refresh-failure wipe),
+  all fixed; one uiautomator FATAL in logcat is the test harness's own dump
+  tool, not the app.
 - M4.6 root causes (all fixed):
   1. Bottom nav vanished on detail screens because `MiniPlayer` and
      `NavigationBar` were rendered conditionally on `route in topLevel`, and each

@@ -11,6 +11,9 @@ import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.common.UiState
+import com.feishin.mobile.data.favorites.FAVORITE_SONGS_PLAYLIST_ID
+import com.feishin.mobile.data.favorites.PlaylistEvent
+import com.feishin.mobile.data.favorites.PlaylistEvents
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,6 +24,7 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class AlbumDetailViewModel @Inject constructor(
     private val repo: MusicDataRepository,
+    private val playlistEvents: PlaylistEvents,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     val id: String = savedStateHandle.get<String>("id") ?: ""
@@ -49,7 +53,7 @@ class AlbumDetailViewModel @Inject constructor(
         _ui.value = UiState.Data(current.copy(starred = !starred))
         viewModelScope.launch {
             when (repo.starAlbum(id, !starred)) {
-                is Result.Ok -> Unit
+                is Result.Ok -> playlistEvents.emit(PlaylistEvent.FavoritesChanged)
                 is Result.Err -> _ui.value = UiState.Data(current)
             }
         }
@@ -59,6 +63,7 @@ class AlbumDetailViewModel @Inject constructor(
 @HiltViewModel
 class ArtistDetailViewModel @Inject constructor(
     private val repo: MusicDataRepository,
+    private val playlistEvents: PlaylistEvents,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     val id: String = savedStateHandle.get<String>("id") ?: ""
@@ -87,7 +92,7 @@ class ArtistDetailViewModel @Inject constructor(
         _ui.value = UiState.Data(current.copy(starred = !starred))
         viewModelScope.launch {
             when (repo.starArtist(id, !starred)) {
-                is Result.Ok -> Unit
+                is Result.Ok -> playlistEvents.emit(PlaylistEvent.FavoritesChanged)
                 is Result.Err -> _ui.value = UiState.Data(current)
             }
         }
@@ -113,29 +118,64 @@ class ArtistDetailViewModel @Inject constructor(
 @HiltViewModel
 class PlaylistDetailViewModel @Inject constructor(
     private val repo: MusicDataRepository,
+    private val playlistEvents: PlaylistEvents,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     val id: String = savedStateHandle.get<String>("id") ?: ""
+    /** The built-in Favorite songs collection is virtual: no delete/rename. */
+    val isVirtualFavorites: Boolean = id == FAVORITE_SONGS_PLAYLIST_ID
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
     private val _ui = MutableStateFlow<UiState<PlaylistDetail>>(UiState.Loading)
     val ui: StateFlow<UiState<PlaylistDetail>> = _ui.asStateFlow()
 
-    init { refresh() }
+    init {
+        refresh()
+        // Added tracks refresh this playlist's cover; star changes re-sync
+        // the Favorite songs collection.
+        viewModelScope.launch {
+            playlistEvents.events.collect { e ->
+                when (e) {
+                    is PlaylistEvent.TracksAdded -> if (e.playlistId == id) refresh()
+                    is PlaylistEvent.FavoritesChanged -> if (isVirtualFavorites) refresh()
+                }
+            }
+        }
+    }
 
     fun refresh() {
         viewModelScope.launch {
             _refreshing.value = true
             _ui.value = UiState.Loading
-            _ui.value = when (val r = repo.playlist(id)) {
-                is Result.Ok -> UiState.Data(r.value)
-                is Result.Err -> UiState.Error(r.message)
+            _ui.value = if (isVirtualFavorites) {
+                when (val r = repo.starred()) {
+                    is Result.Ok -> {
+                        val tracks = r.value.tracks
+                        if (tracks.isEmpty()) UiState.Empty
+                        else UiState.Data(
+                            PlaylistDetail(
+                                id = FAVORITE_SONGS_PLAYLIST_ID,
+                                name = "Favorite songs",
+                                songCount = tracks.size,
+                                durationSec = tracks.sumOf { it.durationSec },
+                                tracks = tracks,
+                            ),
+                        )
+                    }
+                    is Result.Err -> UiState.Error(r.message)
+                }
+            } else {
+                when (val r = repo.playlist(id)) {
+                    is Result.Ok -> UiState.Data(r.value)
+                    is Result.Err -> UiState.Error(r.message)
+                }
             }
             _refreshing.value = false
         }
     }
 
     fun removeAt(index: Int) {
+        if (isVirtualFavorites) return
         viewModelScope.launch {
             repo.removeFromPlaylist(id, listOf(index))
             refresh()
@@ -143,6 +183,7 @@ class PlaylistDetailViewModel @Inject constructor(
     }
 
     fun delete(onDone: () -> Unit) {
+        if (isVirtualFavorites) return
         viewModelScope.launch {
             repo.deletePlaylist(id)
             onDone()
