@@ -1,7 +1,15 @@
 package com.feishin.mobile.domain.model
 
-/** Domain models. The UI only ever sees these — never wire DTOs. */
+import kotlinx.serialization.Serializable
 
+/**
+ * Domain models. The UI only ever sees these — never wire DTOs.
+ *
+ * `@Serializable` so the library cache can persist them as JSON in Room, which
+ * is what lets screens keep rendering with no network.
+ */
+
+@Serializable
 data class Album(
     val id: String,
     val name: String,
@@ -16,6 +24,7 @@ data class Album(
     val starred: Boolean,
 )
 
+@Serializable
 data class AlbumDetail(
     val id: String,
     val name: String,
@@ -30,6 +39,7 @@ data class AlbumDetail(
     val tracks: List<Track>,
 )
 
+@Serializable
 data class Track(
     val id: String,
     val title: String,
@@ -47,8 +57,13 @@ data class Track(
     val sizeBytes: Long = 0,
     val bitRate: Int? = null,
     val path: String = "",
+    /** ReplayGain (dB gains and linear peak) carried from the server. */
+    val replayGainTrack: Double? = null,
+    val replayGainAlbum: Double? = null,
+    val replayGainPeak: Double? = null,
 )
 
+@Serializable
 data class Artist(
     val id: String,
     val name: String,
@@ -57,6 +72,7 @@ data class Artist(
     val starred: Boolean,
 )
 
+@Serializable
 data class ArtistDetail(
     val id: String,
     val name: String,
@@ -66,6 +82,7 @@ data class ArtistDetail(
     val albums: List<Album>,
 )
 
+@Serializable
 data class Playlist(
     val id: String,
     val name: String,
@@ -74,6 +91,7 @@ data class Playlist(
     val coverArt: String?,
 )
 
+@Serializable
 data class PlaylistDetail(
     val id: String,
     val name: String,
@@ -82,24 +100,28 @@ data class PlaylistDetail(
     val tracks: List<Track>,
 )
 
+@Serializable
 data class Genre(
     val name: String,
     val songCount: Int,
     val albumCount: Int,
 )
 
+@Serializable
 data class StarredCollection(
     val artists: List<Artist> = emptyList(),
     val albums: List<Album> = emptyList(),
     val tracks: List<Track> = emptyList(),
 )
 
+@Serializable
 data class SearchResults(
     val artists: List<Artist> = emptyList(),
     val albums: List<Album> = emptyList(),
     val tracks: List<Track> = emptyList(),
 )
 
+@Serializable
 data class ArtistInfo(
     val biography: String = "",
     val imageUrl: String? = null,

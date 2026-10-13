@@ -3,12 +3,18 @@ package com.feishin.mobile.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
@@ -35,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -111,6 +118,16 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     val currentTrack by main.player.current.collectAsState()
     LaunchedEffect(currentTrack) { if (currentTrack == null) showNowPlaying = false }
 
+    // Replay queued scrobbles/stars as soon as the network comes back.
+    val online by main.network.isOnline.collectAsState()
+    val pendingUploads by main.offlineSync.pendingCount.collectAsState(initial = 0)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(online, pendingUploads) {
+        if (online && pendingUploads > 0) {
+            com.feishin.mobile.data.download.OfflineSyncWorker.schedule(context)
+        }
+    }
+
     CompositionLocalProvider(LocalTopBarController provides topBar) {
         Box(Modifier.fillMaxSize()) {
             Scaffold(
@@ -133,6 +150,11 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 },
             ) { padding ->
                 Box(Modifier.fillMaxSize().padding(padding)) {
+                    if (!online) {
+                        OfflineBanner(
+                            modifier = Modifier.align(androidx.compose.ui.Alignment.TopCenter),
+                        )
+                    }
                     NavHost(nav, startDestination = Routes.HOME) {
                         composable(Routes.HOME) {
                             HomeScreen(
@@ -162,10 +184,12 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                                     runCatching { LibraryTab.valueOf(name) }.getOrNull()
                                 },
                                 player = main.player, repo = main.repo, messenger = main.messenger,
+                                downloads = main.downloads,
                                 onAlbum = { nav.navigate(Routes.album(it)) },
                                 onArtist = { nav.navigate(Routes.artist(it)) },
                                 onPlaylist = { nav.navigate(Routes.playlist(it)) },
                                 onGenre = { nav.navigate(Routes.genre(it)) },
+                                onOpenDownloads = { nav.navigate(Routes.DOWNLOADS) },
                                 onActions = { actionsTarget = it },
                             )
                         }
@@ -232,6 +256,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     player = main.player,
                     repo = main.repo,
                     favs = main.favs,
+                    downloads = main.downloads,
                     playlistEvents = main.playlistEvents,
                     messenger = main.messenger,
                     onClose = { showNowPlaying = false },
@@ -255,6 +280,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 settings = main.settings,
                 messenger = main.messenger,
                 favs = main.favs,
+                downloads = main.downloads,
                 playlistEvents = main.playlistEvents,
                 onStartRadio = { showNowPlaying = true },
                 onAlbum = {
@@ -269,6 +295,29 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 },
             )
         }
+    }
+}
+
+@Composable
+private fun OfflineBanner(modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .background(VusicColors.SurfaceHigh)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        Icon(
+            androidx.compose.material.icons.Icons.Default.CloudOff, null,
+            tint = VusicColors.SecondaryText,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.size(8.dp))
+        Text(
+            "You're offline — downloaded music only",
+            style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+            color = VusicColors.SecondaryText,
+        )
     }
 }
 

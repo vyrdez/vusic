@@ -54,6 +54,7 @@ private class FavFakeRepo : MusicDataRepository {
     override suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>) = Result.Ok(Unit)
     override suspend fun deletePlaylist(id: String) = Result.Ok(Unit)
     override suspend fun scrobble(id: String, submission: Boolean) = Result.Ok(Unit)
+    override suspend fun scrobbleAt(id: String, timeMs: Long, submission: Boolean) = Result.Ok(Unit)
     override suspend fun lyrics(artist: String, title: String) = Result.Ok("")
     override suspend fun lyricsForTrack(id: String, artist: String, title: String) = Result.Ok(SyncedLyrics.plain(""))
     override fun streamUrl(track: Track, maxBitrate: Int, format: String) = ""

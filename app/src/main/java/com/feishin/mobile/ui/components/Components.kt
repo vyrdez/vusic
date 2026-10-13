@@ -235,6 +235,7 @@ fun TrackRow(
     isCurrent: Boolean = false,
     isPlaying: Boolean = false,
     showMenuButton: Boolean = true,
+    downloadState: com.feishin.mobile.data.db.DownloadEntity? = null,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -267,6 +268,10 @@ fun TrackRow(
                     maxLines = 1,
                 )
             }
+        }
+        if (downloadState != null) {
+            DownloadIndicator(downloadState)
+            Spacer(Modifier.width(4.dp))
         }
         if (onRemove != null) {
             Text(

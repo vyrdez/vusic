@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.BookmarkAdded
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Info
@@ -106,6 +107,7 @@ fun EntityActionsSheet(
     settings: SettingsStore,
     messenger: UiMessenger,
     favs: FavoritesStore,
+    downloads: com.feishin.mobile.data.download.DownloadRepository,
     playlistEvents: PlaylistEvents? = null,
     onStartRadio: () -> Unit = {},
     onAlbum: (String) -> Unit,
@@ -115,10 +117,10 @@ fun EntityActionsSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         when (target) {
-            is ActionTarget.Track -> TrackSheetContent(target.track, onDismiss, player, repo, settings, messenger, favs, playlistEvents, onStartRadio, onAlbum, onArtist)
-            is ActionTarget.Album -> AlbumSheetContent(target.album, target.tracks, onDismiss, player, repo, settings, messenger, playlistEvents, onStartRadio, onAlbum, onArtist)
-            is ActionTarget.Artist -> ArtistSheetContent(target.artist, onDismiss, player, repo, settings, messenger, playlistEvents, onStartRadio, onAlbum, onArtist)
-            is ActionTarget.Playlist -> PlaylistSheetContent(target.playlist, target.tracks, onDismiss, player, repo, settings, messenger, playlistEvents, onAlbum, onArtist)
+            is ActionTarget.Track -> TrackSheetContent(target.track, onDismiss, player, repo, settings, messenger, favs, downloads, playlistEvents, onStartRadio, onAlbum, onArtist)
+            is ActionTarget.Album -> AlbumSheetContent(target.album, target.tracks, onDismiss, player, repo, settings, messenger, downloads, playlistEvents, onStartRadio, onAlbum, onArtist)
+            is ActionTarget.Artist -> ArtistSheetContent(target.artist, onDismiss, player, repo, settings, messenger, downloads, playlistEvents, onStartRadio, onAlbum, onArtist)
+            is ActionTarget.Playlist -> PlaylistSheetContent(target.playlist, target.tracks, onDismiss, player, repo, settings, messenger, downloads, playlistEvents, onAlbum, onArtist)
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -223,6 +225,7 @@ private fun TrackSheetContent(
     settings: SettingsStore,
     messenger: UiMessenger,
     favs: FavoritesStore,
+    downloads: com.feishin.mobile.data.download.DownloadRepository,
     playlistEvents: PlaylistEvents?,
     onStartRadio: () -> Unit,
     onAlbum: (String) -> Unit,
@@ -314,7 +317,7 @@ private fun TrackSheetContent(
                 starring = false
             }
         })
-    SheetRow("Download", Icons.Default.Download, onClick = {}, enabled = false, trailing = "Coming soon")
+    DownloadTrackRow(track, downloads, messenger, scope)
     if (track.albumId?.isNotBlank() == true) {
         SheetRow("Go to album", Icons.Default.Album, onClick = { closeAnd { onAlbum(track.albumId) } })
     }
@@ -348,6 +351,7 @@ private fun AlbumSheetContent(
     repo: MusicDataRepository,
     settings: SettingsStore,
     messenger: UiMessenger,
+    downloads: com.feishin.mobile.data.download.DownloadRepository,
     playlistEvents: PlaylistEvents?,
     onStartRadio: () -> Unit,
     onAlbum: (String) -> Unit,
@@ -436,7 +440,7 @@ private fun AlbumSheetContent(
             }
         }
     })
-    SheetRow("Download", Icons.Default.Download, onClick = {}, enabled = false, trailing = "Coming soon")
+    DownloadAlbumRow(album, tracks, downloads, messenger, scope)
     if (album.artistId?.isNotBlank() == true) {
         SheetRow("Go to artist", Icons.Default.Person, onClick = { closeAnd { onArtist(album.artistId) } })
     }
@@ -472,6 +476,7 @@ private fun ArtistSheetContent(
     repo: MusicDataRepository,
     settings: SettingsStore,
     messenger: UiMessenger,
+    downloads: com.feishin.mobile.data.download.DownloadRepository,
     playlistEvents: PlaylistEvents?,
     onStartRadio: () -> Unit,
     onAlbum: (String) -> Unit,
@@ -563,11 +568,14 @@ private fun PlaylistSheetContent(
     repo: MusicDataRepository,
     settings: SettingsStore,
     messenger: UiMessenger,
+    downloads: com.feishin.mobile.data.download.DownloadRepository,
     playlistEvents: PlaylistEvents?,
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
 ) {
     val isVirtual = playlist.id == FAVORITE_SONGS_PLAYLIST_ID
+    val groupId = if (isVirtual) "favorites" else "playlist:${playlist.id}"
+    val groupType = if (isVirtual) "favorites" else "playlist"
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var showPicker by remember { mutableStateOf(false) }
@@ -624,6 +632,30 @@ private fun PlaylistSheetContent(
         })
         SheetRow("Add all to playlist", Icons.AutoMirrored.Filled.PlaylistAdd, onClick = { showPicker = true })
     }
+    // Keep the collection available offline and in sync with the server.
+    var keep by remember(playlist.id) { mutableStateOf(false) }
+    LaunchedEffect(playlist.id) { keep = downloads.isKeepDownloaded(groupId) }
+    SheetRow(
+        if (keep) "Stop keeping downloaded" else "Keep downloaded",
+        if (keep) Icons.Default.DownloadDone else Icons.Default.Download,
+        onClick = {
+            scope.launch {
+                if (keep) {
+                    downloads.setKeepDownloaded(groupId, groupType, playlist.name, false)
+                    keep = false
+                    messenger.show("Downloads kept, sync stopped")
+                } else if (tracks.isEmpty()) {
+                    messenger.show("Tracks not loaded yet")
+                } else {
+                    if (isVirtual) downloads.enqueueFavorites(tracks)
+                    else downloads.enqueueTracks(tracks, groupId)
+                    downloads.setKeepDownloaded(groupId, groupType, playlist.name, true)
+                    keep = true
+                    messenger.show("Keeping downloaded: ${playlist.name}")
+                }
+            }
+        },
+    )
     if (!isVirtual) {
         SheetRow(if (pinned) "Unpin from Speed dial" else "Pin to Speed dial", Icons.Default.PushPin, onClick = {
             scope.launch {
@@ -799,6 +831,106 @@ fun PlaylistPickerSheet(
             dismissButton = { TextButton(onClick = { showNew = false }) { Text("Cancel") } },
         )
     }
+}
+
+// ---------- Download rows ----------
+
+/** Single-song download toggle: download, cancel, resume or remove. */
+@Composable
+private fun DownloadTrackRow(
+    track: Track,
+    downloads: com.feishin.mobile.data.download.DownloadRepository,
+    messenger: UiMessenger,
+    scope: kotlinx.coroutines.CoroutineScope,
+) {
+    val state by downloads.observeSong(track.id).collectAsState(initial = null)
+    val status = state?.statusEnum
+    val label = when (status) {
+        com.feishin.mobile.data.db.DownloadStatus.COMPLETED -> "Remove download"
+        com.feishin.mobile.data.db.DownloadStatus.DOWNLOADING,
+        com.feishin.mobile.data.db.DownloadStatus.QUEUED,
+        -> "Cancel download"
+        com.feishin.mobile.data.db.DownloadStatus.PAUSED -> "Resume download"
+        com.feishin.mobile.data.db.DownloadStatus.FAILED -> "Retry download"
+        null -> "Download"
+    }
+    SheetRow(
+        label,
+        if (status == com.feishin.mobile.data.db.DownloadStatus.COMPLETED) Icons.Default.DownloadDone
+        else Icons.Default.Download,
+        onClick = {
+            scope.launch {
+                when (status) {
+                    com.feishin.mobile.data.db.DownloadStatus.COMPLETED -> {
+                        downloads.removeFromLibrary(track.id)
+                        messenger.show("Download removed")
+                    }
+                    com.feishin.mobile.data.db.DownloadStatus.DOWNLOADING,
+                    com.feishin.mobile.data.db.DownloadStatus.QUEUED,
+                    -> {
+                        downloads.pause(track.id)
+                        messenger.show("Download cancelled")
+                    }
+                    com.feishin.mobile.data.db.DownloadStatus.PAUSED,
+                    com.feishin.mobile.data.db.DownloadStatus.FAILED,
+                    -> {
+                        downloads.resume(track.id)
+                        messenger.show("Download resumed")
+                    }
+                    null -> {
+                        downloads.enqueueTracks(listOf(track))
+                        messenger.show("Downloading: ${track.title}")
+                    }
+                }
+            }
+        },
+        trailing = state?.let {
+            if (it.statusEnum == com.feishin.mobile.data.db.DownloadStatus.DOWNLOADING) {
+                "${(it.progress * 100).toInt()}%"
+            } else null
+        },
+    )
+}
+
+/** Album download: queues the whole album as one keep-downloaded group. */
+@Composable
+private fun DownloadAlbumRow(
+    album: Album,
+    preloaded: List<Track>,
+    downloads: com.feishin.mobile.data.download.DownloadRepository,
+    messenger: UiMessenger,
+    scope: kotlinx.coroutines.CoroutineScope,
+) {
+    var keep by remember(album.id) { mutableStateOf(false) }
+    LaunchedEffect(album.id) { keep = downloads.isKeepDownloaded("album:${album.id}") }
+    SheetRow(
+        if (keep) "Remove album download" else "Download album",
+        if (keep) Icons.Default.DownloadDone else Icons.Default.Download,
+        onClick = {
+            scope.launch {
+                if (keep) {
+                    downloads.setKeepDownloaded("album:${album.id}", "album", album.name, false)
+                    for (t in preloaded) downloads.removeFromLibrary(t.id)
+                    keep = false
+                    messenger.show("Album download removed")
+                } else {
+                    if (preloaded.isEmpty()) {
+                        messenger.show("Album tracks not loaded yet")
+                    } else {
+                        downloads.enqueueAlbum(
+                            com.feishin.mobile.domain.model.AlbumDetail(
+                                album.id, album.name, album.artist, album.artistId, album.coverArt,
+                                album.songCount, album.durationSec, album.year, album.genre,
+                                album.starred, preloaded,
+                            ),
+                        )
+                        keep = true
+                        messenger.show("Downloading album: ${album.name}")
+                    }
+                }
+            }
+        },
+    )
 }
 
 // ---------- Duplicate confirmation ----------

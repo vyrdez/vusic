@@ -20,4 +20,8 @@ object DbModule {
             .build()
 
     @Provides fun provideDownloadDao(db: MusicDatabase) = db.downloadDao()
+    @Provides fun provideDownloadGroupDao(db: MusicDatabase) = db.downloadGroupDao()
+    @Provides fun provideMetadataCacheDao(db: MusicDatabase) = db.metadataCacheDao()
+    @Provides fun provideCachedCoverDao(db: MusicDatabase) = db.cachedCoverDao()
+    @Provides fun providePendingActionDao(db: MusicDatabase) = db.pendingActionDao()
 }

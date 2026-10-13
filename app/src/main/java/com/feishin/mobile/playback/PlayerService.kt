@@ -47,10 +47,14 @@ class PlayerService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val dataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
+        // Scheme-aware upstream: downloaded tracks are opened from file:// by
+        // DefaultDataSource (FileDataSource), while network streams still go
+        // through the shared OkHttp client (self-signed + path prefix).
+        val httpFactory = OkHttpDataSource.Factory(okHttpClient)
+        val upstream = androidx.media3.datasource.DefaultDataSource.Factory(this, httpFactory)
         val cacheFactory = CacheDataSource.Factory()
             .setCache(cache)
-            .setUpstreamDataSourceFactory(dataSourceFactory)
+            .setUpstreamDataSourceFactory(upstream)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
         val exo = ExoPlayer.Builder(this)

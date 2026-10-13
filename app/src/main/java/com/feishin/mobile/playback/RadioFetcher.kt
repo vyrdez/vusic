@@ -1,5 +1,6 @@
 package com.feishin.mobile.playback
 
+import com.feishin.mobile.core.common.OfflineRadio
 import com.feishin.mobile.core.common.RadioProgrammer
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.domain.model.Track
@@ -65,3 +66,24 @@ class RadioFetcher @Inject constructor(
         return Result.Ok(RadioProgrammer.buildBatch(acc, emptySet(), want))
     }
 }
+
+/** A stored download as a playable domain track (offline radio + Downloads tab). */
+fun com.feishin.mobile.data.db.DownloadEntity.toDomainTrack(): Track = Track(
+    id = songId,
+    title = title,
+    album = album,
+    albumId = albumId,
+    artist = artist,
+    artistId = artistId,
+    coverArt = coverArt,
+    durationSec = durationSec,
+    trackNo = trackNo,
+    year = year,
+    genre = genre,
+    suffix = suffix,
+    starred = false,
+    path = path,
+    replayGainTrack = replayGainTrack,
+    replayGainAlbum = replayGainAlbum,
+    replayGainPeak = replayGainPeak,
+)

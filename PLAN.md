@@ -95,6 +95,20 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   keys and key counter persist with the queue across a restart; queue rows take
   long-press with haptics plus an explicit ⋮ button left of the drag handle;
   178 unit tests)
+- [x] M5 offline downloads, caching, settings, crossfade, replaygain
+  (Room download registry with status/progress/resume; WorkManager unique work
+  with a dataSync foreground notification + Cancel and Wi-Fi-only constraints;
+  per-server app-private storage; cover art downloaded too; keep-downloaded
+  groups for album/playlist/favorites that re-sync on refresh; local-file
+  playback chosen automatically for downloads (works for restored queues,
+  shuffle restore and radio appends); offline mode + banner with cached library
+  reads (stale-while-revalidate via Room JSON cache) and offline radio from
+  downloads; queued offline scrobbles/stars replayed with original timestamps;
+  library Downloads tab with sizes and delete; SimpleCache stream cache with
+  configurable size, configurable Coil disk cache, clear-cache actions; full
+  Settings screen (account/playback/downloads/network/appearance/about);
+  ReplayGain with peak limiting and crossfade as a safe volume ramp; 217 unit
+  tests)
 - M4.8 root cause (shuffle off did not restore): `setShuffle(true)` permuted the
   tail in place with `moveMediaItem` and stored nothing, and `setShuffle(false)`
   had no restore branch at all — it only flipped the flag. The pre-shuffle order
@@ -128,7 +142,7 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
 - [ ] M6 extras (Auto manifest support, home screen widget, README, final APK verify)
 
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
-`testDebugUnitTest` 178/178 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
+`testDebugUnitTest` 217/217 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
 LIVE on-device test (emulator Pixel 7, API 34) against server.example.com: login OK,
 Home with real albums/art, album detail (17 tracks), streaming playback confirmed
 (mini player + Now Playing 0:33/3:42 + audio focus), zero FATAL crashes. Probe script
@@ -156,6 +170,36 @@ playlists/genres/starred2 all OK. No adb physical device; emulator AVD `feishin_
 - ReplayGain: no native Media3 support; stored as volume-normalization preference
   documented as best-effort (server `getAlbum` may carry replayGain fields; applied as gain).
 - Credentials never committed; test config via local.properties/env only.
+- M5 assumptions/limitations:
+  1. Crossfade is a **volume ramp** on the single ExoPlayer (fade the tail of the
+     outgoing track and the head of the incoming one), not a true two-player
+     overlap. A real crossfade needs a second ExoPlayer and would jeopardise
+     gapless playback, scrobble timing and queue edits, so the safe version ships
+     and the limitation is documented here.
+  2. Gapless is an ExoPlayer build-time property; the toggle is persisted and
+     applied when the player is built, not switched live.
+  3. Stream-cache size is applied to Media3's LRU evictor when the cache is
+     constructed, so a changed size takes effect on the next launch.
+  4. "Allow cleartext HTTP" is informational: Android's cleartext policy is
+     static per app (the manifest's network-security-config already permits it so
+     LAN servers work), so the switch records intent without a runtime re-apply.
+  5. Downloads use the `stream` endpoint when a transcoded quality is chosen and
+     the original `download` endpoint otherwise. Resume uses HTTP Range when the
+     server returns 206.
+  6. Offline star/scrobble queueing keys off connectivity + the offline-mode
+     toggle; the sync worker is scheduled with a connected constraint and retries
+     with backoff, so a long offline period simply accumulates then drains.
+- M5 device verification (emulator Pixel 7, live server): Settings renders all six
+  sections; downloaded a song end-to-end (7.4 MB m4a + 143 KB cover in
+  app-private storage, progress + completion notification on the vusic_downloads
+  channel); the Downloads tab/manager shows the total and per-row actions; with
+  airplane mode ON the offline banner appears, Home still renders from the cached
+  library, the downloaded track plays from the local file (verified via
+  media_session PLAYING with a monotonically advancing position), radio starts
+  from downloaded songs with no error, favorites update optimistically, and the
+  queued scrobbles/stars were observed in Room (8 rows) then replayed to 0 pending
+  on reconnect with the starred song confirmed on the server via getStarred2;
+  switching settings mid-song did not restart playback; zero FATALs.
 - M4.7 root cause (the "Nothing playing" text): after Clear the queue is empty
   so `player.current` becomes null, but `showNowPlaying` stayed true and the
   Now Playing overlay's null branch rendered a transparent box with

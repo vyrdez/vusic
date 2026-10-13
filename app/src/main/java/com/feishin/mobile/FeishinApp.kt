@@ -6,15 +6,27 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import androidx.hilt.work.HiltWorkerFactory
 import androidx.media3.session.DefaultMediaNotificationProvider
+import androidx.work.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import com.feishin.mobile.data.download.DownloadNotifications
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
 @HiltAndroidApp
-class FeishinApp : Application(), ImageLoaderFactory {
+class FeishinApp : Application(), ImageLoaderFactory, Configuration.Provider {
+
     @Inject lateinit var imageLoader: ImageLoader
+    @Inject lateinit var workerFactory: HiltWorkerFactory
+
+    /** Lets Hilt inject into WorkManager workers. */
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setWorkerFactory(workerFactory)
+            .build()
+
     override fun newImageLoader(): ImageLoader = imageLoader
 
     override fun onCreate() {
@@ -34,6 +46,8 @@ class FeishinApp : Application(), ImageLoaderFactory {
                     )
                 }
             }
+            // Download progress channel.
+            runCatching { DownloadNotifications.ensureChannel(this) }
         }
     }
 }

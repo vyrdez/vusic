@@ -33,11 +33,12 @@ class MainActivity : ComponentActivity() {
             val main: MainViewModel = hiltViewModel()
             val settings by main.settings.flow.collectAsState(initial = null)
             val dark = when (settings?.theme ?: ThemeMode.DARK) {
-                ThemeMode.DARK -> true
+                ThemeMode.DARK, ThemeMode.AMOLED -> true
                 ThemeMode.LIGHT -> false
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
             }
-            FeishinTheme(dark = dark) {
+            val amoled = (settings?.theme ?: ThemeMode.DARK) == ThemeMode.AMOLED
+            FeishinTheme(dark = dark, amoled = amoled) {
                 AppNav(main = main)
             }
         }

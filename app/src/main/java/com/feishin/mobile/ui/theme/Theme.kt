@@ -19,6 +19,11 @@ object VusicColors {
     val SecondaryText = Color(0xFF9AA0A6)
     val Accent = Color.White
     val OnAccent = Color.Black
+
+    /** AMOLED theme: true black backgrounds for OLED panels. */
+    val AmoledBackground = Color(0xFF000000)
+    val AmoledSurface = Color(0xFF101010)
+    val AmoledSurfaceHigh = Color(0xFF1C1C1C)
 }
 
 /**
@@ -68,7 +73,31 @@ private val Light = lightColorScheme(
     onSurface = Color(0xFF0B0F14),
 )
 
+private val Amoled = darkColorScheme(
+    primary = VusicColors.Accent,
+    onPrimary = VusicColors.OnAccent,
+    secondary = VusicColors.SecondaryText,
+    onSecondary = Color.White,
+    background = VusicColors.AmoledBackground,
+    onBackground = Color.White,
+    surface = VusicColors.AmoledSurface,
+    onSurface = Color.White,
+    surfaceVariant = VusicColors.AmoledSurfaceHigh,
+    onSurfaceVariant = VusicColors.SecondaryText,
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = VusicColors.AmoledBackground,
+    surfaceContainer = VusicColors.AmoledSurface,
+    surfaceContainerHigh = VusicColors.AmoledSurfaceHigh,
+    outline = Color(0xFF2A2A2A),
+    outlineVariant = Color(0xFF1C1C1C),
+)
+
 @Composable
-fun FeishinTheme(dark: Boolean, content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (dark) Dark else Light, content = content)
+fun FeishinTheme(dark: Boolean, amoled: Boolean = false, content: @Composable () -> Unit) {
+    val scheme = when {
+        amoled -> Amoled
+        dark -> Dark
+        else -> Light
+    }
+    MaterialTheme(colorScheme = scheme, content = content)
 }

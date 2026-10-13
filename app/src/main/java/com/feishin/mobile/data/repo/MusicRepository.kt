@@ -35,10 +35,50 @@ class MusicRepository @Inject constructor(
     private val api: SubsonicApi,
     private val creds: CredentialsStore,
     private val auth: AuthInterceptor,
+    private val cache: com.feishin.mobile.data.cache.MetadataCache,
+    private val network: com.feishin.mobile.data.network.NetworkMonitor,
+    private val settings: com.feishin.mobile.data.settings.SettingsStore,
+    // Lazy breaks the cycle: the sync store replays through this repository.
+    private val offlineSync: dagger.Lazy<com.feishin.mobile.data.download.OfflineSyncStore>,
 ) : MusicDataRepository {
     private fun base(): String {
         val c = creds.state.value ?: throw IllegalStateException("Not logged in")
-        return SubsonicAuth.normalizeServerUrl(c.serverUrl)
+        // normalizeServerUrl keeps any path prefix and strips trailing slashes;
+        // the /rest/ segment has to be added here, or endpoints concatenate
+        // straight onto the host (https://hostdownload.view).
+        return SubsonicAuth.normalizeServerUrl(c.serverUrl).trimEnd('/') + "/rest/"
+    }
+
+    /** True when the app should not attempt network reads at all. */
+    private suspend fun offline(): Boolean =
+        settings.settingsNow().offlineMode || !network.isOnline.value
+
+    /**
+     * Stale-while-revalidate read:
+     *  - offline: serve the cached payload when present.
+     *  - online: fetch, store the payload on success; on failure fall back to the
+     *    cached payload so a dropped connection still renders the library.
+     */
+    private suspend fun <T> cached(
+        key: String,
+        serializer: kotlinx.serialization.KSerializer<T>,
+        fetch: suspend () -> Result<T>,
+    ): Result<T> {
+        if (offline()) {
+            val hit = cache.read(key, serializer)
+            return if (hit != null) Result.Ok(hit) else Result.Err("You're offline")
+        }
+        val result = fetch()
+        return when (result) {
+            is Result.Ok -> {
+                cache.write(key, serializer, result.value)
+                result
+            }
+            is Result.Err -> {
+                val hit = cache.read(key, serializer)
+                if (hit != null) Result.Ok(hit) else result
+            }
+        }
     }
 
     private fun <T> unwrap(status: String, error: String?, get: () -> T): Result<T> =
@@ -62,31 +102,43 @@ class MusicRepository @Inject constructor(
         unwrap(r.status, r.error?.message) { }
     }
 
-    override suspend fun albumList(type: String, size: Int, offset: Int, genre: String?): Result<List<Album>> = call {
-        val r = api.getAlbumList(type, size, offset, genre).response
-        unwrap(r.status, r.error?.message) {
-            val direct = r.albumList?.album.orEmpty()
-            val fallback = r.albumList2?.album.orEmpty()
-            (direct + fallback).distinctBy { it.id }.map { it.toDomain() }
+    override suspend fun albumList(type: String, size: Int, offset: Int, genre: String?): Result<List<Album>> =
+        cached(com.feishin.mobile.data.cache.MetadataCacheKeys.albums(type, offset), ListSerializer(Album.serializer())) {
+            call {
+                val r = api.getAlbumList(type, size, offset, genre).response
+                unwrap(r.status, r.error?.message) {
+                    val direct = r.albumList?.album.orEmpty()
+                    val fallback = r.albumList2?.album.orEmpty()
+                    (direct + fallback).distinctBy { it.id }.map { it.toDomain() }
+                }
+            }
         }
-    }
 
-    override suspend fun artists(): Result<List<Artist>> = call {
-        val r = api.getArtists().response
-        unwrap(r.status, r.error?.message) {
-            r.artists?.index.orEmpty().flatMap { it.artist }.map { it.toDomain() }
+    override suspend fun artists(): Result<List<Artist>> =
+        cached(com.feishin.mobile.data.cache.MetadataCacheKeys.ARTISTS, ListSerializer(Artist.serializer())) {
+            call {
+                val r = api.getArtists().response
+                unwrap(r.status, r.error?.message) {
+                    r.artists?.index.orEmpty().flatMap { it.artist }.map { it.toDomain() }
+                }
+            }
         }
-    }
 
-    override suspend fun genres(): Result<List<Genre>> = call {
-        val r = api.getGenres().response
-        unwrap(r.status, r.error?.message) { r.genres?.genre.orEmpty().map { it.toDomain() } }
-    }
+    override suspend fun genres(): Result<List<Genre>> =
+        cached(com.feishin.mobile.data.cache.MetadataCacheKeys.GENRES, ListSerializer(Genre.serializer())) {
+            call {
+                val r = api.getGenres().response
+                unwrap(r.status, r.error?.message) { r.genres?.genre.orEmpty().map { it.toDomain() } }
+            }
+        }
 
-    override suspend fun playlists(): Result<List<Playlist>> = call {
-        val r = api.getPlaylists().response
-        unwrap(r.status, r.error?.message) { r.playlists?.playlist.orEmpty().map { it.toDomain() } }
-    }
+    override suspend fun playlists(): Result<List<Playlist>> =
+        cached(com.feishin.mobile.data.cache.MetadataCacheKeys.PLAYLISTS, ListSerializer(Playlist.serializer())) {
+            call {
+                val r = api.getPlaylists().response
+                unwrap(r.status, r.error?.message) { r.playlists?.playlist.orEmpty().map { it.toDomain() } }
+            }
+        }
 
     override suspend fun search(query: String): Result<SearchResults> = call {
         val r = api.search3(query).response
@@ -99,15 +151,21 @@ class MusicRepository @Inject constructor(
         }
     }
 
-    override suspend fun album(id: String): Result<AlbumDetail> = call {
-        val r = api.getAlbum(id).response
-        unwrap(r.status, r.error?.message) { requireNotNull(r.album).toDomain() }
-    }
+    override suspend fun album(id: String): Result<AlbumDetail> =
+        cached(com.feishin.mobile.data.cache.MetadataCacheKeys.album(id), AlbumDetail.serializer()) {
+            call {
+                val r = api.getAlbum(id).response
+                unwrap(r.status, r.error?.message) { requireNotNull(r.album).toDomain() }
+            }
+        }
 
-    override suspend fun artist(id: String): Result<ArtistDetail> = call {
-        val r = api.getArtist(id).response
-        unwrap(r.status, r.error?.message) { requireNotNull(r.artist).toDomain() }
-    }
+    override suspend fun artist(id: String): Result<ArtistDetail> =
+        cached(com.feishin.mobile.data.cache.MetadataCacheKeys.artist(id), ArtistDetail.serializer()) {
+            call {
+                val r = api.getArtist(id).response
+                unwrap(r.status, r.error?.message) { requireNotNull(r.artist).toDomain() }
+            }
+        }
 
     override suspend fun artistInfo(id: String): Result<ArtistInfo> = call {
         val r = runCatching { api.getArtistInfo2(id).response }.getOrNull()
@@ -136,37 +194,56 @@ class MusicRepository @Inject constructor(
         unwrap(r.status, r.error?.message) { r.similarSongs2?.song.orEmpty().map { it.toDomain() } }
     }
 
-    override suspend fun playlist(id: String): Result<PlaylistDetail> = call {
-        val r = api.getPlaylist(id).response
-        unwrap(r.status, r.error?.message) { requireNotNull(r.playlist).toDomain() }
-    }
+    override suspend fun playlist(id: String): Result<PlaylistDetail> =
+        cached(com.feishin.mobile.data.cache.MetadataCacheKeys.playlist(id), PlaylistDetail.serializer()) {
+            call {
+                val r = api.getPlaylist(id).response
+                unwrap(r.status, r.error?.message) { requireNotNull(r.playlist).toDomain() }
+            }
+        }
 
-    override suspend fun starred(): Result<StarredCollection> = call {
-        val r = try {
-            api.getStarred2().response
-        } catch (_: Exception) {
-            api.getStarred().response
+    override suspend fun starred(): Result<StarredCollection> =
+        cached(com.feishin.mobile.data.cache.MetadataCacheKeys.STARRED, StarredCollection.serializer()) {
+            call {
+                val r = try {
+                    api.getStarred2().response
+                } catch (_: Exception) {
+                    api.getStarred().response
+                }
+                unwrap(r.status, r.error?.message) {
+                    StarredCollection(
+                        artists = ((r.starred2?.artist ?: r.starred?.artist).orEmpty()).map { it.toDomain() },
+                        albums = ((r.starred2?.album ?: r.starred?.album).orEmpty()).map { it.toDomain() },
+                        tracks = ((r.starred2?.song ?: r.starred?.song).orEmpty()).map { it.toDomain() },
+                    )
+                }
+            }
         }
-        unwrap(r.status, r.error?.message) {
-            StarredCollection(
-                artists = ((r.starred2?.artist ?: r.starred?.artist).orEmpty()).map { it.toDomain() },
-                albums = ((r.starred2?.album ?: r.starred?.album).orEmpty()).map { it.toDomain() },
-                tracks = ((r.starred2?.song ?: r.starred?.song).orEmpty()).map { it.toDomain() },
-            )
-        }
-    }
 
     override suspend fun starTrack(id: String, starred: Boolean): Result<Unit> = call {
+        // Offline: remember the intent and let the sync worker replay it.
+        if (offline()) {
+            offlineSync.get().queueStar(id, starred)
+            return@call Result.Ok(Unit)
+        }
         val r = if (starred) api.star(ids = listOf(id)).response else api.unstar(ids = listOf(id)).response
         unwrap(r.status, r.error?.message) { }
     }
 
     override suspend fun starAlbum(id: String, starred: Boolean): Result<Unit> = call {
+        if (offline()) {
+            offlineSync.get().queueStarAlbum(id, starred)
+            return@call Result.Ok(Unit)
+        }
         val r = if (starred) api.star(albumIds = listOf(id)).response else api.unstar(albumIds = listOf(id)).response
         unwrap(r.status, r.error?.message) { }
     }
 
     override suspend fun starArtist(id: String, starred: Boolean): Result<Unit> = call {
+        if (offline()) {
+            offlineSync.get().queueStarArtist(id, starred)
+            return@call Result.Ok(Unit)
+        }
         val r = if (starred) api.star(artistIds = listOf(id)).response else api.unstar(artistIds = listOf(id)).response
         unwrap(r.status, r.error?.message) { }
     }
@@ -192,7 +269,17 @@ class MusicRepository @Inject constructor(
     }
 
     override suspend fun scrobble(id: String, submission: Boolean): Result<Unit> = call {
+        // Offline: queue with the original time so history lands on the right day.
+        if (offline()) {
+            offlineSync.get().queueScrobble(id, submission, System.currentTimeMillis())
+            return@call Result.Ok(Unit)
+        }
         val r = api.scrobble(id, time = System.currentTimeMillis(), submission = submission).response
+        unwrap(r.status, r.error?.message) { }
+    }
+
+    override suspend fun scrobbleAt(id: String, timeMs: Long, submission: Boolean): Result<Unit> = call {
+        val r = api.scrobble(id, time = timeMs, submission = submission).response
         unwrap(r.status, r.error?.message) { }
     }
 
@@ -246,3 +333,7 @@ class MusicRepository @Inject constructor(
         return b.build().toString()
     }
 }
+
+/** kotlinx-serialization list serializer, for the JSON metadata cache. */
+private fun <T> ListSerializer(element: kotlinx.serialization.KSerializer<T>) =
+    kotlinx.serialization.builtins.ListSerializer(element)

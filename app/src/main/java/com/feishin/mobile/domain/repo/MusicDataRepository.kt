@@ -38,6 +38,8 @@ interface MusicDataRepository {
     suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit>
     suspend fun deletePlaylist(id: String): Result<Unit>
     suspend fun scrobble(id: String, submission: Boolean): Result<Unit>
+    /** Scrobble with an explicit timestamp (replaying an offline play). */
+    suspend fun scrobbleAt(id: String, timeMs: Long, submission: Boolean): Result<Unit>
     /** OpenSubsonic synced lyrics for a track; falls back to plain text inside. */
     suspend fun lyricsForTrack(id: String, artist: String, title: String): Result<SyncedLyrics>
     suspend fun lyrics(artist: String, title: String): Result<String>

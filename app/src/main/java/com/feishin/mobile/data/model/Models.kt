@@ -123,6 +123,17 @@ data class SongDto(
     val suffix: String? = null,
     val starred: String? = null,
     val path: String = "",
+    /** OpenSubsonic ReplayGain block, when the server provides one. */
+    val replayGain: ReplayGainDto? = null,
+)
+
+/** OpenSubsonic ReplayGain values (dB gain, linear peak). */
+@Serializable
+data class ReplayGainDto(
+    val trackGain: Double? = null,
+    val albumGain: Double? = null,
+    val trackPeak: Double? = null,
+    val albumPeak: Double? = null,
 )
 
 @Serializable

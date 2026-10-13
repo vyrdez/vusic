@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-enum class LibraryTab { PLAYLISTS, ALBUMS, ARTISTS, SONGS, FAVORITES }
+enum class LibraryTab { PLAYLISTS, ALBUMS, ARTISTS, SONGS, FAVORITES, DOWNLOADS }
 enum class SortOrder { NAME_ASC, NAME_DESC, YEAR_DESC, PLAYS_DESC }
 
 @HiltViewModel

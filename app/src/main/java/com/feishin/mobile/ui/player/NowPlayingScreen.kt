@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -129,6 +130,7 @@ fun NowPlayingScreen(
     lyricsVm: LyricsViewModel = hiltViewModel(),
     repo: MusicDataRepository,
     favs: FavoritesStore,
+    downloads: com.feishin.mobile.data.download.DownloadRepository,
     playlistEvents: PlaylistEvents,
     messenger: com.feishin.mobile.ui.components.UiMessenger,
     onClose: () -> Unit,
@@ -305,6 +307,7 @@ fun NowPlayingScreen(
                     // collection once loaded (the queue's snapshot can be stale).
                     var starred by remember(current.id) { mutableStateOf(current.starred) }
                     var starring by remember(current.id) { mutableStateOf(false) }
+                    val downloadState by downloads.observeSong(current.id).collectAsState(initial = null)
                     val favTracks by favs.tracks.collectAsState()
                     val favsLoaded by favs.loaded.collectAsState()
                     LaunchedEffect(current.id, favTracks, favsLoaded) {
@@ -318,6 +321,7 @@ fun NowPlayingScreen(
                     NpChipsRow(
                         content = content,
                         starred = starred,
+                        downloadState = downloadState,
                         onFavorite = {
                             if (starring) return@NpChipsRow
                             val next = !starred
@@ -336,6 +340,32 @@ fun NowPlayingScreen(
                         },
                         onSave = { showPicker = true },
                         onShare = { shareText(context, "${current.title} - ${current.artist}") },
+                        onDownload = {
+                            scope.launch {
+                                when (downloadState?.statusEnum) {
+                                    com.feishin.mobile.data.db.DownloadStatus.COMPLETED -> {
+                                        downloads.removeFromLibrary(current.id)
+                                        messenger.show("Download removed")
+                                    }
+                                    com.feishin.mobile.data.db.DownloadStatus.DOWNLOADING,
+                                    com.feishin.mobile.data.db.DownloadStatus.QUEUED,
+                                    -> {
+                                        downloads.pause(current.id)
+                                        messenger.show("Download cancelled")
+                                    }
+                                    com.feishin.mobile.data.db.DownloadStatus.PAUSED,
+                                    com.feishin.mobile.data.db.DownloadStatus.FAILED,
+                                    -> {
+                                        downloads.resume(current.id)
+                                        messenger.show("Download resumed")
+                                    }
+                                    null -> {
+                                        downloads.enqueueTracks(listOf(current))
+                                        messenger.show("Downloading: ${current.title}")
+                                    }
+                                }
+                            }
+                        },
                     )
                     Spacer(Modifier.height(8.dp))
                     SeekBar(player, content)
@@ -397,10 +427,22 @@ private fun SongLyricsToggle(lyricsMode: Boolean, onSelect: (Boolean) -> Unit, d
 private fun NpChipsRow(
     content: Color,
     starred: Boolean,
+    downloadState: com.feishin.mobile.data.db.DownloadEntity?,
     onFavorite: () -> Unit,
     onSave: () -> Unit,
     onShare: () -> Unit,
+    onDownload: () -> Unit,
 ) {
+    val dlStatus = downloadState?.statusEnum
+    val downloadLabel = when (dlStatus) {
+        com.feishin.mobile.data.db.DownloadStatus.COMPLETED -> "Downloaded"
+        com.feishin.mobile.data.db.DownloadStatus.DOWNLOADING,
+        com.feishin.mobile.data.db.DownloadStatus.QUEUED,
+        -> "${((downloadState?.progress ?: 0f) * 100).toInt()}%"
+        com.feishin.mobile.data.db.DownloadStatus.PAUSED -> "Paused"
+        com.feishin.mobile.data.db.DownloadStatus.FAILED -> "Retry"
+        null -> "Download"
+    }
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
@@ -414,7 +456,16 @@ private fun NpChipsRow(
         )
         NpChip("Save", Icons.Default.Save, content, onSave)
         NpChip("Share", Icons.Default.Share, content, onShare)
-        NpChip("Download", Icons.Default.Download, content, onClick = {}, enabled = false)
+        NpChip(
+            label = downloadLabel,
+            icon = if (dlStatus == com.feishin.mobile.data.db.DownloadStatus.COMPLETED) {
+                Icons.Default.DownloadDone
+            } else {
+                Icons.Default.Download
+            },
+            content = content,
+            onClick = onDownload,
+        )
     }
 }
 

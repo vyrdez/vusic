@@ -24,6 +24,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -32,7 +33,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,6 +68,7 @@ private fun tabLabel(t: LibraryTab) = when (t) {
     LibraryTab.ARTISTS -> "Artists"
     LibraryTab.SONGS -> "Songs"
     LibraryTab.FAVORITES -> "Favorites"
+    LibraryTab.DOWNLOADS -> "Downloads"
 }
 
 @Composable
@@ -74,10 +78,12 @@ fun LibraryScreen(
     player: PlayerManager,
     repo: MusicDataRepository,
     messenger: UiMessenger,
+    downloads: com.feishin.mobile.data.download.DownloadRepository,
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
     onPlaylist: (String) -> Unit,
     onGenre: (String) -> Unit,
+    onOpenDownloads: () -> Unit,
     onActions: (ActionTarget) -> Unit,
 ) {
     val tab by vm.tab.collectAsState()
@@ -86,6 +92,7 @@ fun LibraryScreen(
     var sortMenu by remember { mutableStateOf(false) }
     val nowPlaying by player.current.collectAsState()
     val isPlaying by player.isPlaying.collectAsState()
+    val scope = rememberCoroutineScope()
 
     // The nav arg is authoritative when it changes (Explore pills / restored entry).
     LaunchedEffect(initialTab) { initialTab?.let { vm.selectTab(it) } }
@@ -349,10 +356,92 @@ fun LibraryScreen(
                         }
                     }
                 }
+                LibraryTab.DOWNLOADS -> {
+                    DownloadsTab(
+                        downloads = downloads,
+                        repo = repo,
+                        onPlaySong = { entity ->
+                            player.playAll(listOf(entity.toDomainTrack()), source = "Downloads")
+                        },
+                        onRemove = { id -> scope.launch { downloads.removeFromLibrary(id) } },
+                        onManage = onOpenDownloads,
+                        onActions = onActions,
+                    )
+                }
             }
         }
     }
 }
+
+/** Downloaded music: totals, then the songs, with remove buttons. */
+@Composable
+private fun DownloadsTab(
+    downloads: com.feishin.mobile.data.download.DownloadRepository,
+    repo: MusicDataRepository,
+    onPlaySong: (com.feishin.mobile.data.db.DownloadEntity) -> Unit,
+    onRemove: (String) -> Unit,
+    onManage: () -> Unit,
+    onActions: (ActionTarget) -> Unit,
+) {
+    val all by downloads.downloads.collectAsState(initial = emptyList())
+    val done = all.filter { it.statusEnum == com.feishin.mobile.data.db.DownloadStatus.COMPLETED }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    if (all.isEmpty()) {
+        EmptyState("Nothing downloaded yet. Use the download button on a song, album or playlist.")
+        return
+    }
+    val total = done.fold(0L) { acc, e -> acc + e.sizeBytes }
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom),
+    ) {
+        item {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("${done.size} songs", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        com.feishin.mobile.core.common.CacheSizePolicy.human(total),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText,
+                    )
+                }
+                OutlinedButton(onClick = onManage) { Text("Manage") }
+            }
+        }
+        items(done, key = { it.songId }) { entity ->
+            TrackRow(
+                track = entity.toDomainTrack(),
+                artUrl = repo.coverArtUrl(entity.coverArt, 128),
+                onClick = { onPlaySong(entity) },
+                onActions = { onActions(ActionTarget.Track(entity.toDomainTrack())) },
+                downloadState = entity,
+                onRemove = { scope.launch { onRemove(entity.songId) } },
+            )
+        }
+    }
+}
+
+/** A stored download as a playable domain track (used by the Downloads tab). */
+private fun com.feishin.mobile.data.db.DownloadEntity.toDomainTrack() =
+    com.feishin.mobile.domain.model.Track(
+        id = songId,
+        title = title,
+        album = album,
+        albumId = albumId,
+        artist = artist,
+        artistId = artistId,
+        coverArt = coverArt,
+        durationSec = durationSec,
+        trackNo = trackNo,
+        year = year,
+        genre = genre,
+        suffix = suffix,
+        starred = false,
+        path = path,
+        replayGainTrack = replayGainTrack,
+        replayGainAlbum = replayGainAlbum,
+        replayGainPeak = replayGainPeak,
+    )
 
 /**
  * Pinned "Favorite songs" row: heart-on-gradient cover, or a collage of the
@@ -408,6 +497,7 @@ private fun LibraryPullToRefresh(
         LibraryTab.SONGS -> songs is UiState.Loading
         LibraryTab.PLAYLISTS -> playlists is UiState.Loading
         LibraryTab.FAVORITES -> favs is UiState.Loading
+        LibraryTab.DOWNLOADS -> false
     }
     PullToRefreshBox(
         isRefreshing = refreshing,

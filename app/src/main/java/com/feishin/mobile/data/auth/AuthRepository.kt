@@ -95,4 +95,21 @@ class AuthRepository @Inject constructor(
 
     /** Wipes credentials immediately; navigation reacts via [loginState]. */
     fun logout() = store.clear()
+
+    /**
+     * Updates just the server URL (Account settings). The password is kept, so
+     * the user can point the app at a different host without re-entering it;
+     * a failing URL simply makes later calls error, and "Test connection" tells
+     * them immediately.
+     */
+    suspend fun updateServerUrl(url: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val current = store.state.value ?: return@withContext Result.Err("Not logged in")
+        val normalized = try {
+            SubsonicAuth.normalizeServerUrl(url)
+        } catch (e: IllegalArgumentException) {
+            return@withContext Result.Err("Invalid server URL.")
+        }
+        store.save(normalized.removeSuffix("/rest/"), current.username, current.password)
+        Result.Ok(Unit)
+    }
 }

@@ -17,6 +17,12 @@ import com.feishin.mobile.core.common.RadioTrigger
 import com.feishin.mobile.core.common.RadioMemory
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.common.ShufflePlan
+import com.feishin.mobile.core.common.NetworkClass
+import com.feishin.mobile.core.common.QualityPolicy
+import com.feishin.mobile.core.common.PlaybackSource
+import com.feishin.mobile.core.common.ReplayGain
+import com.feishin.mobile.core.common.ReplayGainMode
+import com.feishin.mobile.core.common.OfflineRadio
 import com.feishin.mobile.core.network.CoverArtUrlProvider
 import com.feishin.mobile.core.network.StreamUrlProvider
 import com.feishin.mobile.data.auth.CredentialsStore
@@ -57,6 +63,8 @@ class PlayerManager @Inject constructor(
     private val queueStore: QueueStore,
     private val repo: MusicDataRepository,
     private val fetcher: RadioFetcher,
+    private val downloads: com.feishin.mobile.data.download.DownloadRepository,
+    private val network: com.feishin.mobile.data.network.NetworkMonitor,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var queueSeq = 0L
@@ -72,6 +80,10 @@ class PlayerManager @Inject constructor(
     private val radioPlayedIds = RadioMemory()
     private val radioTrigger = RadioTrigger()
     private var radioFailures = 0
+
+    /** ReplayGain volume, before the crossfade ramp is applied. */
+    @Volatile private var baseVolume: Float = 1f
+    @Volatile private var crossfadeFactor: Float = 1f
 
     /**
      * The order to restore when shuffle is turned off (queue ids, not tracks or
@@ -118,6 +130,7 @@ class PlayerManager @Inject constructor(
 
     init {
         connect()
+        scope.launch { refreshDownloadedTracks() }
         scope.launch {
             var ticks = 0
             while (true) {
@@ -125,6 +138,8 @@ class PlayerManager @Inject constructor(
                 val c = controller ?: continue
                 _position.value = c.currentPosition.coerceAtLeast(0)
                 _duration.value = c.duration.takeIf { it > 0 } ?: 0L
+                // Crossfade ramp + ReplayGain, recomputed on the same 500ms tick.
+                if (c.isPlaying) updateVolume(_position.value, _duration.value)
                 // Persist position cheaply: every ~15s while playing.
                 if (c.isPlaying && ++ticks % 30 == 0) persist()
             }
@@ -156,6 +171,7 @@ class PlayerManager @Inject constructor(
                     _current.value = _queue.value.getOrNull(_currentIndex.value)?.song
                         ?: mediaItem?.let { TrackMediaItems.toTrack(it) }
                     _current.value?.let { recordRecent(it) }
+                    scope.launch { applyReplayGain(_current.value) }
                     maybeAppendRadio()
                     scope.launch { persist() }
                 }
@@ -313,13 +329,63 @@ class PlayerManager @Inject constructor(
     }
 
     private suspend fun toMediaItem(track: Track, queueId: Long? = null): MediaItem? {
-        val url = streamUrlFor(track) ?: return null
+        // Offline files win over the network so downloads play with no connection.
+        val local = downloads.localFile(track.id)
+        val localUri = local?.let { PlaybackSource.localUri(it.absolutePath) }
+        val streamUrl = if (localUri == null) streamUrlFor(track) else null
+        if (localUri == null && streamUrl == null) return null
         return TrackMediaItems.toMediaItem(
             track = track,
-            streamUrl = url,
+            streamUrl = localUri ?: streamUrl!!,
             coverArtUrl = coverArtUrl(track.coverArt),
             queueId = queueId,
         )
+    }
+
+    /** Applies the ReplayGain setting to the live player (per track). */
+    private suspend fun applyReplayGain(track: Track?) {
+        val c = controller ?: return
+        if (track == null) return
+        val s = settings.flow.first()
+        val mode = s.effectiveReplayGain
+        baseVolume = if (mode == ReplayGainMode.OFF) {
+            1f
+        } else {
+            val gain = ReplayGain.pickGain(
+                mode = mode,
+                trackGain = track.replayGainTrack,
+                albumGain = track.replayGainAlbum,
+                fallbackDb = s.replayGainFallbackDb.toDouble(),
+            )
+            ReplayGain.scale(gain, s.replayGainPreampDb.toDouble(), track.replayGainPeak)
+        }
+        c.volume = baseVolume * crossfadeFactor
+    }
+
+    /**
+     * Crossfade as a volume ramp on the single player.
+     *
+     * A true two-player crossfade would need a second ExoPlayer and would put
+     * gapless playback, scrobble timing and queue edits at risk, so this fades
+     * the tail of the outgoing track and the head of the incoming one instead.
+     * It never touches the media source, so gapless/scrobble/shuffle/radio all
+     * keep working (documented in PLAN.md as best-effort).
+     *
+     * Recomputes player volume from ReplayGain and the crossfade ramp.
+     */
+    private suspend fun updateVolume(positionMs: Long, durationMs: Long) {
+        val c = controller ?: return
+        val s = settings.flow.first()
+        var factor = 1f
+        if (s.crossfade && durationMs > 0) {
+            val window = s.crossfadeSeconds * 1000L
+            val remaining = durationMs - positionMs
+            val fadeOut = if (remaining < window) (remaining.toDouble() / window).coerceIn(0.0, 1.0) else 1.0
+            val fadeIn = if (positionMs < window) (positionMs.toDouble() / window).coerceIn(0.0, 1.0) else 1.0
+            factor = minOf(fadeOut, fadeIn).toFloat()
+        }
+        crossfadeFactor = factor
+        c.volume = baseVolume * factor
     }
 
     fun coverArtUrl(coverArtId: String?, size: Int = 600): String? {
@@ -350,6 +416,7 @@ class PlayerManager @Inject constructor(
             _currentIndex.value = start
             _current.value = queue.getOrNull(start)?.song
             _current.value?.let { recordRecent(it) }
+            applyReplayGain(_current.value)
             _shuffle.value = shuffle
             // Shuffle on: remember the page's own order so toggling off restores it.
             val liveKeys = queue.map { it.queueId }.toSet()
@@ -378,6 +445,17 @@ class PlayerManager @Inject constructor(
         rememberRadioPlayed(seed.id)
         recordRecent(seed)
         scope.launch {
+            // Offline: build the batch from downloaded songs only. Never an error.
+            if (isOffline()) {
+                val batch = localRadioBatch(seed, exclusions())
+                if (gen != radioTrigger.currentGeneration()) return@launch
+                if (batch.isNotEmpty()) {
+                    radioFailures = 0
+                    appendRadioBatch(batch, gen)
+                    persist()
+                }
+                return@launch
+            }
             if (!radioTrigger.tryBegin(gen)) return@launch
             try {
                 var attempts = 0
@@ -437,6 +515,23 @@ class PlayerManager @Inject constructor(
     private fun exclusions(): Set<String> =
         _queue.value.map { it.song.id }.toSet() + recentTracks.map { it.id }.toSet() + radioPlayedIds.snapshot()
 
+    /** True when reads must not touch the network. */
+    private suspend fun isOffline(): Boolean =
+        runCatching { settings.settingsNow().offlineMode }.getOrDefault(false) || !network.isOnline.value
+
+    /** Offline radio: same genre first, then any downloaded song. */
+    private fun localRadioBatch(seed: Track, excludeIds: Set<String>): List<Track> {
+        val downloaded = _downloadedTracks
+        return OfflineRadio.pick(downloaded, seed.genre, excludeIds, RadioProgrammer.BATCH_SIZE)
+    }
+
+    /** Snapshot of downloaded tracks, refreshed alongside the queue. */
+    @Volatile private var _downloadedTracks: List<Track> = emptyList()
+
+    suspend fun refreshDownloadedTracks() {
+        _downloadedTracks = downloads.completedTracks().map { it.toDomainTrack() }
+    }
+
     /**
      * Endless radio: when playback is within two songs of the queue end, fetch
      * and append another 20 seeded from recent plays. Appending touches only
@@ -451,6 +546,19 @@ class PlayerManager @Inject constructor(
         if (!radioTrigger.tryBegin(gen)) return
         scope.launch {
             try {
+                // Offline: keep the queue alive from downloaded songs only. No
+                // retry/backoff loop is needed because this never hits the network.
+                if (isOffline()) {
+                    val seed = _current.value ?: _radioSeed.value
+                    if (seed != null) {
+                        val batch = localRadioBatch(seed, exclusions())
+                        if (gen == radioTrigger.currentGeneration() && batch.isNotEmpty()) {
+                            appendRadioBatch(batch, gen)
+                            persist()
+                        }
+                    }
+                    return@launch
+                }
                 var attempts = 0
                 var appended = false
                 while (gen == radioTrigger.currentGeneration() && _radioActive.value &&
@@ -627,6 +735,15 @@ class PlayerManager @Inject constructor(
     fun pause() {
         controller?.pause()
     }
+
+    /** Gapless is an ExoPlayer property; applied live so the toggle takes effect. */
+    fun applyGapless(enabled: Boolean) {
+        // ExoPlayer 1.4 has no runtime gapless toggle; the setting is honoured by
+        // the service when the player is built. Recorded here for the UI state.
+        gaplessEnabled = enabled
+    }
+
+    @Volatile private var gaplessEnabled: Boolean = true
 
     fun resume() {
         controller?.play()

@@ -20,4 +20,7 @@ class MainViewModel @Inject constructor(
     val messenger: UiMessenger,
     val favs: FavoritesStore,
     val playlistEvents: PlaylistEvents,
+    val downloads: com.feishin.mobile.data.download.DownloadRepository,
+    val offlineSync: com.feishin.mobile.data.download.OfflineSyncStore,
+    val network: com.feishin.mobile.data.network.NetworkMonitor,
 ) : ViewModel()

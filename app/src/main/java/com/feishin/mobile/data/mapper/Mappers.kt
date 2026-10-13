@@ -64,6 +64,9 @@ fun SongDto.toDomain() = Track(
     sizeBytes = size,
     bitRate = bitRate,
     path = path,
+    replayGainTrack = replayGain?.trackGain,
+    replayGainAlbum = replayGain?.albumGain,
+    replayGainPeak = replayGain?.trackPeak ?: replayGain?.albumPeak,
 )
 
 fun ArtistDto.toDomain() = Artist(
