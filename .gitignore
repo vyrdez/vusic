@@ -17,3 +17,6 @@ local.properties
 *.keystore
 # Test config with credentials (never commit live server details)
 nd_test.properties
+
+# Kotlin compiler scratch
+.kotlin/
