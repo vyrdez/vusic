@@ -34,6 +34,8 @@ data class PersistedTrack(
     val sizeBytes: Long = 0,
     val bitRate: Int? = null,
     val path: String = "",
+    /** Per-entry queue key; -1 for snapshots written before it existed. */
+    val queueId: Long = -1L,
 ) {
     fun toDomain() = Track(
         id, title, album, albumId, artist, artistId, coverArt, durationSec, trackNo, year, genre, suffix, starred,
@@ -41,10 +43,10 @@ data class PersistedTrack(
     )
 
     companion object {
-        fun from(t: Track) = PersistedTrack(
+        fun from(t: Track, queueId: Long = -1L) = PersistedTrack(
             t.id, t.title, t.album, t.albumId, t.artist, t.artistId, t.coverArt,
             t.durationSec, t.trackNo, t.year, t.genre, t.suffix, t.starred,
-            t.sizeBytes, t.bitRate, t.path,
+            t.sizeBytes, t.bitRate, t.path, queueId,
         )
     }
 }
@@ -58,6 +60,11 @@ data class QueueSnapshot(
     /** Radio auto-DJ survives restarts: keep appending after a process kill. */
     val radioActive: Boolean = false,
     val radioSeedId: String? = null,
+    /** Shuffle state + the order to restore when it is turned off. */
+    val shuffleActive: Boolean = false,
+    val shuffleOrder: List<Long> = emptyList(),
+    /** Next queue-key counter, so restored entries never collide. */
+    val queueSeq: Long = 0L,
 )
 
 /**
@@ -82,18 +89,25 @@ class QueueStore internal constructor(
         sourceName: String? = null,
         radioActive: Boolean = false,
         radioSeedId: String? = null,
+        queueIds: List<Long>? = null,
+        shuffleActive: Boolean = false,
+        shuffleOrder: List<Long> = emptyList(),
+        queueSeq: Long = 0L,
     ) {
         if (tracks.isEmpty()) {
             clear()
             return
         }
         val snapshot = QueueSnapshot(
-            tracks = tracks.map(PersistedTrack::from),
+            tracks = tracks.mapIndexed { i, t -> PersistedTrack.from(t, queueIds?.getOrNull(i) ?: -1L) },
             currentIndex = currentIndex.coerceIn(0, tracks.size - 1),
             positionMs = positionMs.coerceAtLeast(0),
             sourceName = sourceName,
             radioActive = radioActive,
             radioSeedId = radioSeedId,
+            shuffleActive = shuffleActive,
+            shuffleOrder = shuffleOrder,
+            queueSeq = queueSeq,
         )
         runCatching { store.edit { it[key] = json.encodeToString(QueueSnapshot.serializer(), snapshot) } }
     }

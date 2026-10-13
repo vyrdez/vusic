@@ -90,6 +90,25 @@ class TrackMediaItemsTest {
         assertEquals("al-1", packed[TrackMediaItems.EXTRA_COVER_ART])
         assertEquals("ar1", packed[TrackMediaItems.EXTRA_ARTIST_ID])
         assertEquals("al1", packed[TrackMediaItems.EXTRA_ALBUM_ID])
+        assertNull(packed[TrackMediaItems.EXTRA_QUEUE_ID])
+    }
+
+    @Test
+    fun extrasMap_carriesPerEntryQueueKey() {
+        // Two copies of the same song must be distinguishable in the queue.
+        val a = TrackMediaItems.toMediaInfo(track, streamUrl, coverUrl, queueId = 41L)
+        val b = TrackMediaItems.toMediaInfo(track, streamUrl, coverUrl, queueId = 42L)
+        assertEquals("41", TrackMediaItems.extrasMap(a)[TrackMediaItems.EXTRA_QUEUE_ID])
+        assertEquals("42", TrackMediaItems.extrasMap(b)[TrackMediaItems.EXTRA_QUEUE_ID])
+        // The song id itself is unchanged, so server calls keep working.
+        assertEquals("trk1", a.mediaId)
+        assertEquals("trk1", b.mediaId)
+    }
+
+    @Test
+    fun toMediaInfo_keepsQueueId() {
+        assertEquals(7L, TrackMediaItems.toMediaInfo(track, streamUrl, null, queueId = 7L).queueId)
+        assertNull(TrackMediaItems.toMediaInfo(track, streamUrl, null).queueId)
     }
 
     @Test

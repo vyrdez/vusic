@@ -20,6 +20,11 @@ data class TrackMediaInfo(
     val album: String,
     val trackNo: Int?,
     val durationMs: Long,
+    /**
+     * Unique per queue entry (not per song), so the same song queued twice still
+     * has two distinguishable MediaItems. Null for ad-hoc items.
+     */
+    val queueId: Long? = null,
 )
 
 /**
@@ -32,6 +37,7 @@ object TrackMediaItems {
         track: Track,
         streamUrl: String,
         coverArtUrl: String? = null,
+        queueId: Long? = null,
     ): TrackMediaInfo = TrackMediaInfo(
         mediaId = track.id,
         streamUrl = streamUrl,
@@ -44,6 +50,7 @@ object TrackMediaItems {
         album = track.album,
         trackNo = track.trackNo,
         durationMs = if (track.durationSec > 0) track.durationSec * 1000L else 0L,
+        queueId = queueId,
     )
 
     @androidx.media3.common.util.UnstableApi
@@ -52,8 +59,9 @@ object TrackMediaItems {
         streamUrl: String,
         coverArtUrl: String? = null,
         durationMs: Long = if (track.durationSec > 0) track.durationSec * 1000L else 0L,
+        queueId: Long? = null,
     ): MediaItem = toMediaItem(
-        toMediaInfo(track, streamUrl, coverArtUrl).copy(durationMs = durationMs),
+        toMediaInfo(track, streamUrl, coverArtUrl, queueId).copy(durationMs = durationMs),
     )
 
     // Round-trip payload keys. Kept as pure Map logic so the mapping itself is
@@ -62,6 +70,7 @@ object TrackMediaItems {
         EXTRA_COVER_ART to info.coverArtId,
         EXTRA_ARTIST_ID to info.artistId,
         EXTRA_ALBUM_ID to info.albumId,
+        EXTRA_QUEUE_ID to info.queueId?.toString(),
     )
 
     fun toMediaItem(info: TrackMediaInfo): MediaItem {
@@ -79,6 +88,7 @@ object TrackMediaItems {
                         EXTRA_COVER_ART to packed[EXTRA_COVER_ART],
                         EXTRA_ARTIST_ID to packed[EXTRA_ARTIST_ID],
                         EXTRA_ALBUM_ID to packed[EXTRA_ALBUM_ID],
+                        EXTRA_QUEUE_ID to packed[EXTRA_QUEUE_ID],
                     ),
                 )
             }
@@ -90,6 +100,10 @@ object TrackMediaItems {
             .setMediaMetadata(metadata)
             .build()
     }
+
+    /** The per-queue-entry key this item was built with, if any. */
+    fun queueIdOf(item: MediaItem): Long? =
+        item.mediaMetadata.extras?.getString(EXTRA_QUEUE_ID)?.toLongOrNull()
 
     /** Rebuilds a MediaItem with fresh (single-use) stream auth params. */
     fun withStreamUrl(item: MediaItem, streamUrl: String): MediaItem =
@@ -120,4 +134,5 @@ object TrackMediaItems {
     const val EXTRA_COVER_ART = "coverArt"
     const val EXTRA_ARTIST_ID = "artistId"
     const val EXTRA_ALBUM_ID = "albumId"
+    const val EXTRA_QUEUE_ID = "queueId"
 }

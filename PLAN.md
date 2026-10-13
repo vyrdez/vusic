@@ -86,11 +86,49 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   auto-dismiss on Clear; server-backed Favorite songs collection with gradient
   or collage cover, reactive star sync, and duplicate detection with
   Skip/Add-anyway/Cancel on every add-to-playlist flow; 157 unit tests)
+- [x] M4.8 shuffle restore + queue long-press actions
+  (per-entry queue keys round-tripped through MediaItem extras; shuffle ON
+  snapshots the order and permutes only the upcoming tail, shuffle OFF restores
+  the snapshot by key with minimum `moveMediaItem` calls so the current item
+  keeps playing and positions never jump; removals/play-next/append edits and
+  manual drags while shuffled are folded into the snapshot; the flag, snapshot,
+  keys and key counter persist with the queue across a restart; queue rows take
+  long-press with haptics plus an explicit ⋮ button left of the drag handle;
+  178 unit tests)
+- M4.8 root cause (shuffle off did not restore): `setShuffle(true)` permuted the
+  tail in place with `moveMediaItem` and stored nothing, and `setShuffle(false)`
+  had no restore branch at all — it only flipped the flag. The pre-shuffle order
+  was therefore unrecoverable the moment the moves were applied.
+- M4.8 restore rules implemented (all in `ShufflePlan`, pure and unit-tested):
+  1. Every queue entry has a unique key (`queueId`, also written into the
+     MediaItem extras), so two copies of the same song stay distinguishable and
+     the current entry is found by key, never by song id or position.
+  2. Shuffle ON snapshots the current key order, then permutes only the
+     not-yet-played tail; played items and the current item keep their slots.
+  3. Shuffle OFF restores the snapshot order: entries removed while shuffled are
+     dropped, entries added while shuffled are appended in the order added
+     ("play next" is inserted right after the current entry in the snapshot too,
+     "add to queue"/radio appends go to the end).
+  4. A manual drag while shuffled is treated as the NEW base order (the drag
+     wins; restoring to the pre-shuffle order would silently discard the user's
+     arrangement).
+  5. New playback (playAll / Start radio) resets the snapshot; for a shuffled
+     page the snapshot is the page's own track-list order, so toggling OFF
+     restores the visible list order. Clear wipes the snapshot and the flag.
+  6. Restore uses `moveMediaItem` only (minimum-move sequence), so nothing is
+     removed, re-inserted or re-prepared: the current item keeps playing with no
+     restart or position change. Repeat modes are untouched.
+  7. The flag + snapshot + queue keys + key counter persist with the queue, so
+     shuffle restores correctly across an app restart.
+- M4.8 queue row actions: queue rows now take long-press (with a haptic tick)
+  and also show an explicit ⋮ button to the left of the drag handle, because
+  long-press alone was unreliable for the user. Tap still jumps, the handle
+  still drags, swipe still removes; opening the sheet does not close the queue.
 - [ ] M5 offline+settings (downloads, stream cache, bitrate wifi/mobile, theme, cert toggle, logout)
 - [ ] M6 extras (Auto manifest support, home screen widget, README, final APK verify)
 
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
-`testDebugUnitTest` 157/157 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
+`testDebugUnitTest` 178/178 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
 LIVE on-device test (emulator Pixel 7, API 34) against server.example.com: login OK,
 Home with real albums/art, album detail (17 tracks), streaming playback confirmed
 (mini player + Now Playing 0:33/3:42 + audio focus), zero FATAL crashes. Probe script

@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -81,6 +82,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -355,6 +358,7 @@ fun NowPlayingScreen(
         QueueSheet(
             player = player, repo = repo, messenger = messenger,
             content = content, playlistEvents = playlistEvents,
+            onActions = { onActions(ActionTarget.Track(it)) },
             onDismiss = { showQueue = false },
         )
     }
@@ -662,7 +666,7 @@ private fun SyncedLyricsList(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun QueueSheet(
     player: PlayerManager,
@@ -670,6 +674,7 @@ fun QueueSheet(
     messenger: UiMessenger,
     content: Color = MaterialTheme.colorScheme.onSurface,
     playlistEvents: PlaylistEvents? = null,
+    onActions: (com.feishin.mobile.domain.model.Track) -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -679,6 +684,7 @@ fun QueueSheet(
     val radioActive by player.radioActive.collectAsState()
     val isPlaying by player.isPlaying.collectAsState()
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
     var showSaveDialog by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -767,7 +773,16 @@ fun QueueSheet(
                                         else Color.Transparent,
                                         RoundedCornerShape(8.dp),
                                     )
-                                    .clickable(enabled = idx >= 0) { if (idx >= 0) player.playAt(idx) }
+                                    .combinedClickable(
+                                        enabled = idx >= 0,
+                                        onClick = { if (idx >= 0) player.playAt(idx) },
+                                        onLongClick = {
+                                            // Long-press opens the same sheet as the ⋮
+                                            // button, with a haptic tick for feedback.
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            onActions(item.song)
+                                        },
+                                    )
                                     .padding(12.dp, 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -789,6 +804,18 @@ fun QueueSheet(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = VusicColors.SecondaryText,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                // Explicit ⋮ entry point next to the drag handle, so
+                                // the actions sheet is reachable without long-press.
+                                IconButton(
+                                    onClick = { onActions(item.song) },
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.MoreVert,
+                                        contentDescription = "Track options",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                                 Icon(

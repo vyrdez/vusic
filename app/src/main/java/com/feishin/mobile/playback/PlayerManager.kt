@@ -16,6 +16,7 @@ import com.feishin.mobile.core.common.RadioProgrammer
 import com.feishin.mobile.core.common.RadioTrigger
 import com.feishin.mobile.core.common.RadioMemory
 import com.feishin.mobile.core.common.Result
+import com.feishin.mobile.core.common.ShufflePlan
 import com.feishin.mobile.core.network.CoverArtUrlProvider
 import com.feishin.mobile.core.network.StreamUrlProvider
 import com.feishin.mobile.data.auth.CredentialsStore
@@ -71,6 +72,12 @@ class PlayerManager @Inject constructor(
     private val radioPlayedIds = RadioMemory()
     private val radioTrigger = RadioTrigger()
     private var radioFailures = 0
+
+    /**
+     * The order to restore when shuffle is turned off (queue ids, not tracks or
+     * positions). Null whenever shuffle is off, so "off" is always the real order.
+     */
+    private var shuffleOrder: List<Long>? = null
 
     @Volatile private var controller: MediaController? = null
 
@@ -138,8 +145,12 @@ class PlayerManager @Inject constructor(
                 }
 
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                    val id = mediaItem?.mediaId
-                    val idx = _queue.value.indexOfFirst { it.song.id == id }.takeIf { it >= 0 }
+                    // Match on the per-entry queue key first: the same song can be
+                    // queued twice, and song ids would resolve to the wrong entry.
+                    val qid = mediaItem?.let { TrackMediaItems.queueIdOf(it) }
+                    val idx = qid?.let { id -> _queue.value.indexOfFirst { it.queueId == id } }
+                        ?.takeIf { it >= 0 }
+                        ?: _queue.value.indexOfFirst { it.song.id == mediaItem?.mediaId }.takeIf { it >= 0 }
                         ?: c.currentMediaItemIndex
                     _currentIndex.value = idx.coerceIn(0, maxOf(0, _queue.value.size - 1))
                     _current.value = _queue.value.getOrNull(_currentIndex.value)?.song
@@ -175,6 +186,7 @@ class PlayerManager @Inject constructor(
     private fun syncQueueFromController(c: MediaController) {
         val existing = _queue.value.associateBy { it.song.id }
         val rebuilt = ArrayList<QueueItem>(c.mediaItemCount)
+        var maxId = queueSeq - 1
         for (i in 0 until c.mediaItemCount) {
             val item = c.getMediaItemAt(i)
             val id = item.mediaId
@@ -191,14 +203,24 @@ class PlayerManager @Inject constructor(
                 fromItem != null -> fromItem
                 else -> null
             }
-            if (merged != null) rebuilt += QueueItem(merged, queueSeq++)
+            if (merged != null) {
+                // Keep the original per-entry key when the service still has it;
+                // otherwise mint a fresh one.
+                val qid = TrackMediaItems.queueIdOf(item) ?: queueSeq++
+                maxId = maxOf(maxId, qid)
+                rebuilt += QueueItem(merged, qid)
+            }
         }
         _queue.value = rebuilt
+        // Never reuse a key that the surviving queue already owns.
+        queueSeq = maxOf(queueSeq, maxId + 1)
     }
 
     /**
      * Restores the persisted queue after a process kill. Rebuilds fresh (single-use)
      * stream URLs, seeks to the saved position, and stays paused — never auto-plays.
+     * The per-entry queue keys and the shuffle snapshot are restored verbatim so a
+     * shuffle toggle after restart behaves exactly as before the kill.
      */
     private suspend fun restoreFromSnapshot(c: MediaController) {
         val snapshot = runCatching { queueStore.load() }.getOrNull()
@@ -206,22 +228,43 @@ class PlayerManager @Inject constructor(
             restored = true
             return
         }
-        val tracks = snapshot.tracks.map { it.toDomain() }
-        val items = tracks.mapNotNull { toMediaItem(it) }
-        if (items.isEmpty()) {
+        val persisted = snapshot.tracks
+        val tracks = persisted.map { it.toDomain() }
+        var maxId = queueSeq - 1
+        val entries = ArrayList<QueueItem>(persisted.size)
+        val built = ArrayList<Pair<QueueItem, MediaItem>>(persisted.size)
+        for (p in persisted) {
+            val track = p.toDomain()
+            val qid = p.queueId.takeIf { it >= 0 } ?: queueSeq++
+            maxId = maxOf(maxId, qid)
+            val qi = QueueItem(track, qid)
+            val mi = toMediaItem(track, qid) ?: continue
+            entries += qi
+            built += qi to mi
+        }
+        if (built.isEmpty()) {
             restored = true
             return
         }
-        _queue.value = tracks.map { QueueItem(it, queueSeq++) }
+        queueSeq = maxOf(queueSeq, maxId + 1)
+        _queue.value = entries
+        val items = built.map { it.second }
         val index = snapshot.currentIndex.coerceIn(0, items.size - 1)
         c.setMediaItems(items, index, snapshot.positionMs)
         c.prepare()
         c.pause()
         _currentIndex.value = index
-        _current.value = tracks.getOrNull(index)
+        _current.value = entries.getOrNull(index)?.song
         _sourceName.value = snapshot.sourceName
         _radioActive.value = snapshot.radioActive
         _radioSeed.value = snapshot.radioSeedId?.let { id -> tracks.find { it.id == id } }
+        _shuffle.value = snapshot.shuffleActive
+        val live = entries.map { it.queueId }.toSet()
+        shuffleOrder = if (snapshot.shuffleActive) {
+            snapshot.shuffleOrder.filter { it in live }
+        } else {
+            null
+        }
         _position.value = snapshot.positionMs
         _duration.value = c.duration.takeIf { it > 0 } ?: 0L
         restored = true
@@ -241,6 +284,10 @@ class PlayerManager @Inject constructor(
                 _sourceName.value,
                 _radioActive.value,
                 _radioSeed.value?.id,
+                queueIds = q.map { it.queueId },
+                shuffleActive = _shuffle.value,
+                shuffleOrder = shuffleOrder.orEmpty(),
+                queueSeq = queueSeq,
             )
         }
     }
@@ -265,12 +312,13 @@ class PlayerManager @Inject constructor(
         return StreamUrlProvider.build(c.serverUrl, c.username, c.password, track.id, bitrate, format)
     }
 
-    private suspend fun toMediaItem(track: Track): MediaItem? {
+    private suspend fun toMediaItem(track: Track, queueId: Long? = null): MediaItem? {
         val url = streamUrlFor(track) ?: return null
         return TrackMediaItems.toMediaItem(
             track = track,
             streamUrl = url,
             coverArtUrl = coverArtUrl(track.coverArt),
+            queueId = queueId,
         )
     }
 
@@ -287,18 +335,25 @@ class PlayerManager @Inject constructor(
         scope.launch {
             val c = controller ?: return@launch
             if (tracks.isEmpty()) return@launch
-            val ordered = if (shuffle) tracks.shuffled() else tracks
-            val items = ordered.mapNotNull { toMediaItem(it) }
-            if (items.isEmpty()) return@launch
-            _queue.value = ordered.map { QueueItem(it, queueSeq++) }
-            val start = startIndex.coerceIn(0, items.size - 1)
-            c.setMediaItems(items, start, 0L)
+            // Keys are minted before shuffling so the original (unshuffled) order
+            // is recorded by key in the snapshot.
+            val entries = tracks.map { QueueItem(it, queueSeq++) }
+            val ordered = if (shuffle) entries.shuffled() else entries
+            val built = ordered.mapNotNull { qi -> toMediaItem(qi.song, qi.queueId)?.let { qi to it } }
+            if (built.isEmpty()) return@launch
+            val queue = built.map { it.first }
+            _queue.value = queue
+            val start = startIndex.coerceIn(0, queue.size - 1)
+            c.setMediaItems(built.map { it.second }, start, 0L)
             c.prepare()
             c.play()
             _currentIndex.value = start
-            _current.value = ordered.getOrNull(start)
+            _current.value = queue.getOrNull(start)?.song
             _current.value?.let { recordRecent(it) }
             _shuffle.value = shuffle
+            // Shuffle on: remember the page's own order so toggling off restores it.
+            val liveKeys = queue.map { it.queueId }.toSet()
+            shuffleOrder = if (shuffle) entries.map { it.queueId }.filter { it in liveKeys } else null
             if (source != null) _sourceName.value = source
             persist()
         }
@@ -436,20 +491,32 @@ class PlayerManager @Inject constructor(
         val c = controller ?: return
         if (gen != radioTrigger.currentGeneration() || !_radioActive.value) return
         if (batch.isEmpty() || _queue.value.isEmpty()) return
-        val pairs = batch.mapNotNull { t -> toMediaItem(t)?.let { it to t } }
-        if (pairs.isEmpty() || gen != radioTrigger.currentGeneration()) return
-        c.addMediaItems(pairs.map { it.first })
-        _queue.value = QueueOps.appendAll(_queue.value, pairs.map { QueueItem(it.second, queueSeq++) })
-        pairs.forEach { rememberRadioPlayed(it.second.id) }
+        val built = batch.mapNotNull { t ->
+            val qi = QueueItem(t, queueSeq++)
+            toMediaItem(t, qi.queueId)?.let { qi to it }
+        }
+        if (built.isEmpty() || gen != radioTrigger.currentGeneration()) return
+        c.addMediaItems(built.map { it.second })
+        val entries = built.map { it.first }
+        _queue.value = QueueOps.appendAll(_queue.value, entries)
+        shuffleOrder = shuffleOrder?.let { it + entries.map { e -> e.queueId } }
+        entries.forEach { rememberRadioPlayed(it.song.id) }
     }
+
+    /** The queue key of the currently playing entry, if any. */
+    private fun currentQueueId(): Long? = _queue.value.getOrNull(_currentIndex.value)?.queueId
 
     fun playNext(track: Track) {
         scope.launch {
             val c = controller ?: return@launch
-            val item = toMediaItem(track) ?: return@launch
+            val qi = QueueItem(track, queueSeq++)
+            val item = toMediaItem(track, qi.queueId) ?: return@launch
             val at = (_currentIndex.value + 1).coerceIn(0, _queue.value.size)
-            _queue.value = QueueOps.insertNext(_queue.value, QueueItem(track, queueSeq++), _currentIndex.value)
+            _queue.value = QueueOps.insertNext(_queue.value, qi, _currentIndex.value)
             c.addMediaItem(at.coerceAtMost(c.mediaItemCount), item)
+            // Mirror the add into the restore snapshot: "play next" belongs right
+            // after the current entry there too.
+            shuffleOrder = shuffleOrder?.let { ShufflePlan.insertAfter(it, currentQueueId(), qi.queueId) }
             persist()
         }
     }
@@ -459,12 +526,16 @@ class PlayerManager @Inject constructor(
         scope.launch {
             val c = controller ?: return@launch
             if (tracks.isEmpty()) return@launch
-            val items = tracks.mapNotNull { toMediaItem(it) }
-            if (items.isEmpty()) return@launch
+            val qis = tracks.map { QueueItem(it, queueSeq++) }
+            val built = qis.mapNotNull { qi -> toMediaItem(qi.song, qi.queueId)?.let { qi to it } }
+            if (built.isEmpty()) return@launch
             val at = (_currentIndex.value + 1).coerceIn(0, _queue.value.size)
-            c.addMediaItems(at.coerceAtMost(c.mediaItemCount), items)
-            _queue.value = _queue.value.toMutableList()
-                .apply { addAll(at, tracks.map { QueueItem(it, queueSeq++) }) }
+            c.addMediaItems(at.coerceAtMost(c.mediaItemCount), built.map { it.second })
+            val entries = built.map { it.first }
+            _queue.value = _queue.value.toMutableList().apply { addAll(at, entries) }
+            shuffleOrder = shuffleOrder?.let {
+                ShufflePlan.insertAllAfter(it, currentQueueId(), entries.map { e -> e.queueId })
+            }
             persist()
         }
     }
@@ -472,9 +543,11 @@ class PlayerManager @Inject constructor(
     fun addToEnd(track: Track) {
         scope.launch {
             val c = controller ?: return@launch
-            val item = toMediaItem(track) ?: return@launch
+            val qi = QueueItem(track, queueSeq++)
+            val item = toMediaItem(track, qi.queueId) ?: return@launch
             c.addMediaItem(item)
-            _queue.value = QueueOps.append(_queue.value, QueueItem(track, queueSeq++))
+            _queue.value = QueueOps.append(_queue.value, qi)
+            shuffleOrder = shuffleOrder?.let { it + qi.queueId }
             persist()
         }
     }
@@ -482,21 +555,26 @@ class PlayerManager @Inject constructor(
     fun addAllToEnd(tracks: List<Track>) {
         scope.launch {
             val c = controller ?: return@launch
-            val items = tracks.mapNotNull { toMediaItem(it) }
-            if (items.isEmpty()) return@launch
-            c.addMediaItems(items)
-            _queue.value = QueueOps.appendAll(_queue.value, tracks.map { QueueItem(it, queueSeq++) })
+            val qis = tracks.map { QueueItem(it, queueSeq++) }
+            val built = qis.mapNotNull { qi -> toMediaItem(qi.song, qi.queueId)?.let { qi to it } }
+            if (built.isEmpty()) return@launch
+            c.addMediaItems(built.map { it.second })
+            val entries = built.map { it.first }
+            _queue.value = QueueOps.appendAll(_queue.value, entries)
+            shuffleOrder = shuffleOrder?.let { it + entries.map { e -> e.queueId } }
             persist()
         }
     }
 
     fun removeAt(index: Int) {
         val c = controller ?: return
+        val removedId = _queue.value.getOrNull(index)?.queueId
         val (next, adjusted) = QueueOps.removeAt(_queue.value, index, _currentIndex.value)
         if (next === _queue.value) return
         _queue.value = next
         _currentIndex.value = adjusted
         _current.value = next.getOrNull(adjusted)?.song
+        shuffleOrder = shuffleOrder?.filterNot { it == removedId }
         c.removeMediaItem(index)
         persistAsync()
     }
@@ -508,6 +586,9 @@ class PlayerManager @Inject constructor(
         _queue.value = next
         _currentIndex.value = adjusted
         c.moveMediaItem(from, to)
+        // A manual drag while shuffled becomes the new base order (restoring to
+        // the pre-shuffle order would silently discard the user's arrangement).
+        if (shuffleOrder != null) shuffleOrder = next.map { it.queueId }
         persistAsync()
     }
 
@@ -519,6 +600,8 @@ class PlayerManager @Inject constructor(
         _currentIndex.value = 0
         _current.value = null
         _sourceName.value = null
+        _shuffle.value = false
+        shuffleOrder = null
         _isPlaying.value = false
         _position.value = 0
         _duration.value = 0
@@ -558,37 +641,66 @@ class PlayerManager @Inject constructor(
     }
 
     /**
-     * App-side shuffle: the controller's own shuffle stays off, and only items
-     * after the current one are reordered (Fisher-Yates via moveMediaItem), so the
-     * visible queue always matches the actual playback order and the current
-     * track never glitches. Disabling keeps the shuffled order, like most players.
+     * App-side shuffle. The controller's own shuffle stays off, so the visible
+     * queue always matches the real playback order.
+     *
+     * On: snapshot the current order, then permute only the not-yet-played tail —
+     * the current item keeps playing untouched and history keeps its slots.
+     * Off: restore the snapshot order (minus removed entries, plus entries added
+     * while shuffled) and keep the same entry playing, found by its queue key.
+     *
+     * Both directions reorder with `moveMediaItem` only, so nothing is removed,
+     * re-inserted or re-prepared and playback never restarts.
      */
     fun setShuffle(enabled: Boolean, random: Random = Random.Default) {
-        val c = controller ?: run {
+        val c = controller
+        if (c == null) {
             _shuffle.value = enabled
+            shuffleOrder = if (!enabled) null else shuffleOrder
             return
         }
         c.shuffleModeEnabled = false
-        if (enabled && _queue.value.size > _currentIndex.value + 1) {
-            val from = _currentIndex.value + 1
-            val order = (_queue.value.indices.toList().subList(from, _queue.value.size)).shuffled(random)
-            // Apply as a permutation of the tail using controller moves.
-            val q = _queue.value.toMutableList()
-            val tail = order.map { q[it] }
-            for ((slot, item) in tail.withIndex()) {
-                val target = from + slot
-                val currentPos = q.indexOf(item)
-                if (currentPos != target) {
-                    q.add(target, q.removeAt(currentPos))
-                    c.moveMediaItem(currentPos, target)
-                }
+        val live = _queue.value
+        if (enabled) {
+            // Already shuffling: never re-snapshot (that would lose the original).
+            if (!_shuffle.value && live.isNotEmpty()) {
+                shuffleOrder = live.map { it.queueId }
+                val from = (_currentIndex.value + 1).coerceIn(0, live.size)
+                val target = ShufflePlan.shuffledTail(live.map { it.queueId }, from, random)
+                applyOrder(c, target)
             }
-            _queue.value = q
-            _currentIndex.value = q.indexOfFirst { it.song.id == _current.value?.id }.takeIf { it >= 0 }
-                ?: _currentIndex.value
+            _shuffle.value = true
+        } else {
+            val snapshot = shuffleOrder
+            shuffleOrder = null
+            if (snapshot != null && live.isNotEmpty()) {
+                val target = ShufflePlan.restore(live.map { it.queueId }, snapshot)
+                applyOrder(c, target)
+            }
+            _shuffle.value = false
         }
-        _shuffle.value = enabled
         persistAsync()
+    }
+
+    /**
+     * Reorders the live queue to [targetIds] using the minimum set of
+     * `moveMediaItem` calls, then rebuilds the mirror and re-points the current
+     * index at the same entry (by queue key, so duplicates are safe).
+     */
+    private fun applyOrder(c: MediaController, targetIds: List<Long>) {
+        val before = _queue.value
+        val keepId = currentQueueId()
+        val reordered = ShufflePlan.applyOrder(targetIds, before) { it.queueId }
+        require(reordered.size == before.size) {
+            "queue reorder must not drop entries (${before.size} -> ${reordered.size})"
+        }
+        for ((from, to) in ShufflePlan.moveSeq(before.map { it.queueId }, reordered.map { it.queueId })) {
+            c.moveMediaItem(from, to)
+        }
+        _queue.value = reordered
+        val idx = reordered.indexOfFirst { it.queueId == keepId }
+        _currentIndex.value = if (idx >= 0) idx
+        else _currentIndex.value.coerceIn(0, maxOf(0, reordered.size - 1))
     }
 
     fun toggleShuffle(): Boolean {
