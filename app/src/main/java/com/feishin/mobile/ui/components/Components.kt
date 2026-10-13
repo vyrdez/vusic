@@ -16,12 +16,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,9 +57,12 @@ fun SongRow(
     song: Track,
     artUrl: String?,
     onClick: () -> Unit,
-    onMore: () -> Unit,
+    player: com.feishin.mobile.playback.PlayerManager,
+    messenger: UiMessenger,
+    onRemove: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    var menu by remember { mutableStateOf(false) }
     Row(
         modifier
             .fillMaxWidth()
@@ -69,7 +78,64 @@ fun SongRow(
             Text(song.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(song.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        IconButton(onClick = onMore) { Icon(Icons.Default.MoreVert, contentDescription = "More") }
+        IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More") }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            DropdownMenuItem(
+                text = { Text("Play next") },
+                onClick = {
+                    menu = false
+                    player.playNext(song)
+                    messenger.show("Playing next: ${song.title}")
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Add to queue") },
+                onClick = {
+                    menu = false
+                    player.addToEnd(song)
+                    messenger.show("Added to queue: ${song.title}")
+                },
+            )
+            onRemove?.let { remove ->
+                DropdownMenuItem(
+                    text = { Text("Remove") },
+                    onClick = {
+                        menu = false
+                        remove()
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** Overflow menu for a whole track list (album / playlist / artist headers). */
+@Composable
+fun TrackListMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    title: String,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
+    messenger: UiMessenger,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        DropdownMenuItem(
+            text = { Text("Play next") },
+            onClick = {
+                onDismiss()
+                onPlayNext()
+                messenger.show("Playing next: $title")
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("Add to queue") },
+            onClick = {
+                onDismiss()
+                onAddToQueue()
+                messenger.show("Added to queue: $title")
+            },
+        )
     }
 }
 

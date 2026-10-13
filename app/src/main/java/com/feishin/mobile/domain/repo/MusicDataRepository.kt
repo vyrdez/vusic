@@ -11,6 +11,7 @@ import com.feishin.mobile.domain.model.PlaylistDetail
 import com.feishin.mobile.domain.model.SearchResults
 import com.feishin.mobile.domain.model.StarredCollection
 import com.feishin.mobile.domain.model.Track
+import com.feishin.mobile.core.network.SyncedLyrics
 
 /** UI-facing music data contract. Implementations map wire DTOs to domain models. */
 interface MusicDataRepository {
@@ -32,6 +33,8 @@ interface MusicDataRepository {
     suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit>
     suspend fun deletePlaylist(id: String): Result<Unit>
     suspend fun scrobble(id: String, submission: Boolean): Result<Unit>
+    /** OpenSubsonic synced lyrics for a track; falls back to plain text inside. */
+    suspend fun lyricsForTrack(id: String, artist: String, title: String): Result<SyncedLyrics>
     suspend fun lyrics(artist: String, title: String): Result<String>
     fun streamUrl(track: Track, maxBitrate: Int = 0, format: String = "raw"): String
     fun coverArtUrl(coverArtId: String?, size: Int = 512): String?

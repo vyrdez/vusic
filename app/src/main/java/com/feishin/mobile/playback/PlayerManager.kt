@@ -11,8 +11,11 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.feishin.mobile.core.common.QueueOps
+import com.feishin.mobile.core.network.CoverArtUrlProvider
 import com.feishin.mobile.core.network.StreamUrlProvider
 import com.feishin.mobile.data.auth.CredentialsStore
+import com.feishin.mobile.data.queue.QueueStore
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.Track
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -27,6 +30,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 data class QueueItem(val song: Track, val queueId: Long)
 
@@ -34,15 +38,21 @@ data class QueueItem(val song: Track, val queueId: Long)
  * App-side view of playback. Talks to [PlayerService] through a [MediaController],
  * so the app process and the service can come and go independently while the
  * session (and its notification) survive.
+ *
+ * Shuffle is implemented app-side (the controller's shuffle stays off) so the
+ * visible queue order always matches the actual playback order. Repeat maps
+ * straight onto the controller.
  */
 @Singleton
 class PlayerManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val creds: CredentialsStore,
     private val settings: SettingsStore,
+    private val queueStore: QueueStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var queueSeq = 0L
+    private var restored = false
 
     @Volatile private var controller: MediaController? = null
 
@@ -51,6 +61,9 @@ class PlayerManager @Inject constructor(
 
     private val _current = MutableStateFlow<Track?>(null)
     val current: StateFlow<Track?> = _current.asStateFlow()
+
+    private val _currentIndex = MutableStateFlow(0)
+    val currentIndex: StateFlow<Int> = _currentIndex.asStateFlow()
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
@@ -70,11 +83,14 @@ class PlayerManager @Inject constructor(
     init {
         connect()
         scope.launch {
+            var ticks = 0
             while (true) {
                 delay(500)
                 val c = controller ?: continue
                 _position.value = c.currentPosition.coerceAtLeast(0)
                 _duration.value = c.duration.takeIf { it > 0 } ?: 0L
+                // Persist position cheaply: every ~15s while playing.
+                if (c.isPlaying && ++ticks % 30 == 0) persist()
             }
         }
     }
@@ -89,14 +105,17 @@ class PlayerManager @Inject constructor(
             c.addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     _isPlaying.value = isPlaying
+                    if (!isPlaying) scope.launch { persist() }
                 }
 
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                    _current.value = mediaItem?.let { TrackMediaItems.toTrack(it) }
-                }
-
-                override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-                    _shuffle.value = shuffleModeEnabled
+                    val id = mediaItem?.mediaId
+                    val idx = _queue.value.indexOfFirst { it.song.id == id }.takeIf { it >= 0 }
+                        ?: c.currentMediaItemIndex
+                    _currentIndex.value = idx.coerceIn(0, maxOf(0, _queue.value.size - 1))
+                    _current.value = _queue.value.getOrNull(_currentIndex.value)?.song
+                        ?: mediaItem?.let { TrackMediaItems.toTrack(it) }
+                    scope.launch { persist() }
                 }
 
                 override fun onRepeatModeChanged(repeatMode: Int) {
@@ -107,11 +126,17 @@ class PlayerManager @Inject constructor(
                     if (playbackState != Player.STATE_IDLE) _isPlaying.value = c.isPlaying
                 }
             })
-            syncQueueFromController(c)
-            _current.value = c.currentMediaItem?.let { TrackMediaItems.toTrack(it) }
-            _isPlaying.value = c.isPlaying
-            _shuffle.value = c.shuffleModeEnabled
-            _repeatMode.value = c.repeatMode
+            if (c.mediaItemCount > 0) {
+                // Service survived (or another client queued): adopt its playlist.
+                syncQueueFromController(c)
+                _currentIndex.value = c.currentMediaItemIndex.coerceIn(0, maxOf(0, _queue.value.size - 1))
+                _current.value = _queue.value.getOrNull(_currentIndex.value)?.song
+                _isPlaying.value = c.isPlaying
+                _repeatMode.value = c.repeatMode
+                restored = true
+            } else {
+                scope.launch { restoreFromSnapshot(c) }
+            }
         }, ContextCompat.getMainExecutor(context))
     }
 
@@ -138,6 +163,49 @@ class PlayerManager @Inject constructor(
             if (merged != null) rebuilt += QueueItem(merged, queueSeq++)
         }
         _queue.value = rebuilt
+    }
+
+    /**
+     * Restores the persisted queue after a process kill. Rebuilds fresh (single-use)
+     * stream URLs, seeks to the saved position, and stays paused — never auto-plays.
+     */
+    private suspend fun restoreFromSnapshot(c: MediaController) {
+        val snapshot = runCatching { queueStore.load() }.getOrNull()
+        if (restored || snapshot == null || creds.state.value == null) {
+            restored = true
+            return
+        }
+        val tracks = snapshot.tracks.map { it.toDomain() }
+        val items = tracks.mapNotNull { toMediaItem(it) }
+        if (items.isEmpty()) {
+            restored = true
+            return
+        }
+        _queue.value = tracks.map { QueueItem(it, queueSeq++) }
+        val index = snapshot.currentIndex.coerceIn(0, items.size - 1)
+        c.setMediaItems(items, index, snapshot.positionMs)
+        c.prepare()
+        c.pause()
+        _currentIndex.value = index
+        _current.value = tracks.getOrNull(index)
+        _position.value = snapshot.positionMs
+        _duration.value = c.duration.takeIf { it > 0 } ?: 0L
+        restored = true
+    }
+
+    private suspend fun persist() {
+        val q = _queue.value
+        if (q.isEmpty()) {
+            runCatching { queueStore.clear() }
+            return
+        }
+        runCatching {
+            queueStore.save(q.map { it.song }, _currentIndex.value.coerceIn(0, q.size - 1), _position.value)
+        }
+    }
+
+    private fun persistAsync() {
+        scope.launch { persist() }
     }
 
     private suspend fun streamParams(): Pair<Int, String> {
@@ -167,7 +235,7 @@ class PlayerManager @Inject constructor(
 
     fun coverArtUrl(coverArtId: String?, size: Int = 600): String? {
         val c = creds.state.value ?: return null
-        return com.feishin.mobile.core.network.CoverArtUrlProvider.build(
+        return CoverArtUrlProvider.build(
             c.serverUrl, c.username, c.password, coverArtId, size,
         )
     }
@@ -183,10 +251,12 @@ class PlayerManager @Inject constructor(
             _queue.value = ordered.map { QueueItem(it, queueSeq++) }
             val start = startIndex.coerceIn(0, items.size - 1)
             c.setMediaItems(items, start, 0L)
-            c.shuffleModeEnabled = false
             c.prepare()
             c.play()
+            _currentIndex.value = start
             _current.value = ordered.getOrNull(start)
+            _shuffle.value = shuffle
+            persist()
         }
     }
 
@@ -194,20 +264,34 @@ class PlayerManager @Inject constructor(
         scope.launch {
             val c = controller ?: return@launch
             val item = toMediaItem(track) ?: return@launch
-            val at = (c.currentMediaItemIndex + 1).coerceIn(0, c.mediaItemCount)
-            c.addMediaItem(at, item)
-            val q = _queue.value.toMutableList()
-            q.add(at.coerceAtMost(q.size), QueueItem(track, queueSeq++))
-            _queue.value = q
+            val at = (_currentIndex.value + 1).coerceIn(0, _queue.value.size)
+            _queue.value = QueueOps.insertNext(_queue.value, QueueItem(track, queueSeq++), _currentIndex.value)
+            c.addMediaItem(at.coerceAtMost(c.mediaItemCount), item)
+            persist()
         }
     }
 
-    fun addToEnd(track: Track) {
+    /** Inserts a whole list directly after the current item, atomically. */
+    fun playNextAll(tracks: List<Track>) {
         scope.launch {
+            val c = controller ?: return@launch
+            if (tracks.isEmpty()) return@launch
+            val items = tracks.mapNotNull { toMediaItem(it) }
+            if (items.isEmpty()) return@launch
+            val at = (_currentIndex.value + 1).coerceIn(0, _queue.value.size)
+            c.addMediaItems(at.coerceAtMost(c.mediaItemCount), items)
+            _queue.value = _queue.value.toMutableList()
+                .apply { addAll(at, tracks.map { QueueItem(it, queueSeq++) }) }
+            persist()
+        }
+    }
+
+    fun addToEnd(track: Track) {        scope.launch {
             val c = controller ?: return@launch
             val item = toMediaItem(track) ?: return@launch
             c.addMediaItem(item)
-            _queue.value = _queue.value + QueueItem(track, queueSeq++)
+            _queue.value = QueueOps.append(_queue.value, QueueItem(track, queueSeq++))
+            persist()
         }
     }
 
@@ -217,36 +301,42 @@ class PlayerManager @Inject constructor(
             val items = tracks.mapNotNull { toMediaItem(it) }
             if (items.isEmpty()) return@launch
             c.addMediaItems(items)
-            _queue.value = _queue.value + tracks.map { QueueItem(it, queueSeq++) }
+            _queue.value = QueueOps.appendAll(_queue.value, tracks.map { QueueItem(it, queueSeq++) })
+            persist()
         }
     }
 
     fun removeAt(index: Int) {
         val c = controller ?: return
-        if (index !in _queue.value.indices) return
-        val q = _queue.value.toMutableList()
-        q.removeAt(index)
-        _queue.value = q
+        val (next, adjusted) = QueueOps.removeAt(_queue.value, index, _currentIndex.value)
+        if (next === _queue.value) return
+        _queue.value = next
+        _currentIndex.value = adjusted
+        _current.value = next.getOrNull(adjusted)?.song
         c.removeMediaItem(index)
+        persistAsync()
     }
 
     fun move(from: Int, to: Int) {
         val c = controller ?: return
-        val q = _queue.value.toMutableList()
-        if (from !in q.indices || to !in q.indices) return
-        q.add(to, q.removeAt(from))
-        _queue.value = q
+        val (next, adjusted) = QueueOps.move(_queue.value, from, to, _currentIndex.value)
+        if (next === _queue.value) return
+        _queue.value = next
+        _currentIndex.value = adjusted
         c.moveMediaItem(from, to)
+        persistAsync()
     }
 
     fun clear() {
         controller?.clearMediaItems()
         controller?.stop()
         _queue.value = emptyList()
+        _currentIndex.value = 0
         _current.value = null
         _isPlaying.value = false
         _position.value = 0
         _duration.value = 0
+        persistAsync()
     }
 
     fun playAt(index: Int) {
@@ -254,7 +344,9 @@ class PlayerManager @Inject constructor(
         if (index in _queue.value.indices) {
             c.seekTo(index, 0)
             c.play()
+            _currentIndex.value = index
             _current.value = _queue.value[index].song
+            persistAsync()
         }
     }
 
@@ -279,16 +371,43 @@ class PlayerManager @Inject constructor(
         controller?.seekTo(ms)
     }
 
-    fun setShuffle(enabled: Boolean) {
-        controller?.shuffleModeEnabled = enabled
+    /**
+     * App-side shuffle: the controller's own shuffle stays off, and only items
+     * after the current one are reordered (Fisher-Yates via moveMediaItem), so the
+     * visible queue always matches the actual playback order and the current
+     * track never glitches. Disabling keeps the shuffled order, like most players.
+     */
+    fun setShuffle(enabled: Boolean, random: Random = Random.Default) {
+        val c = controller ?: run {
+            _shuffle.value = enabled
+            return
+        }
+        c.shuffleModeEnabled = false
+        if (enabled && _queue.value.size > _currentIndex.value + 1) {
+            val from = _currentIndex.value + 1
+            val order = (_queue.value.indices.toList().subList(from, _queue.value.size)).shuffled(random)
+            // Apply as a permutation of the tail using controller moves.
+            val q = _queue.value.toMutableList()
+            val tail = order.map { q[it] }
+            for ((slot, item) in tail.withIndex()) {
+                val target = from + slot
+                val currentPos = q.indexOf(item)
+                if (currentPos != target) {
+                    q.add(target, q.removeAt(currentPos))
+                    c.moveMediaItem(currentPos, target)
+                }
+            }
+            _queue.value = q
+            _currentIndex.value = q.indexOfFirst { it.song.id == _current.value?.id }.takeIf { it >= 0 }
+                ?: _currentIndex.value
+        }
         _shuffle.value = enabled
+        persistAsync()
     }
 
     fun toggleShuffle(): Boolean {
-        val c = controller ?: return false
-        c.shuffleModeEnabled = !c.shuffleModeEnabled
-        _shuffle.value = c.shuffleModeEnabled
-        return c.shuffleModeEnabled
+        setShuffle(!_shuffle.value)
+        return _shuffle.value
     }
 
     fun cycleRepeat(): Int {

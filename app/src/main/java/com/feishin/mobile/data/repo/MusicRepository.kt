@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.network.CoverArtUrlProvider
+import com.feishin.mobile.core.network.SyncedLyrics
 import com.feishin.mobile.core.network.SubsonicAuth
 import com.feishin.mobile.data.auth.CredentialsStore
 import com.feishin.mobile.data.mapper.toDomain
@@ -170,6 +171,29 @@ class MusicRepository @Inject constructor(
         val r = api.getLyrics(artist, title).response
         unwrap(r.status, r.error?.message) { r.lyrics?.value ?: "" }
     }
+
+    /**
+     * Prefers OpenSubsonic synced lines, falls back to plain lyrics from the same
+     * response, then to getLyrics. Never throws: a lyrics failure is an empty
+     * result so playback is unaffected.
+     */
+    override suspend fun lyricsForTrack(id: String, artist: String, title: String): Result<SyncedLyrics> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val structured = runCatching { api.getLyricsBySongId(id).response }.getOrNull()
+                val synced = structured?.lyricsList?.syncedLyrics
+                if (synced != null && synced.line.isNotEmpty()) {
+                    val offset = if (synced.offset > 0) synced.offset * 1000L else 0L
+                    return@runCatching Result.Ok(
+                        SyncedLyrics.parse(synced.line.map { it.start to it.value }, offset),
+                    )
+                }
+                val plain = structured?.lyricsList?.plainLyrics?.value
+                    ?: structured?.lyrics?.value
+                    ?: api.getLyrics(artist, title).response.lyrics?.value
+                Result.Ok(SyncedLyrics.plain(plain.orEmpty()))
+            }.getOrElse { Result.Err(it.message ?: "lyrics unavailable", it) }
+        }
 
     override fun streamUrl(track: Track, maxBitrate: Int, format: String): String {
         val b = Uri.parse(base() + "stream.view").buildUpon()

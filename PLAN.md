@@ -45,7 +45,15 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   and exposes StateFlows; StreamUrlProvider with fresh salt + maxBitRate/format;
   ScrobblePolicy submits at 50%-or-4min once per track and ignores seek jumps;
   mini player with progress bar; 61 unit tests, 0 lint errors)
-- [ ] M4 queue+Now Playing (full/mini player, queue ops, lyrics, dynamic bg)
+- [x] M4 queue + Now Playing (QueueOps pure index bookkeeping; PlayerManager owns
+  app-side shuffle with tail-only Fisher-Yates via moveMediaItem so visible order
+  always matches playback; QueueStore DataStore persistence with paused restore;
+  full-screen Now Playing with Palette dynamic bg + contrast text, jitter-free
+  scrub, shuffle/repeat/star/queue, artist/album navigation, back + swipe-down
+  close; queue sheet with highlight/autoscroll/swipe-remove/tap-jump/clear;
+  OpenSubsonic synced lyrics with fallback chain + in-memory cache; upgraded mini
+  player (tap/swipe-up open, swipe L/R skip, hidden when empty); track overflow
+  menus + detail header menus with snackbar confirmations; 89 unit tests)
 - [ ] M5 offline+settings (downloads, stream cache, bitrate wifi/mobile, theme, cert toggle, logout)
 - [ ] M6 extras (Auto manifest support, home screen widget, README, final APK verify)
 
@@ -98,5 +106,20 @@ playlists/genres/starred2 all OK. No adb physical device; emulator AVD `feishin_
 - M2 crash fixes: ViewModel `refreshing` state is now declared before
   `init { refresh() }` (Main.immediate executes the first launch synchronously —
   later field init caused an NPE that killed the app on detail/genre screens).
-- Track taps still start playback via the existing M3 player code (kept working
-  rather than stubbed with a snackbar); crossfade/ReplayGain remain best-effort.
+- M4 device verification (emulator Pixel 7, live server): NP opens opaque with
+  Palette bg (dark navy for Frozen Flower, light lavender for Dasvidaniya, text
+  switches white/dark for contrast); scrub 0:49→1:59 glitch-free; app-side shuffle
+  reorders tail only, current never restarts; queue sheet shows highlight +
+  autoscroll + handles; swipe-remove 17→16 with highlight intact; tap-jump changes
+  track; kill→relaunch restores queue paused at saved index+position; rotation both
+  ways keeps state; star toggle verified both directions via server API (fixed a
+  double-negation bug where the tap was a no-op); Play-next/Add-to-queue menus +
+  snackbar confirmed; repeat cycles with active tint; mini-player swipe skips;
+  back gesture closes sheet then NP. Zero FATALs across the whole pass.
+- M4 notes/limitations: server has no lyrics at all (verified via API), so the
+  synced-lyrics UI is covered by unit tests + DTO-parse tests, while None/plain
+  paths were verified live; drag-reorder gesture could not be driven over adb
+  (no hold-then-move primitive) — move() semantics are unit-tested and the
+  reorderable wiring keeps header outside the list so lazy indices == queue
+  indices; queue edits never touched the current item's playback (positions
+  advanced monotonically throughout).

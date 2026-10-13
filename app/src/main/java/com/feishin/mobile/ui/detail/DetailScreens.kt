@@ -1,6 +1,7 @@
 package com.feishin.mobile.ui.detail
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
@@ -29,6 +31,10 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,8 +49,11 @@ import com.feishin.mobile.ui.ErrorBox
 import com.feishin.mobile.ui.LoadingBox
 import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.ui.components.SongRow
+import com.feishin.mobile.ui.components.TrackListMenu
+import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.components.formatDuration
 import com.feishin.mobile.ui.components.rememberSavableListState
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +61,7 @@ fun AlbumDetailScreen(
     vm: AlbumDetailViewModel = hiltViewModel(),
     player: PlayerManager,
     repo: MusicDataRepository,
+    messenger: UiMessenger,
     onArtist: (String) -> Unit,
 ) {
     val ui by vm.ui.collectAsState()
@@ -94,12 +104,22 @@ fun AlbumDetailScreen(
                             }
                         }
                         OutlinedButton(onClick = { player.addAllToEnd(a.tracks) }) { Text("Add to queue") }
+                            var headerMenu by remember { mutableStateOf(false) }
+                            IconButton(onClick = { headerMenu = true }) { Icon(Icons.Default.MoreVert, "More") }
+                            TrackListMenu(
+                                expanded = headerMenu,
+                                onDismiss = { headerMenu = false },
+                                title = a.name,
+                                onPlayNext = { player.playNextAll(a.tracks) },
+                                onAddToQueue = { player.addAllToEnd(a.tracks) },
+                                messenger = messenger,
+                            )
                     }
                 }
                 items(a.tracks, key = { it.id }) { song ->
                     SongRow(song, repo.coverArtUrl(song.coverArt, 128), onClick = {
                         player.playAll(a.tracks, a.tracks.indexOf(song))
-                    }, onMore = { player.playNext(song) })
+                    }, player = player, messenger = messenger)
                 }
             }
             }
@@ -111,7 +131,9 @@ fun AlbumDetailScreen(
 @Composable
 fun ArtistDetailScreen(
     vm: ArtistDetailViewModel = hiltViewModel(),
+    player: PlayerManager,
     repo: MusicDataRepository,
+    messenger: UiMessenger,
     onAlbum: (String) -> Unit,
 ) {
     val ui by vm.ui.collectAsState()
@@ -130,6 +152,30 @@ fun ArtistDetailScreen(
                 contentPadding = PaddingValues(bottom = 160.dp),
             ) {
                 item {
+                    val scope = rememberCoroutineScope()
+                    var headerMenu by remember { mutableStateOf(false) }
+                    var gathering by remember { mutableStateOf(false) }
+                    suspend fun allTracks(): List<com.feishin.mobile.domain.model.Track> {
+                        val out = ArrayList<com.feishin.mobile.domain.model.Track>()
+                        for (al in a.albums) {
+                            when (val r = repo.album(al.id)) {
+                                is com.feishin.mobile.core.common.Result.Ok -> out += r.value.tracks
+                                is com.feishin.mobile.core.common.Result.Err -> Unit
+                            }
+                        }
+                        return out
+                    }
+                    fun withTracks(action: suspend (List<com.feishin.mobile.domain.model.Track>) -> Unit) {
+                        if (gathering) return
+                        gathering = true
+                        scope.launch {
+                            try {
+                                action(allTracks())
+                            } finally {
+                                gathering = false
+                            }
+                        }
+                    }
                     Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(a.name, style = MaterialTheme.typography.headlineSmall)
@@ -141,6 +187,27 @@ fun ArtistDetailScreen(
                                 contentDescription = "Favorite",
                             )
                         }
+                        IconButton(onClick = { headerMenu = true }, enabled = !gathering) {
+                            Icon(Icons.Default.MoreVert, "More")
+                        }
+                        TrackListMenu(
+                            expanded = headerMenu,
+                            onDismiss = { headerMenu = false },
+                            title = a.name,
+                            onPlayNext = { withTracks { player.playNextAll(it) } },
+                            onAddToQueue = { withTracks { player.addAllToEnd(it) } },
+                            messenger = messenger,
+                        )
+                    }
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { withTracks { player.playAll(it) } },
+                            enabled = !gathering,
+                        ) { Icon(Icons.Default.PlayArrow, null); Text("Play all") }
+                        OutlinedButton(
+                            onClick = { withTracks { player.playAll(it, shuffle = true) } },
+                            enabled = !gathering,
+                        ) { Icon(Icons.Default.Shuffle, null); Text("Shuffle all") }
                     }
                 }
                 items(a.albums, key = { it.id }) { al ->
@@ -160,6 +227,7 @@ fun PlaylistDetailScreen(
     vm: PlaylistDetailViewModel = hiltViewModel(),
     player: PlayerManager,
     repo: MusicDataRepository,
+    messenger: UiMessenger,
     onBack: () -> Unit,
 ) {
     val ui by vm.ui.collectAsState()
@@ -186,6 +254,16 @@ fun PlaylistDetailScreen(
                             OutlinedButton(onClick = { player.playAll(p.tracks, shuffle = true) }) { Text("Shuffle") }
                             Spacer(Modifier.padding(4.dp))
                             OutlinedButton(onClick = { vm.delete(onBack) }) { Text("Delete") }
+                            var headerMenu by remember { mutableStateOf(false) }
+                            IconButton(onClick = { headerMenu = true }) { Icon(Icons.Default.MoreVert, "More") }
+                            TrackListMenu(
+                                expanded = headerMenu,
+                                onDismiss = { headerMenu = false },
+                                title = p.name,
+                                onPlayNext = { player.playNextAll(p.tracks) },
+                                onAddToQueue = { player.addAllToEnd(p.tracks) },
+                                messenger = messenger,
+                            )
                         }
                     }
                 }
@@ -193,7 +271,7 @@ fun PlaylistDetailScreen(
                     val song = p.tracks[i]
                     SongRow(song, repo.coverArtUrl(song.coverArt, 128), onClick = {
                         player.playAll(p.tracks, i)
-                    }, onMore = { vm.removeAt(i) })
+                    }, player = player, messenger = messenger, onRemove = { vm.removeAt(i) })
                 }
             }
             }

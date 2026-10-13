@@ -30,6 +30,7 @@ import com.feishin.mobile.ui.LoadingBox
 import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.ui.components.AlbumCard
 import com.feishin.mobile.ui.components.SongRow
+import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.components.rememberSavableListState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,6 +39,7 @@ fun HomeScreen(
     vm: HomeViewModel = hiltViewModel(),
     player: PlayerManager,
     repo: MusicDataRepository,
+    messenger: UiMessenger,
     onAlbum: (String) -> Unit,
 ) {
     val ui by vm.ui.collectAsState()
@@ -46,13 +48,13 @@ fun HomeScreen(
             is UiState.Loading -> LoadingBox()
             is UiState.Error -> ErrorBox(s.message, vm::refresh)
             is UiState.Empty -> EmptyBox("No music found on this server")
-            is UiState.Data -> HomeContent(s.value, player, repo, onAlbum)
+            is UiState.Data -> HomeContent(s.value, player, repo, messenger, onAlbum)
         }
     }
 }
 
 @Composable
-private fun HomeContent(data: HomeData, player: PlayerManager, repo: MusicDataRepository, onAlbum: (String) -> Unit) {
+private fun HomeContent(data: HomeData, player: PlayerManager, repo: MusicDataRepository, messenger: UiMessenger, onAlbum: (String) -> Unit) {
     LazyColumn(
         Modifier.fillMaxSize(),
         state = rememberSavableListState(),
@@ -69,7 +71,7 @@ private fun HomeContent(data: HomeData, player: PlayerManager, repo: MusicDataRe
             items(data.starredSongs.take(20), key = { it.id }) { song ->
                 SongRow(song, repo.coverArtUrl(song.coverArt, 128), onClick = {
                     player.playAll(data.starredSongs, data.starredSongs.indexOf(song))
-                }, onMore = { player.playNext(song) })
+                }, player = player, messenger = messenger)
             }
         }
     }

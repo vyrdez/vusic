@@ -25,6 +25,7 @@ import com.feishin.mobile.ui.ErrorBox
 import com.feishin.mobile.ui.LoadingBox
 import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.ui.components.SongRow
+import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.components.rememberSavableListState
 
 @Composable
@@ -32,6 +33,7 @@ fun SearchScreen(
     vm: SearchViewModel = hiltViewModel(),
     player: PlayerManager,
     repo: MusicDataRepository,
+    messenger: UiMessenger,
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
 ) {
@@ -77,7 +79,7 @@ fun SearchScreen(
                         items(songs, key = { "s${it.id}" }) { song ->
                             SongRow(song, repo.coverArtUrl(song.coverArt, 128), onClick = {
                                 player.playAll(songs, songs.indexOf(song))
-                            }, onMore = { player.playNext(song) })
+                            }, player = player, messenger = messenger)
                         }
                     }
                 }

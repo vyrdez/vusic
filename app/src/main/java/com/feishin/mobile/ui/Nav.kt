@@ -1,5 +1,8 @@
 package com.feishin.mobile.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,8 +16,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,7 +40,7 @@ import com.feishin.mobile.ui.library.GenreScreen
 import com.feishin.mobile.ui.library.LibraryScreen
 import com.feishin.mobile.ui.offline.DownloadsScreen
 import com.feishin.mobile.ui.components.MiniPlayer
-import com.feishin.mobile.ui.player.PlayerViewModel
+import com.feishin.mobile.ui.player.NowPlayingScreen
 import com.feishin.mobile.ui.search.SearchScreen
 import com.feishin.mobile.ui.settings.SettingsScreen
 
@@ -57,15 +63,22 @@ object Routes {
 @Composable
 fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     val nav = rememberNavController()
+    var showNowPlaying by remember { mutableStateOf(false) }
+    val snackbar = remember { SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        main.messenger.messages.collect { snackbar.showSnackbar(it) }
+    }
 
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
     val topLevel = setOf(Routes.HOME, Routes.LIBRARY, Routes.SEARCH, Routes.SETTINGS)
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             Column {
-                MiniPlayer(main.player)
+                MiniPlayer(main.player, onOpen = { showNowPlaying = true })
                 if (route in topLevel || route == null) {
                     NavigationBar {
                         val items = listOf(
@@ -96,11 +109,11 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
         Box(Modifier.fillMaxSize().padding(padding)) {
             NavHost(nav, startDestination = Routes.HOME) {
                 composable(Routes.HOME) {
-                    HomeScreen(player = main.player, repo = main.repo, onAlbum = { nav.navigate(Routes.album(it)) })
+                    HomeScreen(player = main.player, repo = main.repo, messenger = main.messenger, onAlbum = { nav.navigate(Routes.album(it)) })
                 }
                 composable(Routes.LIBRARY) {
                     LibraryScreen(
-                        player = main.player, repo = main.repo,
+                        player = main.player, repo = main.repo, messenger = main.messenger,
                         onAlbum = { nav.navigate(Routes.album(it)) },
                         onArtist = { nav.navigate(Routes.artist(it)) },
                         onPlaylist = { nav.navigate(Routes.playlist(it)) },
@@ -109,7 +122,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 }
                 composable(Routes.SEARCH) {
                     SearchScreen(
-                        player = main.player, repo = main.repo,
+                        player = main.player, repo = main.repo, messenger = main.messenger,
                         onAlbum = { nav.navigate(Routes.album(it)) },
                         onArtist = { nav.navigate(Routes.artist(it)) },
                     )
@@ -118,13 +131,13 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     SettingsScreen(onLogout = onLogout, onOpenDownloads = { nav.navigate(Routes.DOWNLOADS) })
                 }
                 composable(Routes.ALBUM) {
-                    AlbumDetailScreen(player = main.player, repo = main.repo, onArtist = { nav.navigate(Routes.artist(it)) })
+                    AlbumDetailScreen(player = main.player, repo = main.repo, messenger = main.messenger, onArtist = { nav.navigate(Routes.artist(it)) })
                 }
                 composable(Routes.ARTIST) {
-                    ArtistDetailScreen(repo = main.repo, onAlbum = { nav.navigate(Routes.album(it)) })
+                    ArtistDetailScreen(player = main.player, repo = main.repo, messenger = main.messenger, onAlbum = { nav.navigate(Routes.album(it)) })
                 }
                 composable(Routes.PLAYLIST) {
-                    PlaylistDetailScreen(player = main.player, repo = main.repo, onBack = { nav.popBackStack() })
+                    PlaylistDetailScreen(player = main.player, repo = main.repo, messenger = main.messenger, onBack = { nav.popBackStack() })
                 }
                 composable(Routes.DOWNLOADS) { DownloadsScreen() }
                 composable(Routes.GENRE) {
@@ -132,5 +145,24 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 }
             }
         }
+    }
+
+    AnimatedVisibility(
+        visible = showNowPlaying,
+        enter = slideInVertically(initialOffsetY = { it }),
+        exit = slideOutVertically(targetOffsetY = { it }),
+    ) {
+        NowPlayingScreen(
+            player = main.player,
+            onClose = { showNowPlaying = false },
+            onArtist = {
+                showNowPlaying = false
+                nav.navigate(Routes.artist(it))
+            },
+            onAlbum = {
+                showNowPlaying = false
+                nav.navigate(Routes.album(it))
+            },
+        )
     }
 }

@@ -46,6 +46,7 @@ import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.ui.components.AlbumCard
 import com.feishin.mobile.ui.components.ArtistCard
 import com.feishin.mobile.ui.components.SongRow
+import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.components.rememberSavableGridState
 import com.feishin.mobile.ui.components.rememberSavableListState
 
@@ -54,6 +55,7 @@ fun LibraryScreen(
     vm: LibraryViewModel = hiltViewModel(),
     player: PlayerManager,
     repo: MusicDataRepository,
+    messenger: UiMessenger,
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
     onPlaylist: (String) -> Unit,
@@ -219,7 +221,7 @@ fun LibraryScreen(
                                 items(songs, key = { "so${it.id}" }) { song ->
                                     SongRow(song, repo.coverArtUrl(song.coverArt, 128), onClick = {
                                         player.playAll(songs, songs.indexOf(song))
-                                    }, onMore = { player.playNext(song) })
+                                    }, player = player, messenger = messenger)
                                 }
                             }
                             if (artists.isNotEmpty()) {

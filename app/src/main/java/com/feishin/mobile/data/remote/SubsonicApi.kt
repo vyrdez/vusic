@@ -99,4 +99,8 @@ interface SubsonicApi {
         @Query("artist") artist: String? = null,
         @Query("title") title: String? = null,
     ): SubsonicEnvelope
+
+    /** OpenSubsonic structured lyrics (synced lines when the server has them). */
+    @GET("getLyricsBySongId.view")
+    suspend fun getLyricsBySongId(@Query("id") id: String): SubsonicEnvelope
 }

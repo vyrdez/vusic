@@ -54,6 +54,8 @@ class FakeMusicRepo(
     override suspend fun deletePlaylist(id: String) = Result.Ok(Unit)
     override suspend fun scrobble(id: String, submission: Boolean) = Result.Ok(Unit)
     override suspend fun lyrics(artist: String, title: String) = Result.Ok("")
+    override suspend fun lyricsForTrack(id: String, artist: String, title: String) =
+        Result.Ok(com.feishin.mobile.core.network.SyncedLyrics.plain(""))
     override fun streamUrl(track: Track, maxBitrate: Int, format: String) = ""
     override fun coverArtUrl(coverArtId: String?, size: Int) = null
     override fun downloadUrl(track: Track) = ""

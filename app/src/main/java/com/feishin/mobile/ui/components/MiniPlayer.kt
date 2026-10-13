@@ -1,6 +1,9 @@
 package com.feishin.mobile.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,19 +26,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.feishin.mobile.playback.PlayerManager
 
-/** Docked above the bottom nav. Full Now Playing screen comes in M4. */
+/** Docked above the bottom nav. Tap opens Now Playing, swipe up expands it,
+ *  swipe left/right skips tracks. Hidden when the queue is empty. */
 @Composable
-fun MiniPlayer(player: PlayerManager, modifier: Modifier = Modifier) {
+fun MiniPlayer(player: PlayerManager, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    val queue by player.queue.collectAsState()
     val current by player.current.collectAsState()
     val isPlaying by player.isPlaying.collectAsState()
     val position by player.position.collectAsState()
     val duration by player.duration.collectAsState()
+    if (queue.isEmpty()) return
     val song = current ?: return
 
     val progress = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
@@ -45,7 +52,29 @@ fun MiniPlayer(player: PlayerManager, modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onOpen)
+            .pointerInput(Unit) {
+                var totalX = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { totalX = 0f },
+                    onHorizontalDrag = { _, amount -> totalX += amount },
+                    onDragEnd = {
+                        when {
+                            totalX < -120f -> player.skipToNext()
+                            totalX > 120f -> player.skipToPrevious()
+                        }
+                    },
+                )
+            }
+            .pointerInput(Unit) {
+                var totalY = 0f
+                detectVerticalDragGestures(
+                    onDragStart = { totalY = 0f },
+                    onVerticalDrag = { _, amount -> totalY += amount },
+                    onDragEnd = { if (totalY < -120f) onOpen() },
+                )
+            },
     ) {
         Row(
             Modifier.fillMaxWidth().padding(8.dp),

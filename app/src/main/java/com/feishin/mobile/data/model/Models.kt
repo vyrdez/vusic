@@ -52,6 +52,7 @@ data class SubsonicResponse(
     val starred2: Starred2Dto? = null,
     val genres: GenresDto? = null,
     val lyrics: LyricsDto? = null,
+    val lyricsList: LyricsListDto? = null,
 )
 
 @Serializable
@@ -225,3 +226,25 @@ data class GenreDto(
 
 @Serializable
 data class LyricsDto(val artist: String = "", val title: String = "", val value: String = "")
+
+/** OpenSubsonic structured lyrics (`getLyricsBySongId`). */
+@Serializable
+data class LyricsListDto(
+    val syncedLyrics: SyncedLyricsDto? = null,
+    val plainLyrics: PlainLyricsDto? = null,
+)
+
+@Serializable
+data class SyncedLyricsDto(
+    val offset: Long = 0,
+    @Serializable(with = SyncedLineDtoListSerializer::class)
+    val line: List<SyncedLineDto> = emptyList(),
+)
+
+@Serializable
+data class SyncedLineDto(val start: Long = 0, val value: String = "")
+
+object SyncedLineDtoListSerializer : SingleOrListSerializer<SyncedLineDto>(SyncedLineDto.serializer())
+
+@Serializable
+data class PlainLyricsDto(val value: String = "")

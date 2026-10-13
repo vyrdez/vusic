@@ -5,6 +5,7 @@ import com.feishin.mobile.data.auth.AuthRepository
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.playback.PlayerManager
+import com.feishin.mobile.ui.components.UiMessenger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 
@@ -14,4 +15,5 @@ class MainViewModel @Inject constructor(
     val repo: MusicDataRepository,
     val auth: AuthRepository,
     val settings: SettingsStore,
+    val messenger: UiMessenger,
 ) : ViewModel()
