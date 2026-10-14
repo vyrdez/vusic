@@ -113,6 +113,14 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     val username by main.auth.loginState.collectAsState()
     val topBar = remember { TopBarController() }
 
+    // Widget cover tap (cold start or warm): open Now Playing once per nudge.
+    val nudge by com.feishin.mobile.ui.components.NowPlayingNudge.requests.collectAsState()
+    LaunchedEffect(nudge) { if (nudge > 0) showNowPlaying = true }
+
+    // Home widget: event-driven pushes on track/play-state/queue/favorites
+    // changes while the UI is alive (the service covers the app-dead path).
+    com.feishin.mobile.widget.WidgetPushEffect(main)
+
     LaunchedEffect(Unit) {
         main.messenger.messages.collect { snackbar.showSnackbar(it) }
     }

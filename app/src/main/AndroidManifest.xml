@@ -60,6 +60,18 @@
                 android:resource="@xml/now_playing_widget_info" />
         </receiver>
 
+        <!-- Widget transport controls: explicit intents only, never exported. -->
+        <receiver
+            android:name=".widget.WidgetActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.feishin.mobile.widget.PREV" />
+                <action android:name="com.feishin.mobile.widget.NEXT" />
+                <action android:name="com.feishin.mobile.widget.TOGGLE" />
+                <action android:name="com.feishin.mobile.widget.FAVORITE" />
+            </intent-filter>
+        </receiver>
+
         <!-- WorkManager is initialised on-demand by FeishinApp (Hilt worker factory). -->
         <provider
             android:name="androidx.startup.InitializationProvider"

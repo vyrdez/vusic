@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         requestNotificationPermissionIfNeeded()
+        consumeNowPlayingIntent(intent)
         setContent {
             val main: MainViewModel = hiltViewModel()
             val settings by main.settings.flow.collectAsState(initial = null)
@@ -41,6 +42,20 @@ class MainActivity : ComponentActivity() {
             FeishinTheme(dark = dark, amoled = amoled) {
                 AppNav(main = main)
             }
+        }
+    }
+
+    /** Widget cover tap opens Now Playing (cold start and warm). */
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeNowPlayingIntent(intent)
+    }
+
+    private fun consumeNowPlayingIntent(intent: android.content.Intent?) {
+        if (intent?.action == "com.feishin.mobile.OPEN_NOW_PLAYING") {
+            com.feishin.mobile.ui.components.NowPlayingNudge.nudge()
+            intent.action = null
         }
     }
 

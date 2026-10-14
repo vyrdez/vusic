@@ -43,8 +43,7 @@ Set `sdk.dir` in `local.properties` if the SDK lives elsewhere.
   download traffic via the shared OkHttp client (no restart needed).
 - Login state drives navigation directly (no restart needed). Credentials live in
   EncryptedSharedPreferences; test/server config is never committed.
-- Android Auto: the player is a Media3 `MediaLibraryService` with 4 root tabs
-  (Home, Library, Favorites, Downloads), paged browsing, voice search
+- Android Auto: the player is a Media3 `MediaLibraryService` with 4 root tabs  (Home, Library, Favorites, Downloads), paged browsing, voice search
   ("play <artist/album/song>", shuffle requests honoured), transport + shuffle +
   repeat + seek from the car, and Favorite / Start-radio custom actions. Browse
   playback resolves to the same stream/download URIs as the phone and mirrors
@@ -55,3 +54,9 @@ Set `sdk.dir` in `local.properties` if the SDK lives elsewhere.
   downloaded content work in the car; servers with self-signed certificates may
   not render browse art in the head unit (the car's loader can't use the app's
   trust settings).
+- Home screen widget: resizable Now Playing widget (compact 4x1 and large 4x2)
+  with cover art, title/artist, previous/play-pause/next and a favorite button;
+  tapping the cover opens Now Playing. It updates on track/play/favorite changes
+  without polling, shows "Nothing playing" when the queue is empty, and its
+  controls keep working after the app process is killed (they talk to the media
+  session; Play rebuilds the persisted queue paused).

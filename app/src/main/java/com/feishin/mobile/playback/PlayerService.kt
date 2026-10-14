@@ -42,6 +42,7 @@ import com.feishin.mobile.data.download.DownloadRepository
 import com.feishin.mobile.data.favorites.FAVORITE_SONGS_PLAYLIST_ID
 import com.feishin.mobile.data.favorites.FavoritesStore
 import com.feishin.mobile.data.network.NetworkMonitor
+import com.feishin.mobile.data.queue.QueueStore
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
@@ -86,6 +87,7 @@ class PlayerService : MediaLibraryService() {
     @Inject lateinit var network: NetworkMonitor
     @Inject lateinit var playerManager: PlayerManager
     @Inject lateinit var imageLoader: ImageLoader
+    @Inject lateinit var queueStore: com.feishin.mobile.data.queue.QueueStore
     @Inject @Named("streaming") lateinit var okHttpClient: okhttp3.OkHttpClient
     @Inject lateinit var cache: androidx.media3.datasource.cache.SimpleCache
 
@@ -154,6 +156,7 @@ class PlayerService : MediaLibraryService() {
                 // "Now playing" scrobble + reset the submission rule for the new track.
                 scope.launch { repo.scrobble(id, submission = false) }
                 startTicker()
+                pushWidget()
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -163,6 +166,10 @@ class PlayerService : MediaLibraryService() {
                         scope.launch { repo.scrobble(id, submission = true) }
                     }
                 }
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                pushWidget()
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -202,9 +209,54 @@ class PlayerService : MediaLibraryService() {
         super.onDestroy()
     }
 
+    /**
+     * Pushes the home widget from the session player (covers the app-dead
+     * path). Event-driven: track transitions and play/pause flips only, never
+     * the 1s ticker. Skips no-op repeats so background transitions don't spam
+     * RemoteViews updates.
+     */
+    private var lastWidgetKey: Triple<String?, Boolean, Int>? = null
+
+    private fun pushWidget() {
+        val p = player ?: return
+        // ExoPlayer is app-thread confined: snapshot here (this runs on Main
+        // from the listener), then fan out to IO for prefs and art.
+        val item = p.currentMediaItem
+        val count = p.mediaItemCount
+        val playing = p.isPlaying
+        val track = item?.let { TrackMediaItems.toTrack(it) }
+        val artUri = item?.mediaMetadata?.artworkUri?.toString()
+        val key = Triple(track?.id, playing, count)
+        if (key == lastWidgetKey) return
+        lastWidgetKey = key
+        scope.launch(Dispatchers.IO) {
+            val saved = com.feishin.mobile.widget.WidgetStateStore(this@PlayerService).load()
+            val state = if (track == null || count == 0) {
+                com.feishin.mobile.widget.WidgetState.empty()
+            } else {
+                val starred = if (saved.trackId == track.id) saved.starred else false
+                com.feishin.mobile.widget.WidgetState(
+                    hasQueue = true,
+                    title = track.title,
+                    artist = track.artist,
+                    coverArtId = track.coverArt,
+                    trackId = track.id,
+                    isPlaying = playing,
+                    starred = starred,
+                )
+            }
+            runCatching {
+                com.feishin.mobile.widget.WidgetUpdater.update(
+                    this@PlayerService, state, imageLoader,
+                ) { id ->
+                    artUri ?: coverUrl(id, 256)?.toString()
+                }
+            }
+        }
+    }
+
     /** Drives the 50%-or-4-minutes scrobble submission rule. */
-    private fun startTicker() {
-        stopTicker()
+    private fun startTicker() {        stopTicker()
         ticker = scope.launch {
             while (true) {
                 val p = player ?: break
@@ -355,6 +407,38 @@ class PlayerService : MediaLibraryService() {
     }
 
     private inner class AutoCallback : MediaLibrarySession.Callback {
+
+        override fun onPlaybackResumption(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            // Play tapped with an empty player (widget/media button after the
+            // app process died): restore the persisted queue paused, exactly
+            // like a cold start, instead of failing the command.
+            val future = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
+            scope.launch {
+                val snapshot = runCatching { queueStore.load() }.getOrNull()
+                if (snapshot == null || snapshot.tracks.isEmpty()) {
+                    future.setException(IllegalStateException("Nothing to resume"))
+                    return@launch
+                }
+                val built = snapshot.tracks.mapNotNull { p ->
+                    val track = p.toDomain()
+                    resolveTrack(track, p.queueId.takeIf { it >= 0 } ?: -1L)
+                }
+                if (built.isEmpty()) {
+                    future.setException(IllegalStateException("Nothing to resume"))
+                    return@launch
+                }
+                val index = snapshot.currentIndex.coerceIn(0, built.size - 1)
+                future.set(
+                    MediaSession.MediaItemsWithStartPosition(
+                        built, index, snapshot.positionMs,
+                    ),
+                )
+            }
+            return future
+        }
 
         override fun onConnect(
             session: MediaSession,

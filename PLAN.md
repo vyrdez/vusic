@@ -227,9 +227,35 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   the complete session items instead); self-signed servers may not show browse
   art in the head unit; the radio browse action converges via the phone radio
   path.)
+- [x] M6.2 home screen widget
+  (Replaced the static placeholder: 56dp cover, title/artist, previous/play-
+  pause/next and a favorite heart; whole card opens the app. Two layouts
+  (compact 4x1, large 4x2 with a 104dp cover) chosen by measured width
+  (>= 260dp) with resize support; dark Vusic style, rounded corners, cover
+  rounded in code (RemoteViews cannot clip). Rendering always goes through a
+  persisted SharedPreferences state so the widget is meaningful with the app
+  dead; updates are event-driven — the app pushes on track/play/queue/favorites
+  changes while alive, PlayerService pushes from its ExoPlayer listener when
+  only the service is alive — with a key guard so background transitions never
+  spam RemoteViews. Controls talk straight to the MediaSession (controller bind
+  wakes the service from a dead process); favorite toggles the star through
+  FavoritesStore and the app push corrects the heart. Playing with an empty
+  player implements MediaSession.Callback.onPlaybackResumption: the persisted
+  queue is rebuilt (same stream/download URIs) and restored paused, so widget
+  Play after a process kill resumes instead of failing. Root causes found on
+  device: (a) PlayerService.pushWidget read ExoPlayer off the app thread
+  ("Player is accessed on the wrong thread" FATAL) — the player is snapshotted
+  on Main only, with captured values for the IO fan-out; (b) Play with an empty
+  player logged the Media3 onPlaybackResumption note and did nothing — now
+  implemented. Verified on the emulator: widget picked/pinned (preview renders),
+  Next/Play/Favorite drive the session, heart flips, title advances, controls
+  work with the app force-stopped, and Play-with-dead-app resumed the queue from
+  cache (cache hit, position preserved, no FATAL); both layouts render. 5 widget
+  unit tests. Limitation: with the app process dead and the player empty,
+  Next/Prev are no-ops until Play restores the queue.)
 
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
-`testDebugUnitTest` 277/277 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
+`testDebugUnitTest` 290/290 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
 LIVE on-device test (emulator Pixel 7, API 34) against server.example.com: login OK,
 Home with real albums/art, album detail (17 tracks), streaming playback confirmed
 (mini player + Now Playing 0:33/3:42 + audio focus), zero FATAL crashes. Probe script
