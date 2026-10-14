@@ -204,7 +204,15 @@ class DownloadWorker @AssistedInject constructor(
                 dao.setStatus(row.songId, DownloadStatus.PAUSED.name)
                 Outcome.PAUSED
             } else {
-                android.util.Log.w("DownloadWorker", "transfer failed for ${row.songId} url=$url", e)
+                // Never log the signed URL (u/t/s). Redact, debug-only.
+                if (com.feishin.mobile.data.remote.RedactingHttpLogger.ENABLED) {
+                    android.util.Log.w(
+                        "DownloadWorker",
+                        "transfer failed song=${row.songId} url=${
+                            com.feishin.mobile.data.remote.RedactingHttpLogger.redact(url)
+                        }",
+                    )
+                }
                 dao.setStatus(row.songId, DownloadStatus.FAILED.name, "Network error: ${e.message ?: e.javaClass.simpleName}")
                 Outcome.RETRY
             }

@@ -15,6 +15,26 @@ adb install -r app\build\outputs\apk\debug\app-debug.apk
 Prerequisites: JDK 17 and Android SDK (platform 34, build-tools 34.0.0, platform-tools).
 Set `sdk.dir` in `local.properties` if the SDK lives elsewhere.
 
+### Release build (R8 minified, signed)
+
+R8 minification + resource shrinking are on for release, with rules in
+`app/proguard-rules.pro` covering Retrofit, kotlinx.serialization, Hilt, Room,
+Media3, WorkManager, Coil and the Android Auto/service entry points.
+
+```powershell
+# One-time: create a local keystore (kept out of git via .gitignore).
+#   keystore/vusic-release.jks        the keystore
+#   keystore/keystore.properties      storePassword / keyAlias / keyPassword
+.\gradlew.bat assembleRelease
+adb install -r app\build\outputs\apk\release\app-release.apk
+```
+
+Without `keystore/` the release task still succeeds but produces an *unsigned*
+APK (`app-release-unsigned.apk`), so CI needs no secrets.
+Release builds log nothing: the HTTP logger and all diagnostics are
+compile-time-disabled, and API credentials (`u`/`t`/`s`) are redacted in debug
+as well.
+
 ## Notes / limitations
 
 - Crossfade is a **best-effort volume ramp** on the single player (fades the tail
@@ -60,3 +80,12 @@ Set `sdk.dir` in `local.properties` if the SDK lives elsewhere.
   without polling, shows "Nothing playing" when the queue is empty, and its
   controls keep working after the app process is killed (they talk to the media
   session; Play rebuilds the persisted queue paused).
+- Accessibility: every icon button carries a content description, controls meet
+  the 48dp minimum touch target, and text scales to 1.3x without clipping (the
+  app is fully TalkBack-navigable on Home, Now Playing and Settings).
+- Error handling: a crash-safe layer absorbs non-fatal background failures
+  (a single failed network call can no longer take the app down) while real
+  main-thread bugs still surface; common failures show friendly messages
+  (wrong server, expired session, no network) instead of raw errors.
+- Release cold start measured at 505–888 ms total on the Pixel 7 emulator with
+  the R8-minified release APK.

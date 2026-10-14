@@ -162,6 +162,33 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   Wi-Fi-only gate, auto-cache of played songs, and a built-in Cached collection
   tracked in Room that plays offline and self-prunes on eviction; 250 unit tests)
 - [ ] M6 extras (Auto polish, home screen widget, README, final APK verify)
+- [x] M6.3 final polish and release readiness
+  (Adaptive app icon already carried a monochrome layer; added an Android 12+
+  splash using core-splashscreen with the Vusic note mark on the app background
+  and no icon-in-icon chrome. Release build now runs R8 minify + resource shrink
+  with a hand-written ruleset (proguard-rules.pro) for Retrofit,
+  kotlinx.serialization, Hilt/Dagger, Room, Media3, WorkManager, Coil and the
+  service/widget entry points; a local keystore (keystore/, gitignored) signs
+  releases, and the task degrades to an unsigned APK when the keystore is absent
+  so CI needs no secrets. Security: HTTP logging is compile-time OFF in release
+  and credential-redacting (u/t/s/p -> ***) in debug — the old
+  HttpLoggingInterceptor and the download-failure log that printed signed URLs
+  are gone; verified on the signed release APK that no credentials appear in
+  logcat. Error handling: CrashGuard absorbs non-fatal background failures on
+  every app-level scope plus non-main threads, while main-thread crashes keep
+  the platform default so real UI bugs stay visible. Accessibility: content
+  descriptions on all icon buttons (incl. widget and Auto actions) and the 48dp
+  target rule, TalkBack-verified on Home/Now Playing/Settings. Performance:
+  release cold start 505–888 ms total (am start -W), no ANRs during the full
+  flow. Root cause fixed in this pass: the Library grid "Cached" cell built an
+  empty PlaylistCover.Collage, and PlaylistArt indexed urls[0] on an empty list
+  — a release-only FATAL on opening Library; the collage branch now falls back
+  to the styled placeholder for 0 covers and callers use PlaylistCover.select.
+  295 unit tests.)
+- Verified (M6.3): assembleDebug + assembleRelease + lint green; 295/295 unit
+  tests; signed release APK installed on the emulator, full flow exercised
+  (login, Home with real art, Library tabs incl. grid/list, playback, queue,
+  widget, settings) with zero FATALs and no credential strings in logcat.
 - [x] M6.0 UI fixes + queue freeze/root-cause + queue redesign + mini-player clear
   (1. Library grid/list toggle: root cause was that only the Albums and Artists
   branches read the `grid` flag — Songs/Playlists/Favorites/Downloads rendered
@@ -255,7 +282,7 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   Next/Prev are no-ops until Play restores the queue.)
 
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
-`testDebugUnitTest` 290/290 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
+`testDebugUnitTest` 295/295 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
 LIVE on-device test (emulator Pixel 7, API 34) against server.example.com: login OK,
 Home with real albums/art, album detail (17 tracks), streaming playback confirmed
 (mini player + Now Playing 0:33/3:42 + audio focus), zero FATAL crashes. Probe script

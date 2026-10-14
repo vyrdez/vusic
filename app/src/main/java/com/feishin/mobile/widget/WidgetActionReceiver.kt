@@ -28,7 +28,7 @@ class WidgetActionReceiver : BroadcastReceiver() {
 
     @Inject lateinit var favorites: FavoritesStore
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + com.feishin.mobile.core.common.CrashGuard.handler)
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return

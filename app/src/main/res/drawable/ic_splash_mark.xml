@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Vusic mark: eighth note in the brand blue on the dark splash field. -->
+    <path
+        android:fillColor="#8CCDF0"
+        android:pathData="M62,28 L62,68 a10,8 0 1,1 -6,-7 L56,44 L40,48 L40,72 a10,8 0 1,1 -6,-7 L34,40 L62,33 Z" />
+</vector>

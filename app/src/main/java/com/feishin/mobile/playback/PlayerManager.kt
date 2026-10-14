@@ -71,7 +71,7 @@ class PlayerManager @Inject constructor(
     private val cachedTracks: com.feishin.mobile.data.cache.CachedTrackStore,
     private val streamCache: androidx.media3.datasource.cache.SimpleCache,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + com.feishin.mobile.core.common.CrashGuard.handler)
     private var queueSeq = 0L
     private var restored = false
 

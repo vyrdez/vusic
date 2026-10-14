@@ -20,3 +20,4 @@ nd_test.properties
 
 # Kotlin compiler scratch
 .kotlin/
+keystore/

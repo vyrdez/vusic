@@ -30,7 +30,7 @@ class AuthRepository @Inject constructor(
     private val _ready = MutableStateFlow(false)
     val ready: StateFlow<Boolean> = _ready.asStateFlow()
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + com.feishin.mobile.core.common.CrashGuard.handler)
 
     init {
         // Backing prefs were read synchronously in the store constructor, so this

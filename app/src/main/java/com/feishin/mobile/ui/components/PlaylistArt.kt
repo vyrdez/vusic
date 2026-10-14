@@ -55,6 +55,8 @@ fun PlaylistCoverArt(
             // Count-aware so a 2-track playlist shows two covers side by side rather
             // than the same art repeated to fill a 2x2.
             when (urls.size) {
+                // Empty collage (no resolvable art): fall back to the styled
+                // placeholder instead of indexing an empty list.
                 1 -> CoverImage(urls[0], contentDescription, modifier = modifier, roundedDp = roundedDp)
                 2 -> Column(modifier.clip(shape).background(VusicColors.SurfaceHigh)) {
                     Row(Modifier.weight(1f).fillMaxWidth()) {
@@ -71,7 +73,7 @@ fun PlaylistCoverArt(
                         CollageCell(urls[2], contentDescription)
                     }
                 }
-                else -> Column(modifier.clip(shape).background(VusicColors.SurfaceHigh)) {
+                in 4..Int.MAX_VALUE -> Column(modifier.clip(shape).background(VusicColors.SurfaceHigh)) {
                     Row(Modifier.weight(1f).fillMaxWidth()) {
                         CollageCell(urls[0], contentDescription)
                         CollageCell(urls[1], contentDescription)
@@ -80,6 +82,15 @@ fun PlaylistCoverArt(
                         CollageCell(urls[2], contentDescription)
                         CollageCell(urls[3], contentDescription)
                     }
+                }
+                else -> Box(
+                    modifier.clip(shape).background(VusicColors.SurfaceHigh),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Default.MusicNote, contentDescription,
+                        tint = VusicColors.SecondaryText,
+                    )
                 }
             }
         }

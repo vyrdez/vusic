@@ -333,7 +333,7 @@ fun LibraryScreen(
                                     item(key = "cached") {
                                         PlaylistGridCell(
                                             name = "Cached", count = "${cached.size} songs",
-                                            cover = PlaylistCover.Collage(cached.map { it.coverArt }.filterNotNull().distinct().take(4)),
+                                            cover = PlaylistCover.select(null, cached.map { it.coverArt }),
                                             repo = repo, onClick = { onPlaylist(CACHED_SONGS_PLAYLIST_ID) },
                                         )
                                     }

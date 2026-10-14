@@ -3,6 +3,7 @@ package com.feishin.mobile.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feishin.mobile.core.common.Result
+import com.feishin.mobile.core.common.VLog
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.Artist
@@ -85,7 +86,7 @@ class HomeViewModel @Inject constructor(
             cache.loadDisk(_ui.value.selectedGenre)?.let { cached ->
                 if (_ui.value.recent.isEmpty()) {
                     _ui.value = cached.copy(loading = false)
-                    android.util.Log.d("HomePerf", "painted disk snapshot")
+                    VLog.d("HomePerf", "painted disk snapshot")
                 }
             }
             refresh()
@@ -155,7 +156,7 @@ class HomeViewModel @Inject constructor(
             val next = transform(_ui.value)
             val fresh = isContent && firstContent.compareAndSet(false, true)
             _ui.value = if (fresh) next.copy(loading = false) else next
-            android.util.Log.d(
+            VLog.d(
                 "HomePerf",
                 "$name +${android.os.SystemClock.elapsedRealtime() - startedAt}ms" +
                     if (fresh) " (first content)" else "",
@@ -314,7 +315,7 @@ class HomeViewModel @Inject constructor(
                             quickPicks = songs,
                         ),
                     )
-                    android.util.Log.d(
+                    VLog.d(
                         "HomePerf",
                         "prefetched '$g' +${android.os.SystemClock.elapsedRealtime() - started}ms",
                     )

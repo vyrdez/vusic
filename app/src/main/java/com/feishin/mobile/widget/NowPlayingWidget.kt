@@ -27,7 +27,7 @@ class NowPlayingWidget : AppWidgetProvider() {
     @Inject lateinit var imageLoader: ImageLoader
     @Inject lateinit var creds: CredentialsStore
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + com.feishin.mobile.core.common.CrashGuard.handler)
 
     override fun onUpdate(context: Context, mgr: AppWidgetManager, ids: IntArray) {
         scope.launch {

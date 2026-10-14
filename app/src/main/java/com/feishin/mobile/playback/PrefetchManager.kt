@@ -12,6 +12,7 @@ import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import com.feishin.mobile.core.common.PrefetchWindow
+import com.feishin.mobile.core.common.VLog
 import com.feishin.mobile.core.common.QualityPolicy
 import com.feishin.mobile.core.common.StableCacheKey
 import com.feishin.mobile.core.network.StreamUrlProvider
@@ -54,7 +55,7 @@ class PrefetchManager @Inject constructor(
     private val downloads: DownloadRepository,
     private val cachedTracks: CachedTrackStore,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + com.feishin.mobile.core.common.CrashGuard.handler)
 
     /** queueId -> in-flight fetch. Guarded by confinement to [scope]. */
     private val active = ConcurrentHashMap<Long, Job>()
@@ -191,10 +192,10 @@ class PrefetchManager @Inject constructor(
             writer.cache()
             val bytes = runCatching { cache.getCachedBytes(key, 0L, Long.MAX_VALUE) }.getOrDefault(0L)
             cachedTracks.recordCached(track, key, bytes)
-            Log.d(TAG, "prefetch complete song=${track.id} key=$key bytes=$bytes")
+            VLog.d(TAG, "prefetch complete song=${track.id} key=$key bytes=$bytes")
         } catch (e: Exception) {
             // Quiet by design: prefetch must never surface errors or retries.
-            Log.d(TAG, "prefetch skipped song=${track.id}: ${e.message}")
+            VLog.d(TAG, "prefetch skipped song=${track.id}: ${e.message}")
         } finally {
             active.remove(queueId)
         }

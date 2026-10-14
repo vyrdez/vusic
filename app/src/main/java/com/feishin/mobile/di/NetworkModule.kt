@@ -7,6 +7,7 @@ import coil.memory.MemoryCache
 import com.feishin.mobile.data.remote.AuthInterceptor
 import com.feishin.mobile.data.remote.DynamicTrustManager
 import com.feishin.mobile.data.remote.HostRewriteInterceptor
+import com.feishin.mobile.data.remote.RedactingHttpLogger
 import com.feishin.mobile.data.remote.SubsonicApi
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
@@ -20,7 +21,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 
 @Module
@@ -37,7 +37,6 @@ object NetworkModule {
     @Provides @Singleton
     fun provideOkHttp(auth: AuthInterceptor, rewrite: HostRewriteInterceptor, tm: DynamicTrustManager): OkHttpClient {
         val ssl = tm.sslContext()
-        val logging = HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC }
         return OkHttpClient.Builder()
             .sslSocketFactory(ssl.socketFactory, tm)
             .hostnameVerifier { hostname, session ->
@@ -46,7 +45,8 @@ object NetworkModule {
             }
             .addInterceptor(rewrite)
             .addInterceptor(auth)
-            .addInterceptor(logging)
+            // Debug-only, credential-redacting (release: no logging at all).
+            .addInterceptor(RedactingHttpLogger())
             .build()
     }
 

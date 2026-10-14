@@ -17,6 +17,7 @@ import com.feishin.mobile.data.settings.ThemeMode
 import com.feishin.mobile.ui.navigation.AppNav
 import com.feishin.mobile.ui.MainViewModel
 import com.feishin.mobile.ui.theme.FeishinTheme
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -26,6 +27,7 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* media notification still works */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         requestNotificationPermissionIfNeeded()

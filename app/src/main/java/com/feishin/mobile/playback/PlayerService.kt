@@ -31,6 +31,7 @@ import coil.request.ImageRequest
 import com.feishin.mobile.MainActivity
 import com.feishin.mobile.R
 import com.feishin.mobile.core.common.AutoBrowse
+import com.feishin.mobile.core.common.VLog
 import com.feishin.mobile.core.common.PlaybackSource
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.network.CoverArtUrlProvider
@@ -93,7 +94,7 @@ class PlayerService : MediaLibraryService() {
 
     private var player: ExoPlayer? = null
     private var mediaSession: MediaLibrarySession? = null
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + com.feishin.mobile.core.common.CrashGuard.handler)
     private val scrobblePolicy = com.feishin.mobile.core.network.ScrobblePolicy()
     private var ticker: Job? = null
 
@@ -110,7 +111,7 @@ class PlayerService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
-        android.util.Log.d(TAG, "service onCreate")
+        VLog.d(TAG, "service onCreate")
         // Scheme-aware upstream: downloaded tracks are opened from file:// by
         // DefaultDataSource (FileDataSource), while network streams still go
         // through the shared OkHttp client (self-signed + path prefix).
@@ -128,11 +129,11 @@ class PlayerService : MediaLibraryService() {
             .setEventListener(
                 object : CacheDataSource.EventListener {
                     override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
-                        android.util.Log.d(TAG, "cache hit bytes=$cachedBytesRead cacheSize=$cacheSizeBytes")
+                        VLog.d(TAG, "cache hit bytes=$cachedBytesRead cacheSize=$cacheSizeBytes")
                     }
 
                     override fun onCacheIgnored(reason: Int) {
-                        android.util.Log.d(TAG, "cache ignored reason=$reason")
+                        VLog.d(TAG, "cache ignored reason=$reason")
                     }
                 },
             )
@@ -196,7 +197,7 @@ class PlayerService : MediaLibraryService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
-        android.util.Log.d(TAG, "onGetSession pkg=${controllerInfo.packageName}")
+        VLog.d(TAG, "onGetSession pkg=${controllerInfo.packageName}")
         return mediaSession
     }
 
@@ -444,7 +445,7 @@ class PlayerService : MediaLibraryService() {
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): MediaSession.ConnectionResult {
-            android.util.Log.d(TAG, "onConnect pkg=${controller.packageName}")
+            VLog.d(TAG, "onConnect pkg=${controller.packageName}")
             // Car controllers get Favorite + Start-radio actions; the phone's
             // own controller (same package) is left alone.
             if (controller.packageName != packageName) {
@@ -483,7 +484,7 @@ class PlayerService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<MediaItem>> {
-            android.util.Log.d(TAG, "onGetLibraryRoot")
+            VLog.d(TAG, "onGetLibraryRoot")
             val root = MediaItem.Builder()
                 .setMediaId(AutoBrowse.ROOT_ID)
                 .setMediaMetadata(
@@ -823,7 +824,7 @@ private class UpstreamLogger(
         return object : androidx.media3.datasource.DataSource by inner {
             override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long {
                 val key = com.feishin.mobile.core.common.StableCacheKey.keyFor(dataSpec.uri.toString())
-                android.util.Log.d(PlayerService.TAG, "upstream open key=$key uri=${dataSpec.uri.host}${dataSpec.uri.path}")
+                VLog.d(PlayerService.TAG, "upstream open key=$key uri=${dataSpec.uri.host}${dataSpec.uri.path}")
                 return inner.open(dataSpec)
             }
         }

@@ -31,6 +31,9 @@ class FeishinApp : Application(), ImageLoaderFactory, Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        // Absorb non-fatal background failures so one failed call cannot take
+        // the whole app down (main-thread crashes still surface).
+        runCatching { com.feishin.mobile.core.common.CrashGuard.install() }
         // Media3 posts its playback notification on this channel; pre-create it
         // with our branding so it reads "Vusic" instead of a generic name.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

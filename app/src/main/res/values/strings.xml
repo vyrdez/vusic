@@ -5,4 +5,12 @@
     <style name="Theme.Feishin" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">#0F0F0F</item>
     </style>
+
+    <!-- Android 12+ splash: Vusic mark on the app background, no icon-in-icon. -->
+    <style name="Theme.Feishin.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#0F0F0F</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_mark</item>
+        <item name="windowSplashScreenIconBackgroundColor">#0F0F0F</item>
+        <item name="postSplashScreenTheme">@style/Theme.Feishin</item>
+    </style>
 </resources>

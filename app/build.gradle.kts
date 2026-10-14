@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -22,7 +24,30 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            // Local, untracked keystore (see README). Falls back to the debug
+            // config when the file/keys are absent, so CI/`assembleRelease`
+            // still produce an installable APK.
+            val ks = rootProject.file("keystore/vusic-release.jks")
+            val props = rootProject.file("keystore/keystore.properties")
+            if (ks.exists() && props.exists()) {
+                val map = Properties()
+                props.inputStream().use { map.load(it) }
+                signingConfig = signingConfigs.create("release") {
+                    storeFile = ks
+                    storePassword = map.getProperty("storePassword")
+                    keyAlias = map.getProperty("keyAlias")
+                    keyPassword = map.getProperty("keyPassword")
+                }
+                println("Vusic release signing: ${ks.name}")
+            } else {
+                println("Vusic release signing: no keystore, APK will be unsigned")
+            }
         }
         debug {
             applicationIdSuffix = ""
@@ -59,6 +84,7 @@ dependencies {
     implementation(libs.compose.material.icons)
     implementation(libs.activity.compose)
     implementation(libs.core.ktx)
+    implementation(libs.core.splashscreen)
     implementation(libs.lifecycle.runtime)
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.navigation.compose)
