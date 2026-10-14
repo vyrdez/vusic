@@ -199,6 +199,34 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   untouched. Undo snackbar (~5s, Indefinite + auto-dismiss) restores queue,
   current item and position, paused. Verified on device incl. rotation.)
   277 unit tests)
+- [x] M6.1 Android Auto (MediaLibraryService + browse tree + voice + car actions)
+  (PlayerService converted from MediaSessionService to MediaLibraryService;
+  existing phone behavior unchanged (same ExoPlayer/cache/session-activity/
+  scrobble ticker; phone-initiated items already carry URIs and pass through
+  onAddMediaItems untouched). Browse tree with exactly 4 root tabs (Home with
+  recently-played/newest/random-mix/radio, Library with Playlists incl. Favorite
+  songs + Cached plus Albums/Artists, Favorites with songs/albums/artists,
+  Downloads), all paged; voice search via onSearch/onGetSearchResult on the
+  search3 API ("play <artist/album/song>", artist→top songs, album→tracks,
+  shuffle prefix honoured). Car playback (play/pause/next/previous/seek/shuffle/
+  repeat) drives the same session player so the Auto queue IS the phone queue;
+  browse placeholders resolve to phone-identical stream/download URIs on set and
+  the queue mirrors into PlayerManager via adoptExternalQueue without touching
+  the controller (start index self-heals through the queue-key transition
+  listener); Favorite (toggle star) and Start radio custom actions with car-only
+  custom layout; session artwork via a Coil-backed BitmapLoader (placeholder
+  fallback, never fails). Root cause found while testing: a custom onConnect
+  that replaced the default session commands with session-only commands strips
+  the library command set, so every browse call fails PERMISSION_DENIED (-4)
+  before any callback runs — fixed with DEFAULT_SESSION_AND_LIBRARY_COMMANDS.
+  Verified on-device with a MediaBrowser test client (DHU needs a display and
+  was not used): root = 4 tabs, all tabs + second level + paging fetch, pinned
+  Favorite songs/Cached present, search round-trip, and play-from-browse starts
+  real streaming playback with a resolved URI (4/4 androidTests green, plus 8
+  AutoBrowse unit tests). Limitations: onGetItem not implemented (browsers use
+  the complete session items instead); self-signed servers may not show browse
+  art in the head unit; the radio browse action converges via the phone radio
+  path.)
 
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
 `testDebugUnitTest` 277/277 pass. APK at app/build/outputs/apk/debug/app-debug.apk.

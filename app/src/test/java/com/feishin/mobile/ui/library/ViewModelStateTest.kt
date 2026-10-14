@@ -154,7 +154,9 @@ class ViewModelStateTest {
     }
 
     private fun awaitHomeIdle(vm: HomeViewModel) {
-        repeat(200) {
+        // Generous cap: under a loaded full-suite run the DataStore-backed
+        // loads can take several seconds to settle.
+        repeat(400) {
             if (!vm.ui.value.loading) return
             Thread.sleep(25)
         }

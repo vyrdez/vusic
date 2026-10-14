@@ -36,9 +36,11 @@
             </intent-filter>
         </activity>
 
+        <!-- MediaLibraryService for Android Auto: exported so the car head unit
+             (a different UID) can bind and browse. -->
         <service
             android:name=".playback.PlayerService"
-            android:exported="false"
+            android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />

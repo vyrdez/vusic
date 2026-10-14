@@ -41,6 +41,10 @@ class AuthRepository @Inject constructor(
     /**
      * Tests the server and, on success, persists credentials (Test & Connect).
      * Never commits credentials when the test fails.
+     *
+     * Overlapping calls are safe: cleanup only restores when the store still
+     * holds what THIS call saved, so a slow earlier attempt cannot wipe a
+     * newer successful login (e.g. double-tap with a stalled first ping).
      */
     suspend fun connect(serverUrl: String, username: String, password: String): Result<Unit> =
         withContext(Dispatchers.IO) {
@@ -55,18 +59,17 @@ class AuthRepository @Inject constructor(
             val previous = store.state.value
             // Save first so the auth interceptor can sign the ping, then verify.
             store.save(host, user, password)
+            val mine = store.state.value
             try {
                 val r = api.ping().response
                 if (r.status == "ok") {
                     Result.Ok(Unit)
                 } else {
-                    if (previous == null) store.clear()
-                    else store.save(previous.serverUrl, previous.username, previous.password)
+                    restoreIfMine(previous, mine)
                     Result.Err(SubsonicAuth.userMessage(r.error?.code, r.error?.message))
                 }
             } catch (e: Exception) {
-                if (previous == null) store.clear()
-                else store.save(previous.serverUrl, previous.username, previous.password)
+                restoreIfMine(previous, mine)
                 Result.Err(SubsonicAuth.userMessage(null, null, e), e)
             }
         }
@@ -81,6 +84,7 @@ class AuthRepository @Inject constructor(
             }
             val previous = store.state.value
             store.save(normalized.removeSuffix("/rest/"), username.trim(), password)
+            val mine = store.state.value
             try {
                 val r = api.ping().response
                 if (r.status == "ok") Result.Ok(Unit)
@@ -88,10 +92,19 @@ class AuthRepository @Inject constructor(
             } catch (e: Exception) {
                 Result.Err(SubsonicAuth.userMessage(null, null, e), e)
             } finally {
-                if (previous == null) store.clear()
-                else store.save(previous.serverUrl, previous.username, previous.password)
+                restoreIfMine(previous, mine)
             }
         }
+
+    /**
+     * Undoes this call's save, but only when nobody saved after us: an
+     * overlapping newer login/probe owns the store now and must be left alone.
+     */
+    private fun restoreIfMine(previous: Credentials?, mine: Credentials?) {
+        if (store.state.value != mine) return
+        if (previous == null) store.clear()
+        else store.save(previous.serverUrl, previous.username, previous.password)
+    }
 
     /** Wipes credentials immediately; navigation reacts via [loginState]. */
     fun logout() = store.clear()

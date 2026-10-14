@@ -963,6 +963,35 @@ class PlayerManager @Inject constructor(
         else _currentIndex.value.coerceIn(0, maxOf(0, reordered.size - 1))
     }
 
+    /**
+     * Adopts a queue the MediaSession (Android Auto / voice) set directly on
+     * the session player. The session already owns the items and the start
+     * position — this only mirrors them into the app state (queue, current,
+     * source, persistence) without touching the controller, so phone and car
+     * never fight and existing phone behavior is unchanged.
+     *
+     * The start index comes along a beat later through the normal media-item
+     * transition listener, which re-points at the same entry by queue key
+     * (duplicates safe).
+     */
+    fun adoptExternalQueue(tracks: List<Track>, source: String?) {
+        if (tracks.isEmpty()) return
+        cancelRadio()
+        val entries = tracks.map { QueueItem(it, queueSeq++) }
+        _queue.value = entries
+        _currentIndex.value = 0
+        _current.value = entries.firstOrNull()?.song
+        _current.value?.let { recordRecent(it) }
+        _shuffle.value = false
+        shuffleOrder = null
+        if (source != null) _sourceName.value = source
+        prefetch.onQueue(entries.toList(), 0)
+        persistAsync()
+    }
+
+    /** Session-era recent tracks for Auto Home, newest last. */
+    fun recentSnapshot(): List<Track> = recentTracks.toList()
+
     fun toggleShuffle(): Boolean {
         setShuffle(!_shuffle.value)
         return _shuffle.value

@@ -43,5 +43,15 @@ Set `sdk.dir` in `local.properties` if the SDK lives elsewhere.
   download traffic via the shared OkHttp client (no restart needed).
 - Login state drives navigation directly (no restart needed). Credentials live in
   EncryptedSharedPreferences; test/server config is never committed.
-- Android Auto works through the MediaSession (voice-search + browse filters
-  declared). Home widget shows a launcher entry that opens the app.
+- Android Auto: the player is a Media3 `MediaLibraryService` with 4 root tabs
+  (Home, Library, Favorites, Downloads), paged browsing, voice search
+  ("play <artist/album/song>", shuffle requests honoured), transport + shuffle +
+  repeat + seek from the car, and Favorite / Start-radio custom actions. Browse
+  playback resolves to the same stream/download URIs as the phone and mirrors
+  the queue back into the app, so the car and phone never diverge; artwork is
+  served through a Coil-backed `BitmapLoader`. Setup: install the APK, then in
+  the Android Auto app enable developer settings (tap the version row 10x) and
+  turn on "Unknown sources" — sideloaded apps are hidden otherwise. Offline and
+  downloaded content work in the car; servers with self-signed certificates may
+  not render browse art in the head unit (the car's loader can't use the app's
+  trust settings).
