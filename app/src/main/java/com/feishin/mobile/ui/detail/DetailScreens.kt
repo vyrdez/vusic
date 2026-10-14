@@ -331,7 +331,8 @@ fun ArtistDetailScreen(
     messenger: UiMessenger,
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
+    onBack: () -> Unit = {},
     onActions: (ActionTarget) -> Unit,
 ) {
-    ArtistScreen(vm = vm, player = player, repo = repo, messenger = messenger, onAlbum = onAlbum, onArtist = onArtist, onActions = onActions)
+    ArtistScreen(vm = vm, player = player, repo = repo, messenger = messenger, onAlbum = onAlbum, onArtist = onArtist, onActions = onActions, onBack = onBack)
 }

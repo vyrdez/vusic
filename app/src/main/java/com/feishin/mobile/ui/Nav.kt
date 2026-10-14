@@ -34,13 +34,22 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -100,6 +109,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     var showNowPlaying by remember { mutableStateOf(false) }
     var actionsTarget by remember { mutableStateOf<ActionTarget?>(null) }
     val snackbar = remember { SnackbarHostState() }
+    val navScope = rememberCoroutineScope()
     val username by main.auth.loginState.collectAsState()
     val topBar = remember { TopBarController() }
 
@@ -134,14 +144,39 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 snackbarHost = { SnackbarHost(snackbar) },
                 containerColor = VusicColors.Background,
                 topBar = {
-                    if (isDetail) {
+                    if (isDetail && !topBar.hideBar) {
                         AppTopBar(topBar, onBack = { nav.popBackStack() })
                     }
                 },
                 bottomBar = {
                     // Always visible: the nav bar and the mini player directly above it.
                     Column {
-                        MiniPlayer(main.player, onOpen = { showNowPlaying = true })
+                        MiniPlayer(
+                            main.player,
+                            onOpen = { showNowPlaying = true },
+                            onQueueCleared = { snap ->
+                                // Undo lives ~5s: restoring brings back the queue,
+                                // current item and position, paused.
+                                navScope.launch {
+                                    val autoDismiss = launch {
+                                        kotlinx.coroutines.delay(5_000)
+                                        snackbar.currentSnackbarData?.dismiss()
+                                    }
+                                    try {
+                                        val result = snackbar.showSnackbar(
+                                            message = "Queue cleared",
+                                            actionLabel = "Undo",
+                                            duration = androidx.compose.material3.SnackbarDuration.Indefinite,
+                                        )
+                                        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                            main.player.restoreCleared(snap)
+                                        }
+                                    } finally {
+                                        autoDismiss.cancel()
+                                    }
+                                }
+                            },
+                        )
                         AppNavigationBar(
                             currentRoute = route,
                             onSelect = { target -> nav.goToTab(target) },
@@ -149,7 +184,26 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     }
                 },
             ) { padding ->
-                Box(Modifier.fillMaxSize().padding(padding)) {
+                // The keyboard black bar: the bottom bar (mini player + nav)
+                // always reserves its height, and when the IME opens that space
+                // is still reserved while the IME covers the bar, leaving a
+                // blank band. Use max(ime, bar), never the sum, and consume the
+                // IME inset once.
+                val density = LocalDensity.current
+                val layoutDirection = LocalLayoutDirection.current
+                val imeBottomPx = WindowInsets.ime.getBottom(density)
+                val barBottomPx = with(density) { padding.calculateBottomPadding().roundToPx() }
+                val bottomPx = maxOf(barBottomPx, imeBottomPx)
+                Box(
+                    Modifier.fillMaxSize()
+                        .padding(
+                            top = padding.calculateTopPadding(),
+                            start = padding.calculateStartPadding(layoutDirection),
+                            end = padding.calculateEndPadding(layoutDirection),
+                            bottom = with(density) { bottomPx.toDp() },
+                        )
+                        .consumeWindowInsets(WindowInsets.ime),
+                ) {
                     // Effective offline: manual toggle, or auto mode following
                     // the live network. The banner respects "Show offline chip".
                     val settingsState by main.settings.flow.collectAsState(initial = null)
@@ -228,6 +282,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                                 player = main.player, repo = main.repo, messenger = main.messenger,
                                 onAlbum = { nav.navigate(Routes.album(it)) },
                                 onArtist = { nav.navigate(Routes.artist(it)) },
+                                onBack = { nav.popBackStack() },
                                 onActions = { actionsTarget = it },
                             )
                         }

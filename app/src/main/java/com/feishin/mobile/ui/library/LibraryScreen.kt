@@ -1,15 +1,19 @@
 package com.feishin.mobile.ui.library
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -95,7 +99,10 @@ fun LibraryScreen(
     val layouts by vm.layouts.collectAsState()
     val sorts by vm.sorts.collectAsState()
     val queries by vm.queries.collectAsState()
-    val grid = vm.layoutFor(tab) == LayoutMode.GRID
+    // Read the mode from the collected map (subscribes to changes): reading
+    // vm.layoutFor() here would sample StateFlow.value without subscribing,
+    // so the icon and layout would never update on toggle.
+    val grid = (layouts[tab] ?: LayoutMode.GRID) == LayoutMode.GRID
     var showSortSheet by remember { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     val nowPlaying by player.current.collectAsState()
@@ -108,13 +115,8 @@ fun LibraryScreen(
     LaunchedEffect(initialTab) { vm.applyNavTab(initialTab) }
 
     Column(Modifier.fillMaxSize()) {
-        // Title row: title on the left; search, view toggle and sort on the
-        // right, so the chip row below can scroll without colliding with them.
-        Row(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Library", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+        // Same title row as Settings: one shared component, identical spacing.
+        com.feishin.mobile.ui.components.ScreenTitleRow(title = "Library") {
             IconButton(onClick = { searchOpen = !searchOpen }, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Default.Search, contentDescription = "Search library")
             }
@@ -258,6 +260,19 @@ fun LibraryScreen(
                             val shown = com.feishin.mobile.core.common.LibraryOrdering.filterSongs(s.value, query)
                             if (shown.isEmpty()) {
                                 EmptyState("No songs match \"$query\"")
+                            } else if (grid) {
+                                LazyVerticalGrid(
+                                    GridCells.Fixed(2), Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp),
+                                ) {
+                                    items(shown, key = { it.id }) { song ->
+                                        SongGridCell(
+                                            song = song, artUrl = repo.coverArtUrl(song.coverArt, 300),
+                                            onClick = { player.playAll(shown, shown.indexOf(song), source = "Songs") },
+                                            onActions = { onActions(ActionTarget.Track(song)) },
+                                        )
+                                    }
+                                }
                             } else {
                                 LazyColumn(
                                     Modifier.fillMaxSize(),
@@ -303,6 +318,37 @@ fun LibraryScreen(
                         }
                         is UiState.Data -> {
                             val shown = com.feishin.mobile.core.common.LibraryOrdering.filterPlaylists(s.value, query)
+                            if (grid) {
+                                LazyVerticalGrid(
+                                    GridCells.Fixed(2), Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp),
+                                ) {
+                                    item(key = "favorites") {
+                                        PlaylistGridCell(
+                                            name = "Favorite songs", count = "${favTracks.size} songs",
+                                            cover = PlaylistCover.Favorites(favTracks.map { it.coverArt }.filterNotNull().distinct().take(4)),
+                                            repo = repo, onClick = { onPlaylist(FAVORITE_SONGS_PLAYLIST_ID) },
+                                        )
+                                    }
+                                    item(key = "cached") {
+                                        PlaylistGridCell(
+                                            name = "Cached", count = "${cached.size} songs",
+                                            cover = PlaylistCover.Collage(cached.map { it.coverArt }.filterNotNull().distinct().take(4)),
+                                            repo = repo, onClick = { onPlaylist(CACHED_SONGS_PLAYLIST_ID) },
+                                        )
+                                    }
+                                    if (shown.isEmpty() && query.isNotBlank()) {
+                                        item { EmptyState("No playlists match \"$query\"") }
+                                    }
+                                    items(shown, key = { it.id }) { p ->
+                                        PlaylistGridCell(
+                                            name = p.name, count = "${p.songCount} songs",
+                                            cover = PlaylistCover.select(p.coverArt, emptyList()),
+                                            repo = repo, onClick = { onPlaylist(p.id) },
+                                        )
+                                    }
+                                }
+                            } else {
                             LazyColumn(
                                 Modifier.fillMaxSize(),
                                 state = rememberSavableListState(),
@@ -357,6 +403,7 @@ fun LibraryScreen(
                     }
                 }
                 }
+                }
                 LibraryTab.FAVORITES -> {
                     val ui by vm.favs.collectAsState()
                     when (val s = ui) {
@@ -365,6 +412,36 @@ fun LibraryScreen(
                         is UiState.Empty -> EmptyState("Nothing starred yet")
                         is UiState.Data -> {
                             val favs = s.value
+                            if (grid) {
+                                LazyVerticalGrid(
+                                    GridCells.Fixed(2), Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp),
+                                ) {
+                                    if (favs.tracks.isNotEmpty()) {
+                                        item(span = { GridItemSpan(2) }) { SectionHeader(title = "Songs") }
+                                        items(favs.tracks, key = { "so${it.id}" }) { song ->
+                                            SongGridCell(
+                                                song = song, artUrl = repo.coverArtUrl(song.coverArt, 300),
+                                                onClick = { player.playAll(favs.tracks, favs.tracks.indexOf(song), source = "Favorites") },
+                                                onActions = { onActions(ActionTarget.Track(song)) },
+                                            )
+                                        }
+                                    }
+                                    if (favs.albums.isNotEmpty()) {
+                                        item(span = { GridItemSpan(2) }) { SectionHeader(title = "Albums") }
+                                        items(favs.albums, key = { "al${it.id}" }) { a ->
+                                            AlbumCard(a, repo.coverArtUrl(a.coverArt, 300), onClick = { onAlbum(a.id) }, modifier = Modifier.fillMaxWidth())
+                                        }
+                                    }
+                                    if (favs.artists.isNotEmpty()) {
+                                        item(span = { GridItemSpan(2) }) { SectionHeader(title = "Artists") }
+                                        items(favs.artists, key = { "ar${it.id}" }) { a ->
+                                            ArtistPhotoCard(a, photoUrl = vm.artistPhotoUrl(a), repo = repo, onClick = { onArtist(a.id) })
+                                            LaunchedEffect(a.id) { vm.prefetchArtistPhoto(a) }
+                                        }
+                                    }
+                                }
+                            } else {
                             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
                                 if (favs.tracks.isNotEmpty()) {
                                     item(key = "fav-songs") {
@@ -395,15 +472,16 @@ fun LibraryScreen(
                                     }
                                 }
                                 if (favs.artists.isNotEmpty()) {
-                                    item { SectionHeader(title = "Artists") }
-                                    items(favs.artists, key = { "ar${it.id}" }) { a ->
-                                        androidx.compose.foundation.layout.Row(
-                                            Modifier.fillMaxWidth()
-                                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                                                .clickable(onClick = { onArtist(a.id) })
-                                                .padding(16.dp, 8.dp),
-                                        ) {
-                                            Text(a.name)
+                                        item { SectionHeader(title = "Artists") }
+                                        items(favs.artists, key = { "ar${it.id}" }) { a ->
+                                            androidx.compose.foundation.layout.Row(
+                                                Modifier.fillMaxWidth()
+                                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                                    .clickable(onClick = { onArtist(a.id) })
+                                                    .padding(16.dp, 8.dp),
+                                            ) {
+                                                Text(a.name)
+                                            }
                                         }
                                     }
                                 }
@@ -415,6 +493,7 @@ fun LibraryScreen(
                     DownloadsTab(
                         downloads = downloads,
                         repo = repo,
+                        grid = grid,
                         onPlaySong = { entity ->
                             player.playAll(listOf(entity.toDomainTrack()), source = "Downloads")
                         },
@@ -433,6 +512,7 @@ fun LibraryScreen(
 private fun DownloadsTab(
     downloads: com.feishin.mobile.data.download.DownloadRepository,
     repo: MusicDataRepository,
+    grid: Boolean,
     onPlaySong: (com.feishin.mobile.data.db.DownloadEntity) -> Unit,
     onRemove: (String) -> Unit,
     onManage: () -> Unit,
@@ -446,6 +526,35 @@ private fun DownloadsTab(
         return
     }
     val total = done.fold(0L) { acc, e -> acc + e.sizeBytes }
+    if (grid) {
+        LazyVerticalGrid(
+            GridCells.Fixed(2), Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp),
+        ) {
+            item(span = { GridItemSpan(2) }) {
+                Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("${done.size} songs", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            com.feishin.mobile.core.common.CacheSizePolicy.human(total),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText,
+                        )
+                    }
+                    OutlinedButton(onClick = onManage) { Text("Manage") }
+                }
+            }
+            items(done, key = { it.songId }) { entity ->
+                SongGridCell(
+                    song = entity.toDomainTrack(),
+                    artUrl = repo.coverArtUrl(entity.coverArt, 300),
+                    onClick = { onPlaySong(entity) },
+                    onActions = { onActions(ActionTarget.Track(entity.toDomainTrack())) },
+                )
+            }
+        }
+        return
+    }
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom),
@@ -502,6 +611,70 @@ private fun com.feishin.mobile.data.db.DownloadEntity.toDomainTrack() =
  * Pinned "Favorite songs" row: heart-on-gradient cover, or a collage of the
  * latest favorites. Opens the built-in collection page.
  */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SongGridCell(
+    song: com.feishin.mobile.domain.model.Track,
+    artUrl: String?,
+    onClick: () -> Unit,
+    onActions: () -> Unit,
+) {
+    Column(
+        Modifier.fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+            .combinedClickable(onClick = onClick, onLongClick = onActions)
+            .padding(4.dp),
+    ) {
+        CoverImage(artUrl, song.title, modifier = Modifier.fillMaxWidth().aspectRatio(1f), roundedDp = 8.dp)
+        Text(
+            song.title, style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+        )
+        Text(
+            song.artist, style = MaterialTheme.typography.bodySmall,
+            color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText,
+            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/** 2-column grid cell for a playlist: collage/cover, name, song count. */
+@Composable
+private fun PlaylistGridCell(
+    name: String,
+    count: String,
+    cover: PlaylistCover,
+    repo: MusicDataRepository,
+    onClick: () -> Unit,
+) {
+    Column(
+        Modifier.fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(4.dp),
+    ) {
+        PlaylistCoverArt(
+            cover = cover,
+            resolver = { id -> repo.coverArtUrl(id, 300) },
+            contentDescription = name,
+            modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+            roundedDp = 8.dp,
+        )
+        Text(
+            name, style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+        )
+        Text(
+            count, style = MaterialTheme.typography.bodySmall,
+            color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText,
+            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
 @Composable
 private fun FavoriteSongsRow(
     count: Int,

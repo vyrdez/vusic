@@ -1,5 +1,6 @@
 package com.feishin.mobile.ui.settings
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -7,16 +8,21 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -34,9 +40,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.feishin.mobile.ui.theme.VusicColors
+import com.feishin.mobile.ui.theme.VusicControlColors
+import com.feishin.mobile.ui.theme.VusicControlDefaults
+import com.feishin.mobile.ui.theme.VusicSpacing
 
 /** Small uppercase group label used inside every sub-screen. */
 @Composable
@@ -45,20 +55,75 @@ fun SettingsSection(title: String) {
         title.uppercase(),
         style = MaterialTheme.typography.labelMedium,
         color = VusicColors.SecondaryText,
-        modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 6.dp),
+        modifier = Modifier.padding(
+            start = 4.dp,
+            top = VusicSpacing.SectionTop,
+            bottom = VusicSpacing.SectionBottom,
+        ),
     )
 }
 
-/** Rounded dark card holding a group of rows. */
+/**
+ * Rounded dark card holding a group of rows. Rows are separated by a hairline
+ * divider inset to the text start, and the card itself carries 16dp padding.
+ */
 @Composable
-fun SettingsCard(content: @Composable () -> Unit) {
+fun SettingsCard(content: @Composable SettingsCardScope.() -> Unit) {
     Column(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(VusicColors.SurfaceHigh)
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(horizontal = VusicSpacing.CardPadding)
+            .padding(vertical = 4.dp),
     ) {
-        content()
+        SettingsCardScope.content()
+    }
+}
+
+/** Scope so a card can draw dividers between its own rows. */
+object SettingsCardScope
+
+/** Divider inset to the text start, for use between rows in a card. */
+@Composable
+fun SettingsDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 0.dp),
+        thickness = 1.dp,
+        color = Color.White.copy(alpha = 0.07f),
+    )
+}
+
+@Composable
+private fun RowText(
+    label: String,
+    description: String?,
+    modifier: Modifier = Modifier,
+    labelColor: Color = Color.White,
+    warning: String? = null,
+) {
+    Column(modifier) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = labelColor,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (description != null) {
+            Spacer(Modifier.height(VusicSpacing.TitleToDescription))
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = VusicColors.SecondaryText,
+                // Descriptions never run under the control: capped at 3 lines.
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (warning != null) {
+            Spacer(Modifier.height(VusicSpacing.TitleToDescription))
+            Text(warning, style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFB74D), maxLines = 3)
+        }
     }
 }
 
@@ -69,18 +134,25 @@ fun SwitchRow(
     onSet: (Boolean) -> Unit,
     description: String? = null,
     warning: String? = null,
+    showDivider: Boolean = false,
 ) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            Switch(value, { onSet(it) })
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth()
+                .defaultMinSize(minHeight = VusicSpacing.RowMinHeight)
+                .padding(vertical = VusicSpacing.RowVertical),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RowText(label, description, Modifier.weight(1f), warning = warning)
+            Spacer(Modifier.width(VusicSpacing.ControlGap))
+            Switch(
+                checked = value,
+                onCheckedChange = onSet,
+                colors = VusicControlDefaults.switchColors(),
+                modifier = Modifier.widthIn(min = 52.dp),
+            )
         }
-        if (description != null) {
-            Text(description, style = MaterialTheme.typography.bodySmall, color = VusicColors.SecondaryText)
-        }
-        if (warning != null && value) {
-            Text(warning, style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFB74D))
-        }
+        if (showDivider) SettingsDivider()
     }
 }
 
@@ -91,12 +163,19 @@ fun ChoiceRow(
     options: List<String>,
     onSelect: (String) -> Unit,
     description: String? = null,
+    showDivider: Boolean = false,
 ) {
     var open by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            Box {
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth()
+                .defaultMinSize(minHeight = VusicSpacing.RowMinHeight)
+                .padding(vertical = VusicSpacing.RowVertical),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RowText(label, description, Modifier.weight(1f))
+            Spacer(Modifier.width(VusicSpacing.ControlGap))
+            Box(Modifier.widthIn(min = 96.dp)) {
                 OutlinedButton(onClick = { open = true }) {
                     Text(value, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -107,7 +186,10 @@ fun ChoiceRow(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(o, modifier = Modifier.weight(1f))
                                     if (o == value) {
-                                        Icon(Icons.Default.Check, "Selected", tint = Color.White, modifier = Modifier.size(18.dp))
+                                        Icon(
+                                            Icons.Default.Check, "Selected",
+                                            tint = Color.White, modifier = Modifier.size(18.dp),
+                                        )
                                     }
                                 }
                             },
@@ -117,55 +199,97 @@ fun ChoiceRow(
                 }
             }
         }
-        if (description != null) {
-            Text(description, style = MaterialTheme.typography.bodySmall, color = VusicColors.SecondaryText)
-        }
+        if (showDivider) SettingsDivider()
     }
 }
 
+/**
+ * Discrete-step slider whose thumb rides the filled track (Material3 handles the
+ * attachment; discrete steps stop the ticks from overflowing) with the value
+ * label on the right of the title and helper text 8dp below.
+ */
 @Composable
 fun SliderRow(
     label: String,
     valueLabel: String,
-    value: Float,
-    range: ClosedFloatingPointRange<Float>,
-    steps: Int,
-    onChange: (Float) -> Unit,
+    index: Int,
+    steps: List<String>,
+    onIndex: (Int) -> Unit,
     description: String? = null,
+    warning: String? = null,
+    showDivider: Boolean = false,
 ) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            Text(valueLabel, style = MaterialTheme.typography.bodyMedium, color = VusicColors.SecondaryText)
+    val maxIndex = (steps.size - 1).coerceAtLeast(0)
+    Column(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(top = VusicSpacing.RowVertical, bottom = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    label, modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.width(VusicSpacing.ControlGap))
+                Text(
+                    valueLabel,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = Color.White,
+                    maxLines = 1,
+                )
+            }
+            Slider(
+                value = index.toFloat().coerceIn(0f, maxIndex.toFloat()),
+                onValueChange = { onIndex(it.toInt().coerceIn(0, maxIndex)) },
+                valueRange = 0f..maxIndex.toFloat(),
+                steps = (maxIndex - 1).coerceAtLeast(0),
+                colors = VusicControlDefaults.sliderColors(),
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            )
+            if (description != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(description, style = MaterialTheme.typography.bodySmall, color = VusicColors.SecondaryText, maxLines = 3)
+            }
+            if (warning != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(warning, style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFB74D), maxLines = 3)
+            }
+            Spacer(Modifier.height(VusicSpacing.RowVertical))
         }
-        Slider(
-            value = value,
-            onValueChange = onChange,
-            valueRange = range,
-            steps = steps,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        if (description != null) {
-            Text(description, style = MaterialTheme.typography.bodySmall, color = VusicColors.SecondaryText)
-        }
+        if (showDivider) SettingsDivider()
     }
 }
 
 @Composable
-fun InfoRow(label: String, value: String) {
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Text(
-            value, style = MaterialTheme.typography.bodyMedium, color = VusicColors.SecondaryText,
-            maxLines = 1, overflow = TextOverflow.Ellipsis,
-        )
+fun InfoRow(label: String, value: String, showDivider: Boolean = false) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth()
+                .defaultMinSize(minHeight = VusicSpacing.RowMinHeight)
+                .padding(vertical = VusicSpacing.RowVertical),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                label, modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.width(VusicSpacing.ControlGap))
+            Text(
+                value,
+                style = MaterialTheme.typography.bodyMedium,
+                color = VusicColors.SecondaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 220.dp),
+            )
+        }
+        if (showDivider) SettingsDivider()
     }
 }
 
-@Composable
+/**
+ * A row with an action button. The button sits on the end while the text fits in
+ * three lines; when the description is long it stacks under the text at full
+ * width so nothing runs under the button.
+ */@Composable
 fun ActionRow(
     label: String,
     description: String? = null,
@@ -173,42 +297,61 @@ fun ActionRow(
     confirmTitle: String? = null,
     confirmBody: String? = null,
     buttonLabel: String = "Open",
+    enabled: Boolean = true,
+    showDivider: Boolean = false,
     onClick: () -> Unit,
 ) {
     var confirm by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    label,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (danger) Color(0xFFFF8A80) else Color.White,
-                )
-                if (description != null) {
-                    Text(description, style = MaterialTheme.typography.bodySmall, color = VusicColors.SecondaryText)
-                }
-            }
-            if (danger) {
-                androidx.compose.material3.OutlinedButton(
-                    onClick = { if (confirmTitle != null) confirm = true else onClick() },
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF8A80)),
-                ) {
-                    Text(buttonLabel, color = Color(0xFFFF8A80))
-                }
+    val stacks = (description?.length ?: 0) > 44
+    Column(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.fillMaxWidth()
+                .defaultMinSize(minHeight = VusicSpacing.RowMinHeight)
+                .padding(vertical = VusicSpacing.RowVertical),
+        ) {
+            if (stacks) {
+                RowText(label, description, labelColor = if (danger) Color(0xFFFF8A80) else Color.White)
+                Spacer(Modifier.height(12.dp))
+                ActionButton(danger, enabled, buttonLabel) { if (confirmTitle != null) confirm = true else onClick() }
             } else {
-                OutlinedButton(onClick = onClick) { Text(buttonLabel) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RowText(label, description, Modifier.weight(1f), labelColor = if (danger) Color(0xFFFF8A80) else Color.White)
+                    Spacer(Modifier.width(VusicSpacing.ControlGap))
+                    Box(Modifier.widthIn(min = 96.dp)) {
+                        ActionButton(danger, enabled, buttonLabel) { if (confirmTitle != null) confirm = true else onClick() }
+                    }
+                }
             }
         }
+        if (showDivider) SettingsDivider()
     }
     if (confirm) {
         AlertDialog(
             onDismissRequest = { confirm = false },
             title = { Text(confirmTitle.orEmpty()) },
             text = { if (confirmBody != null) Text(confirmBody) },
-            confirmButton = {
-                TextButton(onClick = { confirm = false; onClick() }) { Text("Confirm") }
-            },
+            confirmButton = { TextButton(onClick = { confirm = false; onClick() }) { Text("Confirm") } },
             dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun ActionButton(danger: Boolean, enabled: Boolean, label: String, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        border = if (danger) BorderStroke(1.dp, Color(0xFFFF8A80)) else null,
+        modifier = Modifier.heightIn(min = 40.dp),
+    ) {
+        Text(
+            label,
+            color = when {
+                !enabled -> VusicControlColors.DisabledThumb
+                danger -> Color(0xFFFF8A80)
+                else -> Color.White
+            },
+            maxLines = 1,
         )
     }
 }
@@ -253,22 +396,27 @@ fun SettingsHomeCard(
     onClick: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp)
+        Modifier.fillMaxWidth().padding(vertical = VusicSpacing.CardGap / 4)
             .clip(RoundedCornerShape(12.dp))
             .background(VusicColors.SurfaceHigh)
             .clickable(onClick = onClick)
-            .padding(16.dp),
+            .defaultMinSize(minHeight = VusicSpacing.RowMinHeight)
+            .padding(VusicSpacing.CardPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, null, tint = Color.White, modifier = Modifier.size(24.dp))
         Spacer(Modifier.size(16.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(2.dp))
             Text(
                 summary, style = MaterialTheme.typography.bodySmall, color = VusicColors.SecondaryText,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
+        Spacer(Modifier.width(VusicSpacing.ControlGap))
         Text("›", style = MaterialTheme.typography.headlineSmall, color = VusicColors.SecondaryText)
     }
 }
+
+/** Home card: icon, title, one-line state summary, chevron. */

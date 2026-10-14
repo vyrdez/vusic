@@ -27,6 +27,34 @@ object VusicColors {
 }
 
 /**
+ * Control colors in one place, so every switch / checkbox / radio / slider /
+ * chip in the app draws its boundaries identically. Off states are visible
+ * (>= 3:1 against the card) instead of nearly invisible.
+ */
+object VusicControlColors {
+    /** Track behind an off switch: #3A3A3A with a lighter outline. */
+    val SwitchOffTrack = Color(0xFF3A3A3A)
+    val SwitchOffOutline = Color(0xFF8A8A8A)
+    val SwitchOffThumb = Color(0xFFB8B8B8)
+    /** On: white track with a dark thumb (matches the accent play button). */
+    val SwitchOnTrack = Color.White
+    val SwitchOnThumb = Color(0xFF141414)
+    /** Disabled states must read clearly dimmer than off. */
+    val DisabledTrack = Color(0xFF232323)
+    val DisabledOutline = Color(0xFF4A4A4A)
+    val DisabledThumb = Color(0xFF5A5A5A)
+
+    val CheckboxOffOutline = Color(0xFF8A8A8A)
+    val RadioOffOutline = Color(0xFF8A8A8A)
+    /** Inactive slider track: visible against a #2A2A2A card. */
+    val SliderInactiveTrack = Color(0xFF6E6E6E)
+    val SliderThumb = Color.White
+    /** Unselected chip fill / text. */
+    val ChipOffFill = Color(0xFF2A2A2A)
+    val ChipOffText = Color(0xFFEDEDED)
+}
+
+/**
  * One place for vertical rhythm. Sections own their own spacing so no screen has
  * to hand-tune gaps.
  */
@@ -42,6 +70,36 @@ object VusicSpacing {
 
     /** Bottom padding so content clears the mini player + nav bar. */
     val ContentBottom = 160.dp
+
+    // ---- Settings/card rhythm (used by every settings surface) ----
+
+    /** Inner padding of a settings card. */
+    val CardPadding = 16.dp
+
+    /** Vertical padding of a settings row (row min height 56dp with content). */
+    val RowVertical = 12.dp
+
+    /** Minimum height of a settings row. */
+    val RowMinHeight = 56.dp
+
+    /** Gap between a row title and its description. */
+    val TitleToDescription = 4.dp
+
+    /** Gap between two cards. */
+    val CardGap = 16.dp
+
+    /** Space above a section label. */
+    val SectionTop = 24.dp
+
+    /** Space below a section label. */
+    val SectionBottom = 8.dp
+
+    /** Minimum gap between a row's text and its trailing control. */
+    val ControlGap = 16.dp
+
+    /** Section header spacing shared by Home/Search/Settings. */
+    val SubHeaderTop = 24.dp
+    val SubHeaderBottom = 10.dp
 }
 
 private val Dark = darkColorScheme(
@@ -100,4 +158,50 @@ fun FeishinTheme(dark: Boolean, amoled: Boolean = false, content: @Composable ()
         else -> Light
     }
     MaterialTheme(colorScheme = scheme, content = content)
+}
+
+/**
+ * Shared Material3 control colors so every switch, checkbox, radio and slider in
+ * the app has the same visible boundaries (WCAG non-text contrast on dark).
+ */
+object VusicControlDefaults {
+    @Composable
+    fun switchColors() = androidx.compose.material3.SwitchDefaults.colors(
+        checkedThumbColor = VusicControlColors.SwitchOnThumb,
+        checkedTrackColor = VusicControlColors.SwitchOnTrack,
+        checkedBorderColor = VusicControlColors.SwitchOnTrack,
+        uncheckedThumbColor = VusicControlColors.SwitchOffThumb,
+        uncheckedTrackColor = VusicControlColors.SwitchOffTrack,
+        uncheckedBorderColor = VusicControlColors.SwitchOffOutline,
+        disabledCheckedThumbColor = VusicControlColors.DisabledThumb,
+        disabledCheckedTrackColor = VusicControlColors.DisabledTrack,
+        disabledUncheckedThumbColor = VusicControlColors.DisabledThumb,
+        disabledUncheckedTrackColor = VusicControlColors.DisabledTrack,
+        disabledUncheckedBorderColor = VusicControlColors.DisabledOutline,
+    )
+
+    @Composable
+    fun sliderColors() = androidx.compose.material3.SliderDefaults.colors(
+        thumbColor = VusicControlColors.SliderThumb,
+        activeTrackColor = VusicControlColors.SliderThumb,
+        inactiveTrackColor = VusicControlColors.SliderInactiveTrack,
+        activeTickColor = Color.Transparent,
+        inactiveTickColor = VusicControlColors.SliderInactiveTrack,
+        disabledThumbColor = VusicControlColors.DisabledThumb,
+        disabledActiveTrackColor = VusicControlColors.DisabledTrack,
+        disabledInactiveTrackColor = VusicControlColors.DisabledTrack,
+    )
+
+    @Composable
+    fun checkboxColors() = androidx.compose.material3.CheckboxDefaults.colors(
+        checkedColor = VusicControlColors.SwitchOnTrack,
+        checkmarkColor = VusicControlColors.SwitchOnThumb,
+        uncheckedColor = VusicControlColors.CheckboxOffOutline,
+    )
+
+    @Composable
+    fun radioColors() = androidx.compose.material3.RadioButtonDefaults.colors(
+        selectedColor = VusicControlColors.SwitchOnTrack,
+        unselectedColor = VusicControlColors.RadioOffOutline,
+    )
 }

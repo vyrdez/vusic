@@ -749,6 +749,100 @@ class PlayerManager @Inject constructor(
         persistAsync()
     }
 
+    /**
+     * One-shot reorder commit for drag-and-drop. The queue UI reorders a LOCAL
+     * copy during the drag (never touching the player per frame) and calls this
+     * exactly once on drop with the final order of queue ids.
+     *
+     * Stale targets (entries added/removed mid-drag) are ignored rather than
+     * applied, so a radio append racing a drop cannot corrupt the queue.
+     */
+    fun commitOrder(targetIds: List<Long>) {
+        val before = _queue.value
+        val target = com.feishin.mobile.core.common.QueueCommit.targetIds(
+            before.map { it.queueId }, targetIds,
+        ) ?: return
+        val c = controller
+        if (c == null) {
+            val keepId = currentQueueId()
+            val reordered = ShufflePlan.applyOrder(target, before) { it.queueId }
+            if (reordered.size != before.size) return
+            _queue.value = reordered
+            val idx = reordered.indexOfFirst { it.queueId == keepId }
+            _currentIndex.value = if (idx >= 0) idx
+            else _currentIndex.value.coerceIn(0, maxOf(0, reordered.size - 1))
+            return
+        }
+        applyOrder(c, target)
+        // A manual drag becomes the new base order (same rule as move()).
+        if (shuffleOrder != null) shuffleOrder = _queue.value.map { it.queueId }
+        persistAsync()
+    }
+
+    /** In-memory snapshot of a cleared queue, for the Undo snackbar. */
+    data class ClearedQueue(
+        val items: List<QueueItem>,
+        val index: Int,
+        val positionMs: Long,
+        val sourceName: String?,
+        val shuffleActive: Boolean,
+        val shuffleOrder: List<Long>,
+    )
+
+    /**
+     * Clears playback like [clear] but returns a snapshot that [restoreCleared]
+     * can bring back. The persisted queue is cleared too, so killing the app
+     * inside the Undo window stays cleared.
+     */
+    fun clearWithUndo(): ClearedQueue {
+        val snap = ClearedQueue(
+            items = _queue.value.toList(),
+            index = _currentIndex.value.coerceIn(0, maxOf(0, _queue.value.size - 1)),
+            positionMs = _position.value,
+            sourceName = _sourceName.value,
+            shuffleActive = _shuffle.value,
+            shuffleOrder = shuffleOrder.orEmpty(),
+        )
+        clear()
+        return snap
+    }
+
+    /**
+     * Restores a [clearWithUndo] snapshot: same queue, same item and position,
+     * paused. Radio is not resumed (a clear ends the radio session by design).
+     */
+    fun restoreCleared(snap: ClearedQueue) {
+        val c = controller ?: return
+        if (snap.items.isEmpty()) return
+        scope.launch {
+            val built = snap.items.mapNotNull { qi ->
+                toMediaItem(qi.song, qi.queueId)?.let { qi to it }
+            }
+            if (built.isEmpty()) return@launch
+            // Restored keys stay reserved so later mints never collide.
+            queueSeq = maxOf(queueSeq, (snap.items.maxOfOrNull { it.queueId } ?: -1) + 1)
+            val items = built.map { it.second }
+            val index = snap.index.coerceIn(0, items.size - 1)
+            // setMediaItems + prepare mirrors a fresh queue; pause keeps the
+            // "restored paused" contract (never auto-plays from Undo).
+            c.setMediaItems(items, index, snap.positionMs)
+            c.prepare()
+            c.pause()
+            _queue.value = built.map { it.first }
+            _currentIndex.value = index
+            _current.value = built.getOrNull(index)?.first?.song
+            _sourceName.value = snap.sourceName
+            _shuffle.value = snap.shuffleActive
+            val live = built.map { it.first.queueId }.toSet()
+            shuffleOrder = if (snap.shuffleActive) {
+                snap.shuffleOrder.filter { it in live }.ifEmpty { null }
+            } else null
+            _position.value = snap.positionMs
+            _isPlaying.value = false
+            persistAsync()
+        }
+    }
+
     fun clear() {
         controller?.clearMediaItems()
         controller?.stop()

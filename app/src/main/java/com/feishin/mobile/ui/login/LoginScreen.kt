@@ -53,7 +53,11 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Allow self-signed certificate", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            Switch(settings?.allowSelfSigned == true, { vm.setAllowSelfSigned(it) })
+            Switch(
+                checked = settings?.allowSelfSigned == true,
+                onCheckedChange = { vm.setAllowSelfSigned(it) },
+                colors = com.feishin.mobile.ui.theme.VusicControlDefaults.switchColors(),
+            )
         }
         Spacer(Modifier.height(4.dp))
         ui.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }

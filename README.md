@@ -33,8 +33,10 @@ Set `sdk.dir` in `local.properties` if the SDK lives elsewhere.
   loading gap and a repeat play makes no network request. A built-in "Cached"
   collection lists fully cached songs and plays them offline; it prunes itself as
   the LRU evicts bytes. Enable under Settings > Sound & Playback > Playback cache.
-- Stream cache uses Media3 `SimpleCache` (LRU); a changed cache size takes effect
-  on the next launch. The image cache size is configurable the same way.
+- Stream cache uses Media3 `SimpleCache` with a live LRU evictor: shrinking the
+  limit trims the cache immediately, and the Cached collection + usage numbers
+  refresh at once. Shrinking the image cache clears it immediately; growing it
+  needs a restart (Settings offers a "Restart now" button).
 - "Allow cleartext HTTP" records intent; Android's cleartext policy is static per
   app, and the manifest already permits it so LAN servers work.
 - Cover art loads over plain HTTPS; the self-signed toggle applies to API/stream/

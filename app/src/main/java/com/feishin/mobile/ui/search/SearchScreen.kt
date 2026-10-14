@@ -69,7 +69,8 @@ import com.feishin.mobile.ui.components.SkeletonLoader
 import com.feishin.mobile.ui.components.TrackRow
 import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.components.rememberSavableListState
-import com.feishin.mobile.ui.library.ArtistPhoto
+import com.feishin.mobile.ui.components.SubSectionHeader
+import com.feishin.mobile.ui.components.ArtistAvatar
 import com.feishin.mobile.ui.theme.VusicColors
 import kotlinx.coroutines.launch
 
@@ -91,14 +92,7 @@ private fun labelOf(filter: SearchFilter): String = when (filter) {
     SearchFilter.PLAYLISTS -> "Playlists"
 }
 
-/** Section title colors: one muted hue per section on near-black. */
-private fun sectionColor(filter: SearchFilter): Color = when (filter) {
-    SearchFilter.SONGS -> Color(0xFF8AB4F8)
-    SearchFilter.ALBUMS -> Color(0xFF7DD8A8)
-    SearchFilter.ARTISTS -> Color(0xFFF19ED2)
-    SearchFilter.PLAYLISTS -> Color(0xFFC4A7F5)
-    SearchFilter.ALL -> Color.White
-}
+private fun ArtistInfoPlaceholder() = Unit
 
 @Composable
 fun SearchScreen(
@@ -204,7 +198,7 @@ fun SearchScreen(
                 if (filter == SearchFilter.ALL) {
                     AllResults(
                         res = res, songsExpanded = songsExpanded,
-                        player = player, repo = repo,
+                        player = player, repo = repo, vm = vm,
                         nowPlayingId = nowPlaying?.id, isPlaying = isPlaying,
                         onAlbum = onAlbum, onArtist = onArtist, onPlaylist = onPlaylist,
                         onActions = onActions,
@@ -214,7 +208,7 @@ fun SearchScreen(
                 } else {
                     SingleTypeResults(
                         res = res, filter = filter, visible = visible,
-                        player = player, repo = repo,
+                        player = player, repo = repo, vm = vm,
                         nowPlayingId = nowPlaying?.id, isPlaying = isPlaying,
                         onAlbum = onAlbum, onArtist = onArtist, onPlaylist = onPlaylist,
                         onActions = onActions,
@@ -264,14 +258,7 @@ private fun RecentSearches(
 }
 
 @Composable
-private fun SectionTitle(text: String, color: Color) {
-    Text(
-        text,
-        style = MaterialTheme.typography.titleMedium,
-        color = color,
-        modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 4.dp),
-    )
-}
+private fun SectionTitlePlaceholder() = Unit
 
 @Composable
 private fun AllResults(
@@ -279,6 +266,7 @@ private fun AllResults(
     songsExpanded: Boolean,
     player: PlayerManager,
     repo: MusicDataRepository,
+    vm: SearchViewModel,
     nowPlayingId: String?,
     isPlaying: Boolean,
     onAlbum: (String) -> Unit,
@@ -298,10 +286,17 @@ private fun AllResults(
     ) {
         if (top != null) {
             item(key = "top") {
-                SectionTitle("Top result", Color(0xFFFFC66E))
+                SubSectionHeader("Top result")
                 when (top) {
                     is SearchGrouping.TopHit.Artist -> TopArtistRow(
-                        id = top.id, name = top.name, repo = repo, onArtist = onArtist, onActions = onActions,
+                        id = top.id, name = top.name, repo = repo, vm = vm,
+                        // Last visual fallback: the art of a matching song hit,
+                        // which Navidrome does provide even when the artist and
+                        // album records carry none.
+                        fallbackCoverArt = res.tracks.firstOrNull {
+                            it.artistId == top.id || it.artist.equals(top.name, ignoreCase = true)
+                        }?.coverArt,
+                        onArtist = onArtist, onActions = onActions,
                     )
                     is SearchGrouping.TopHit.Album -> {
                         val album = res.albums.firstOrNull { it.id == top.id }
@@ -313,7 +308,7 @@ private fun AllResults(
             }
         }
         if (res.tracks.isNotEmpty()) {
-            item(key = "songs-h") { SectionTitle("Songs", sectionColor(SearchFilter.SONGS)) }
+            item(key = "songs-h") { SubSectionHeader("Songs") }
             items(songs, key = { "s${it.id}" }) { song ->
                 TrackRow(
                     track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),
@@ -332,19 +327,19 @@ private fun AllResults(
             }
         }
         if (res.albums.isNotEmpty()) {
-            item(key = "albums-h") { SectionTitle("Albums", sectionColor(SearchFilter.ALBUMS)) }
+            item(key = "albums-h") { SubSectionHeader("Albums") }
             items(res.albums, key = { "b${it.id}" }) { a ->
                 AlbumRow(a, repo, onAlbum, onActions)
             }
         }
         if (res.artists.isNotEmpty()) {
-            item(key = "artists-h") { SectionTitle("Artists", sectionColor(SearchFilter.ARTISTS)) }
+            item(key = "artists-h") { SubSectionHeader("Artists") }
             items(res.artists, key = { "a${it.id}" }) { a ->
-                ArtistSearchRow(a, repo, onArtist, onActions)
+                ArtistSearchRow(a, repo, vm, onArtist, onActions)
             }
         }
         if (res.playlists.isNotEmpty()) {
-            item(key = "playlists-h") { SectionTitle("Playlists", sectionColor(SearchFilter.PLAYLISTS)) }
+            item(key = "playlists-h") { SubSectionHeader("Playlists") }
             items(res.playlists, key = { "p${it.id}" }) { p ->
                 PlaylistSearchRow(p, repo, onPlaylist, onActions)
             }
@@ -359,6 +354,7 @@ private fun SingleTypeResults(
     visible: Int,
     player: PlayerManager,
     repo: MusicDataRepository,
+    vm: SearchViewModel,
     nowPlayingId: String?,
     isPlaying: Boolean,
     onAlbum: (String) -> Unit,
@@ -399,7 +395,7 @@ private fun SingleTypeResults(
             }
             SearchFilter.ARTISTS -> {
                 items(res.artists.take(visible), key = { "a${it.id}" }) { a ->
-                    ArtistSearchRow(a, repo, onArtist, onActions)
+                    ArtistSearchRow(a, repo, vm, onArtist, onActions)
                 }
             }
             SearchFilter.PLAYLISTS -> {
@@ -413,13 +409,22 @@ private fun SingleTypeResults(
 }
 
 @Composable
+private fun AllResultsPlaceholder() = Unit
+
+@Composable
 private fun TopArtistRow(
     id: String,
     name: String,
     repo: MusicDataRepository,
+    vm: SearchViewModel,
+    fallbackCoverArt: String? = null,
     onArtist: (String) -> Unit,
     onActions: (ActionTarget) -> Unit,
 ) {
+    // Resolve the provider photo for the top hit lazily (same chain as Library).
+    val artist = remember(id, name) { Artist(id, name, fallbackCoverArt, 0, false) }
+    LaunchedEffect(id) { vm.prefetchArtistPhoto(artist) }
+    val resolved = vm.artistInfoImage(id)
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(12.dp))
@@ -428,11 +433,11 @@ private fun TopArtistRow(
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ArtistPhoto(
+        ArtistAvatar(
             name = name,
-            photoUrl = null,
-            repo = repo,
-            modifier = Modifier.size(64.dp),
+            infoImageUrl = resolved,
+            coverArtUrl = artist.coverArt?.let { repo.coverArtUrl(it, 256) },
+            modifier = Modifier.size(72.dp),
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -476,9 +481,11 @@ private fun AlbumRow(
 private fun ArtistSearchRow(
     artist: Artist,
     repo: MusicDataRepository,
+    vm: SearchViewModel,
     onArtist: (String) -> Unit,
     onActions: (ActionTarget) -> Unit,
 ) {
+    LaunchedEffect(artist.id) { vm.prefetchArtistPhoto(artist) }
     Row(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
@@ -486,10 +493,10 @@ private fun ArtistSearchRow(
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ArtistPhoto(
+        ArtistAvatar(
             name = artist.name,
-            photoUrl = artist.coverArt?.let { repo.coverArtUrl(it, 128) },
-            repo = repo,
+            infoImageUrl = vm.artistInfoImage(artist.id),
+            coverArtUrl = artist.coverArt?.let { repo.coverArtUrl(it, 256) },
             modifier = Modifier.size(56.dp),
         )
         Spacer(Modifier.width(12.dp))

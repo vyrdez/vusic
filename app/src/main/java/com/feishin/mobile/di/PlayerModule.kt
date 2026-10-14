@@ -6,6 +6,8 @@ import android.content.Context
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import com.feishin.mobile.core.common.CacheSizePolicy
+import com.feishin.mobile.data.cache.LiveLruCacheEvictor
 import com.feishin.mobile.data.remote.DynamicTrustManager
 import dagger.Module
 import dagger.Provides
@@ -26,25 +28,26 @@ object PlayerModule {
 
     @androidx.media3.common.util.UnstableApi
     @Provides @Singleton
+    fun provideCacheEvictor(
+        settings: com.feishin.mobile.data.settings.SettingsStore,
+    ): LiveLruCacheEvictor = LiveLruCacheEvictor {
+        // Read live so a smaller limit trims the cache immediately.
+        runCatching {
+            runBlocking {
+                val s: com.feishin.mobile.data.settings.SettingsStore.Settings = settings.flow.first()
+                CacheSizePolicy.bytes(s.cacheSizeMb)
+            }
+        }.getOrDefault(CacheSizePolicy.bytes(CacheSizePolicy.DEFAULT_STREAM_MB))
+    }
+
+    @androidx.media3.common.util.UnstableApi
+    @Provides @Singleton
     fun provideCache(
         @ApplicationContext ctx: Context,
-        settings: com.feishin.mobile.data.settings.SettingsStore,
+        evictor: LiveLruCacheEvictor,
     ): SimpleCache {
         val dir = File(ctx.cacheDir, "stream_cache").apply { mkdirs() }
-        // Read synchronously at graph build: a changed size takes effect on the
-        // next launch (the evictor capacity is fixed at construction).
-        val mb: Int = runCatching {
-            kotlinx.coroutines.runBlocking {
-                val s: com.feishin.mobile.data.settings.SettingsStore.Settings =
-                    settings.flow.first()
-                s.cacheSizeMb
-            }
-        }.getOrDefault(512).coerceIn(256, 5120)
-        return SimpleCache(
-            dir,
-            LeastRecentlyUsedCacheEvictor(mb.toLong() * 1024 * 1024),
-            StandaloneDatabaseProvider(ctx),
-        )
+        return SimpleCache(dir, evictor, StandaloneDatabaseProvider(ctx))
     }
 
     /**

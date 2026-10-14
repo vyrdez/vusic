@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -50,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -59,6 +61,7 @@ import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.Artist
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.ui.theme.VusicColors
+import com.feishin.mobile.ui.theme.VusicControlColors
 import com.feishin.mobile.ui.theme.VusicSpacing
 
 fun formatDuration(seconds: Int): String {
@@ -120,6 +123,49 @@ fun EqualizerOverlay(modifier: Modifier = Modifier) {
             )
             Box(Modifier.width(3.dp).height(h.dp).clip(RoundedCornerShape(1.dp)).background(Color.White))
         }
+    }
+}
+
+@Composable
+fun SubSectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = modifier.padding(
+            start = VusicSpacing.ScreenHorizontal,
+            top = VusicSpacing.SubHeaderTop,
+            bottom = VusicSpacing.SubHeaderBottom,
+        ),
+    )
+}
+
+/**
+ * Shared top-level screen title, used by Library and Settings so both sit at
+ * exactly the same position, height, padding and typography.
+ */
+@Composable
+fun ScreenTitleRow(
+    title: String,
+    modifier: Modifier = Modifier,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    Row(
+        modifier.fillMaxWidth().padding(start = VusicSpacing.ScreenHorizontal, end = 4.dp, top = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        actions()
     }
 }
 
@@ -256,6 +302,8 @@ fun TrackRow(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(track.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // 2dp between the two lines, both starting at the same x.
+            Spacer(Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ClickableName(
                     name = track.artist,
@@ -307,7 +355,9 @@ fun ClickableName(
             modifier = modifier
                 .clip(RoundedCornerShape(4.dp))
                 .clickable(onClick = onClick)
-                .padding(horizontal = 2.dp, vertical = 12.dp),
+                // No horizontal/vertical inset: keeps the artist line flush with
+                // the title and the two lines tight.
+                .padding(vertical = 2.dp),
         )
     } else {
         Text(
@@ -338,10 +388,10 @@ fun FilterChipRow(
                 onClick = { onSelect(option) },
                 label = { Text(option, maxLines = 1) },
                 colors = AssistChipDefaults.assistChipColors(
-                    containerColor = if (isSel) Color.White else VusicColors.SurfaceHigh,
-                    labelColor = if (isSel) Color.Black else Color.White,
+                    containerColor = if (isSel) Color.White else VusicControlColors.ChipOffFill,
+                    labelColor = if (isSel) Color.Black else VusicControlColors.ChipOffText,
                 ),
-                border = null,
+                border = if (isSel) null else androidx.compose.foundation.BorderStroke(1.dp, VusicControlColors.CheckboxOffOutline),
             )
         }
     }

@@ -6,13 +6,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -23,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
@@ -97,6 +101,7 @@ fun ArtistScreen(
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
     onActions: (ActionTarget) -> Unit,
+    onBack: () -> Unit = {},
 ) {
     val ui by vm.ui.collectAsState()
     val info by vm.info.collectAsState()
@@ -113,44 +118,55 @@ fun ArtistScreen(
             val refreshing by vm.refreshing.collectAsState()
             var topExpanded by remember(a.id) { mutableStateOf(false) }
             val topBar = LocalTopBarController.current
+            // Edge-to-edge hero: this screen draws its own back button over the
+            // image, so the shared bar stays hidden until the hero scrolls away.
+            LaunchedEffect(a.id) { topBar.hideBar = true }
+            androidx.compose.runtime.DisposableEffect(a.id) {
+                onDispose { topBar.hideBar = false }
+            }
             PullToRefreshBox(isRefreshing = refreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
                 val listState = rememberSavableListState()
                 // Publish the artist name so it fades into the shared top bar.
                 LaunchedEffect(a.name, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
                     topBar.title = a.name
-                    // The hero is ~300dp tall: the title appears once it is gone,
-                    // matching the album/playlist header threshold.
+                    // The hero is ~300dp tall: the title appears once it is gone.
                     topBar.scrolled = listState.firstVisibleItemIndex > 0 ||
                         listState.firstVisibleItemScrollOffset > 200
                 }
                 // Collapsing hero: image height shrinks as the list scrolls.
                 val scrollPx = listState.firstVisibleItemScrollOffset.toFloat()
                 val heroFraction = (1f - (scrollPx / 520f).coerceIn(0f, 1f))
-                val heroHeight = (300 * heroFraction + 120).dp
-                LazyColumn(
-                    Modifier.fillMaxSize(),
-                    state = listState,
-                    contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom),
-                ) {
-                    item {
-                        ArtistHero(
-                            name = a.name,
-                            meta = "${a.albumCount} albums",
-                            imageUrl = info?.imageUrl ?: repo.coverArtUrl(a.coverArt, 600),
-                            heroHeight = heroHeight,
-                        )
-                    }
-                    item {
-                        ArtistControls(
-                            artist = Artist(a.id, a.name, a.coverArt, a.albumCount, a.starred),
-                            starred = a.starred,
-                            onStar = { vm.toggleStar(a.starred) },
-                            onActions = onActions,
-                            player = player,
-                            repo = repo,
-                            messenger = messenger,
-                        )
-                    }
+                val heroHeight = (320 * heroFraction + 96).dp
+                val topInset = androidx.compose.foundation.layout.WindowInsets.statusBars
+                    .asPaddingValues().calculateTopPadding()
+                Box(Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        state = listState,
+                        contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom),
+                    ) {
+                        item {
+                            ArtistHero(
+                                name = a.name,
+                                meta = "${a.albumCount} albums",
+                                imageUrl = info?.imageUrl ?: repo.coverArtUrl(a.coverArt, 600),
+                                heroHeight = heroHeight,
+                                topInset = topInset,
+                                artUrl = repo.coverArtUrl(a.coverArt, 600),
+                                onBack = onBack,
+                            )
+                        }
+                        item {
+                            ArtistControls(
+                                artist = Artist(a.id, a.name, a.coverArt, a.albumCount, a.starred),
+                                starred = a.starred,
+                                onStar = { vm.toggleStar(a.starred) },
+                                onActions = onActions,
+                                player = player,
+                                repo = repo,
+                                messenger = messenger,
+                            )
+                        }
                     // Top songs.
                     when (val ts = topSongsUi) {
                         is UiState.Data -> if (ts.value.isNotEmpty()) {
@@ -255,6 +271,7 @@ fun ArtistScreen(
                             }
                         }
                     }
+                    }
                 }
             }
         }
@@ -262,30 +279,91 @@ fun ArtistScreen(
 }
 
 @Composable
-private fun ArtistHero(name: String, meta: String, imageUrl: String?, heroHeight: Dp) {
+private fun ArtistHero(
+    name: String,
+    meta: String,
+    imageUrl: String?,
+    heroHeight: Dp,
+    topInset: Dp,
+    artUrl: String?,
+    onBack: () -> Unit = {},
+) {
+    // The image reaches under the status bar and fills the full width. When the
+    // provider image is missing or low-res, a blurred, scaled copy sits behind
+    // it so no empty area shows; with no art at all, a gradient from the cover
+    // colour carries a large initial.
     Box(Modifier.fillMaxWidth().height(heroHeight)) {
-        if (imageUrl != null) {
+        val resolved = imageUrl
+        val backdrop = artUrl
+        if (resolved != null) {
+            // Blurred backdrop guarantees full-bleed coverage for tiny/odd art.
+            if (backdrop != null && backdrop != resolved) {
+                AsyncImage(
+                    backdrop, null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    alpha = 0.5f,
+                )
+            } else {
+                AsyncImage(
+                    resolved, null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            }
             AsyncImage(
-                imageUrl, name,
+                resolved, name,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
+                alignment = Alignment.TopCenter,
             )
         } else {
             Box(
-                Modifier.fillMaxSize().background(VusicColors.SurfaceHigh),
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        listOf(VusicColors.SurfaceHigh, VusicColors.Background),
+                    ),
+                ),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(name.take(1).uppercase(), style = MaterialTheme.typography.displayLarge, color = VusicColors.SecondaryText)
+                Text(
+                    name.take(1).uppercase().ifBlank { "?" },
+                    style = MaterialTheme.typography.displayLarge,
+                    color = VusicColors.SecondaryText,
+                )
             }
         }
+        // Bottom gradient fades the image into the page background with no edge.
         Box(
             Modifier.fillMaxSize().background(
-                Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))),
+                Brush.verticalGradient(
+                    0.45f to Color.Transparent,
+                    1f to VusicColors.Background,
+                ),
             ),
         )
-        Column(Modifier.align(Alignment.BottomStart).padding(20.dp, 16.dp)) {
+        // Translucent circular back button inside the safe area.
+        Box(
+            Modifier.align(Alignment.TopStart)
+                .padding(start = 12.dp, top = topInset + 8.dp)
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.35f))
+                .clickable(onClick = onBack),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = Color.White,
+            )
+        }
+        Column(
+            Modifier.align(Alignment.BottomStart)
+                .padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
+        ) {
             Text(name, style = MaterialTheme.typography.headlineMedium, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(meta, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.8f))
+            Text(meta, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.85f))
         }
     }
 }

@@ -157,6 +157,32 @@ class SearchViewModel @Inject constructor(
     /** Tracks filtered by the active single-type view. */
     fun visibleTracks(res: SearchResults, visible: Int): List<Track> = res.tracks.take(visible)
 
+    // ---- Artist photos (same fallback chain as the Artist page/Library) ----
+
+    private val _artistImages = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /** Best-known provider image for an artist id, or null. */
+    fun artistInfoImage(id: String): String? = _artistImages.value[id]?.takeIf { it.isNotBlank() }
+
+    /**
+     * Lazily resolve an artist's best picture, cached in memory. Chain:
+     * provider info image -> the artist's first album cover. (The artist record
+     * itself often has no cover art on Navidrome, which is why the search hit
+     * used to fall back to an initial.)
+     */
+    fun prefetchArtistPhoto(artist: Artist) {
+        if (_artistImages.value.containsKey(artist.id)) return
+        viewModelScope.launch {
+            val info = (repo.artistInfo(artist.id) as? Result.Ok)?.value?.imageUrl
+                ?.takeIf { it.isNotBlank() && !com.feishin.mobile.core.common.AvatarFallback.isPlaceholderUrl(it) }
+            val albumCover = if (info == null) {
+                (repo.artist(artist.id) as? Result.Ok)?.value?.albums
+                    ?.firstOrNull { it.coverArt?.isNotBlank() == true }?.coverArt
+                    ?.let { repo.coverArtUrl(it, 256) }
+            } else null
+            _artistImages.value = _artistImages.value + (artist.id to (info ?: albumCover.orEmpty()))
+        }
+    }
     fun visibleAlbums(res: SearchResults, visible: Int): List<Album> = res.albums.take(visible)
 
     fun visibleArtists(res: SearchResults, visible: Int): List<Artist> = res.artists.take(visible)

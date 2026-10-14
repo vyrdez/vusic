@@ -248,13 +248,47 @@ class ViewModelStateTest {
     }
 
     @Test
-    fun library_layoutToggle_isPerTab() {
-        val vm = libraryVm(FakeMusicRepo())
-        assertEquals(LayoutMode.GRID, vm.layoutFor(LibraryTab.ALBUMS))
+    fun library_layoutToggle_isPerTab_andPersists() {
+        val file = temp.newFile("layout_toggle.preferences_pb")
+        val store = SettingsStore(PreferenceDataStoreFactory.create { file })
+        val vm = LibraryViewModel(
+            FakeMusicRepo(), PlaylistEvents(), store,
+            com.feishin.mobile.data.cache.CachedTrackStore(FakeCachedTrackDao(), FakeCacheBytes()),
+            SavedStateHandle(),
+        )
+        awaitLayout(vm, LibraryTab.ALBUMS, LayoutMode.GRID)
+        // Toggle flips ALBUMS only; SONGS keeps the default.
         vm.toggleLayout(LibraryTab.ALBUMS)
-        // DataStore write is async; the default still reads GRID until it lands.
-        // The toggle path itself is covered by observing the layouts flow below.
+        awaitLayout(vm, LibraryTab.ALBUMS, LayoutMode.LIST)
         assertEquals(LayoutMode.GRID, vm.layoutFor(LibraryTab.SONGS))
+        // Toggling back restores GRID instantly in the observed map.
+        vm.toggleLayout(LibraryTab.ALBUMS)
+        awaitLayout(vm, LibraryTab.ALBUMS, LayoutMode.GRID)
+        // A fresh store on the same file still sees the last write (LIST).
+        vm.toggleLayout(LibraryTab.SONGS)
+        awaitLayout(vm, LibraryTab.SONGS, LayoutMode.LIST)
+        // The write really landed in DataStore (not just VM memory).
+        kotlinx.coroutines.runBlocking {
+            val persisted = store.settingsNow()
+            assertEquals(LayoutMode.LIST, persisted.libraryLayouts["SONGS"])
+            assertEquals(LayoutMode.GRID, persisted.libraryLayouts["ALBUMS"] ?: LayoutMode.GRID)
+        }
+        // A recreated ViewModel on the same store restores the exact modes.
+        val vm2 = LibraryViewModel(
+            FakeMusicRepo(), PlaylistEvents(), store,
+            com.feishin.mobile.data.cache.CachedTrackStore(FakeCachedTrackDao(), FakeCacheBytes()),
+            SavedStateHandle(),
+        )
+        awaitLayout(vm2, LibraryTab.SONGS, LayoutMode.LIST)
+        assertEquals(LayoutMode.GRID, vm2.layoutFor(LibraryTab.ALBUMS))
+    }
+
+    private fun awaitLayout(vm: LibraryViewModel, tab: LibraryTab, mode: LayoutMode) {
+        repeat(200) {
+            if (vm.layoutFor(tab) == mode) return
+            Thread.sleep(25)
+        }
+        assertEquals(mode, vm.layoutFor(tab))
     }
 
     @Test

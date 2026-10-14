@@ -47,10 +47,13 @@ import com.feishin.mobile.BuildConfig
 import com.feishin.mobile.core.common.CacheSizePolicy
 import com.feishin.mobile.core.common.QualityPolicy
 import com.feishin.mobile.core.common.ReplayGainMode
+import com.feishin.mobile.ui.theme.VusicColors
+import com.feishin.mobile.ui.theme.VusicControlColors
+import com.feishin.mobile.ui.theme.VusicControlDefaults
+import com.feishin.mobile.ui.theme.VusicSpacing
 import com.feishin.mobile.data.settings.LayoutMode
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.data.settings.ThemeMode
-import com.feishin.mobile.ui.theme.VusicColors
 
 private enum class SettingsRoute {
     HOME, SERVER, APPEARANCE, SOUND, CONNECTIVITY, STORAGE, ABOUT
@@ -120,68 +123,74 @@ private fun SettingsHome(
     onOpen: (SettingsRoute) -> Unit,
 ) {
     val settings by vm.store.flow.collectAsState(initial = null)
+    val online by vm.network.isOnline.collectAsState()
     val s = settings
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
     ) {
-        if (s != null && (s.offlineMode || !vm.network.isOnline.collectAsState().value) && s.showOfflineChip) {
-            OfflineChip()
+        // Same title row as Library: one shared component, identical spacing.
+        com.feishin.mobile.ui.components.ScreenTitleRow(title = "Settings")
+        Column(Modifier.padding(horizontal = VusicSpacing.ScreenHorizontal)) {
+            if (s != null && (s.offlineMode || (s.autoOffline && !online)) && s.showOfflineChip) {
+                Spacer(Modifier.height(4.dp))
+                OfflineChip()
+            }
             Spacer(Modifier.height(8.dp))
+            SettingsHomeCard(
+                icon = Icons.Default.AccountCircle,
+                title = "Server & Account",
+                summary = vm.credentials.collectAsState().value?.let { "${it.username} · ${it.serverUrl}" } ?: "Not signed in",
+                onClick = { onOpen(SettingsRoute.SERVER) },
+            )
+            SettingsHomeCard(
+                icon = Icons.Default.Palette,
+                title = "Appearance & Layout",
+                summary = s?.let { "${it.theme.name.lowercase().replaceFirstChar(Char::uppercase)} · ${it.defaultLayout.name.lowercase()} layout" } ?: "…",
+                onClick = { onOpen(SettingsRoute.APPEARANCE) },
+            )
+            SettingsHomeCard(
+                icon = Icons.Default.Speaker,
+                title = "Sound & Playback",
+                summary = s?.let {
+                    val q = if (it.wifiBitrate == 0) "Original" else "${it.wifiBitrate} kbps"
+                    "$q · ${it.replayGainMode.name.lowercase()} gain" +
+                        if (it.crossfade) " · crossfade ${it.crossfadeSeconds}s" else ""
+                } ?: "…",
+                onClick = { onOpen(SettingsRoute.SOUND) },
+            )
+            SettingsHomeCard(
+                icon = Icons.Default.SettingsInputAntenna,
+                title = "Connectivity",
+                summary = s?.let {
+                    buildList {
+                        if (it.offlineMode) add("Offline mode")
+                        if (it.autoOffline) add("Auto offline")
+                        if (it.allowSelfSigned) add("Self-signed allowed")
+                        if (isEmpty()) add("Online")
+                    }.joinToString(" · ")
+                } ?: "…",
+                onClick = { onOpen(SettingsRoute.CONNECTIVITY) },
+            )
+            SettingsHomeCard(
+                icon = Icons.Default.Storage,
+                title = "Storage",
+                summary = "Downloads, song cache and image cache",
+                onClick = { onOpen(SettingsRoute.STORAGE) },
+            )
+            SettingsHomeCard(
+                icon = Icons.Default.Info,
+                title = "About",
+                summary = "Vusic ${BuildConfig.VERSION_NAME}",
+                onClick = { onOpen(SettingsRoute.ABOUT) },
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Vusic ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
+                style = MaterialTheme.typography.bodySmall,
+                color = VusicColors.SecondaryText,
+                modifier = Modifier.padding(start = 4.dp, bottom = 48.dp),
+            )
         }
-        SettingsHomeCard(
-            icon = Icons.Default.AccountCircle,
-            title = "Server & Account",
-            summary = vm.credentials.collectAsState().value?.let { "${it.username} · ${it.serverUrl}" } ?: "Not signed in",
-            onClick = { onOpen(SettingsRoute.SERVER) },
-        )
-        SettingsHomeCard(
-            icon = Icons.Default.Palette,
-            title = "Appearance & Layout",
-            summary = s?.let { "${it.theme.name.lowercase().replaceFirstChar(Char::uppercase)} · ${it.defaultLayout.name.lowercase()} layout" } ?: "…",
-            onClick = { onOpen(SettingsRoute.APPEARANCE) },
-        )
-        SettingsHomeCard(
-            icon = Icons.Default.Speaker,
-            title = "Sound & Playback",
-            summary = s?.let {
-                val q = if (it.wifiBitrate == 0) "Original" else "${it.wifiBitrate} kbps"
-                "$q · ${it.replayGainMode.name.lowercase()} gain" +
-                    if (it.crossfade) " · crossfade ${it.crossfadeSeconds}s" else ""
-            } ?: "…",
-            onClick = { onOpen(SettingsRoute.SOUND) },
-        )
-        SettingsHomeCard(
-            icon = Icons.Default.SettingsInputAntenna,
-            title = "Connectivity",
-            summary = s?.let {
-                buildList {
-                    if (it.offlineMode) add("Offline mode")
-                    if (it.autoOffline) add("Auto offline")
-                    if (it.allowSelfSigned) add("Self-signed allowed")
-                    if (isEmpty()) add("Online")
-                }.joinToString(" · ")
-            } ?: "…",
-            onClick = { onOpen(SettingsRoute.CONNECTIVITY) },
-        )
-        SettingsHomeCard(
-            icon = Icons.Default.Storage,
-            title = "Storage",
-            summary = "Downloads, song cache and image cache",
-            onClick = { onOpen(SettingsRoute.STORAGE) },
-        )
-        SettingsHomeCard(
-            icon = Icons.Default.Info,
-            title = "About",
-            summary = "Vusic ${BuildConfig.VERSION_NAME}",
-            onClick = { onOpen(SettingsRoute.ABOUT) },
-        )
-        Spacer(Modifier.height(16.dp))
-        Text(
-            "Vusic ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
-            style = MaterialTheme.typography.bodySmall,
-            color = VusicColors.SecondaryText,
-            modifier = Modifier.padding(start = 4.dp, bottom = 48.dp),
-        )
     }
 }
 
@@ -295,7 +304,11 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Keep downloaded music", modifier = Modifier.weight(1f))
-                        Switch(keepDownloads, { keepDownloads = it })
+                        Switch(
+                            checked = keepDownloads,
+                            onCheckedChange = { keepDownloads = it },
+                            colors = com.feishin.mobile.ui.theme.VusicControlDefaults.switchColors(),
+                        )
                     }
                 }
             },
@@ -397,50 +410,79 @@ private fun SoundScreen(vm: SettingsViewModel) {
             ReplayGainMode.entries.map { it.name.lowercase().replaceFirstChar(Char::uppercase) },
             onSelect = { vm.setReplayGainMode(ReplayGainMode.valueOf(it.uppercase())) },
         )
+        // Discrete-step rows: ReplayGain sliders snap to whole dB.
+        val dbSteps = (-15..15 step 3).map { "$it dB" }
         SliderRow(
-            "Pre-amp", "${s.replayGainPreampDb} dB", s.replayGainPreampDb.toFloat(), -15f..15f, 29,
-            { vm.setReplayGainPreamp(it.toInt()) },
+            "Pre-amp",
+            "${s.replayGainPreampDb} dB",
+            index = nearestIndex(dbSteps, "${s.replayGainPreampDb} dB"),
+            steps = dbSteps,
+            onIndex = { vm.setReplayGainPreamp(dbSteps[it].removeSuffix(" dB").toIntOrNull() ?: 0) },
         )
         SliderRow(
-            "Fallback gain", "${s.replayGainFallbackDb} dB", s.replayGainFallbackDb.toFloat(), -15f..15f, 29,
-            { vm.setReplayGainFallback(it.toInt()) },
+            "Fallback gain",
+            "${s.replayGainFallbackDb} dB",
+            index = nearestIndex(dbSteps, "${s.replayGainFallbackDb} dB"),
+            steps = dbSteps,
+            onIndex = { vm.setReplayGainFallback(dbSteps[it].removeSuffix(" dB").toIntOrNull() ?: 0) },
         )
     }
     SettingsSection("TRANSITIONS")
     SettingsCard {
-        SwitchRow("Gapless playback", s.gapless, vm::setGapless)
+        SwitchRow("Gapless playback", s.gapless, vm::setGapless, showDivider = true)
         SwitchRow(
             "Crossfade", s.crossfade, vm::setCrossfade,
             description = "Best-effort volume ramp; true overlap would break gapless.",
+            showDivider = s.crossfade,
         )
         if (s.crossfade) {
+            val secSteps = listOf(1, 3, 6, 9, 12).map { "${it}s" }
             SliderRow(
-                "Crossfade duration", "${s.crossfadeSeconds}s", s.crossfadeSeconds.toFloat(), 1f..12f, 10,
-                { vm.setCrossfadeSeconds(it.toInt()) },
+                "Crossfade duration",
+                "${s.crossfadeSeconds}s",
+                index = nearestIndex(secSteps, "${s.crossfadeSeconds}s"),
+                steps = secSteps,
+                onIndex = { vm.setCrossfadeSeconds(secSteps[it].removeSuffix("s").toIntOrNull() ?: 6) },
             )
         }
     }
     SettingsSection("PLAYBACK CACHE")
     SettingsCard {
-        SwitchRow("Cache upcoming tracks", s.cacheUpcoming, vm::setCacheUpcoming)
+        SwitchRow("Cache upcoming tracks", s.cacheUpcoming, vm::setCacheUpcoming, showDivider = true)
         if (s.cacheUpcoming) {
+            val trackSteps = (1..5).map { "$it" }
             SliderRow(
-                "Tracks to cache", s.tracksToCache.toString(), s.tracksToCache.toFloat(), 1f..5f, 3,
-                { vm.setTracksToCache(it.toInt()) },
+                "Tracks to cache",
+                "${s.tracksToCache}",
+                index = (s.tracksToCache - 1).coerceIn(0, 4),
+                steps = trackSteps,
+                onIndex = { vm.setTracksToCache(it + 1) },
                 description = "Next songs are fully buffered ahead of time.",
             )
         }
         SwitchRow(
             "Cache played songs", s.cachePlayedSongs, vm::setCachePlayedSongs,
             description = "Keep every song you finish (or pass 50% of).",
+            showDivider = true,
         )
-        SwitchRow("Cache on Wi-Fi only", s.cacheWifiOnly, vm::setCacheWifiOnly)
-        InfoRow("Song cache usage", storage?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.cachedBytes) } ?: "…")
+        SwitchRow("Cache on Wi-Fi only", s.cacheWifiOnly, vm::setCacheWifiOnly, showDivider = true)
+        InfoRow(
+            "Song cache usage",
+            storage?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.cachedBytes) } ?: "…",
+        )
+        if (storage?.let { !com.feishin.mobile.core.common.StorageLimits.cachingAllowed(it.freeBytes) } == true) {
+            Text(
+                com.feishin.mobile.core.common.StorageLimits.LOW_SPACE_MESSAGE,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFFFFB74D),
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+        }
     }
     SettingsSection("BEHAVIOR")
     SettingsCard {
-        SwitchRow("Pause on headphone disconnect", s.pauseOnHeadphone, vm::setPauseOnHeadphone)
-        SwitchRow("Resume after audio focus loss", s.resumeOnFocusGain, vm::setResumeOnFocusGain)
+        SwitchRow("Pause on headphone disconnect", s.pauseOnHeadphone, vm::setPauseOnHeadphone, showDivider = true)
+        SwitchRow("Resume after audio focus loss", s.resumeOnFocusGain, vm::setResumeOnFocusGain, showDivider = true)
         ActionRow(
             "Battery optimization",
             if (vm.batteryExempted()) "Exempted — playback survives doze" else "Not exempted — playback may pause in background",
@@ -458,6 +500,12 @@ private fun SoundScreen(vm: SettingsViewModel) {
             onClick = { vm.resetPlaybackDefaults() },
         )
     }
+}
+
+/** Index of [value] in [steps], or the closest match. */
+private fun nearestIndex(steps: List<String>, value: String): Int {
+    val i = steps.indexOf(value)
+    return if (i >= 0) i else 0
 }
 
 @Composable
@@ -548,6 +596,7 @@ private fun StorageScreen(
     val s = settings ?: return
     LaunchedEffect(Unit) { vm.refreshStorageStats() }
     val st = storage
+    val deviceMax = vm.deviceMaxBytes()
     val total = (st?.let { it.downloadBytes + it.coverBytes + it.streamCacheBytes + it.imageCacheBytes } ?: 1L)
         .coerceAtLeast(1L)
 
@@ -572,33 +621,57 @@ private fun StorageScreen(
     SettingsSection("LIMITS")
     SettingsCard {
         val capOff = s.maxDownloadMb <= 0
+        val capSteps = com.feishin.mobile.core.common.StorageLimits.steps(deviceMax)
         SwitchRow(
             "Limit download storage", !capOff,
-            onSet = { on -> vm.setMaxDownloadMb(if (on) 2048 else 0) },
+            onSet = { on ->
+                vm.setMaxDownloadMb(
+                    if (on) (capSteps[capSteps.size / 2] / com.feishin.mobile.core.common.StorageLimits.MB).toInt() else 0,
+                )
+            },
+            showDivider = !capOff,
         )
         if (!capOff) {
+            val capBytes = s.maxDownloadMb.toLong() * com.feishin.mobile.core.common.StorageLimits.MB
+            val capIndex = com.feishin.mobile.core.common.StorageLimits.indexOf(capSteps, capBytes)
+            val capWarn = if (st != null && com.feishin.mobile.core.common.StorageLimits.exceedsAvailable(capSteps[capIndex], st.downloadBytes, st.freeBytes)) {
+                "Limit is larger than this device's free space plus current usage."
+            } else null
             SliderRow(
-                "Download cap", "${s.maxDownloadMb / 1024} GB", (s.maxDownloadMb / 1024).toFloat(), 1f..32f, 30,
-                { vm.setMaxDownloadMb((it.toInt() * 1024).coerceAtLeast(1024)) },
+                "Download cap",
+                com.feishin.mobile.core.common.StorageLimits.label(capSteps[capIndex]),
+                index = capIndex,
+                steps = capSteps.map { com.feishin.mobile.core.common.StorageLimits.label(it) },
+                onIndex = {
+                    vm.setMaxDownloadMb((capSteps[it] / com.feishin.mobile.core.common.StorageLimits.MB).toInt())
+                },
                 description = "New downloads pause when the cap is reached.",
+                warning = capWarn,
             )
         }
     }
     SettingsSection("DOWNLOADED MUSIC")
     SettingsCard {
-        InfoRow("Songs", st?.downloadSongs?.toString() ?: "…")
-        InfoRow("Disk usage", st?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.downloadBytes) } ?: "…")
-        InfoRow("Concurrent downloads", st?.let { "${it.activeDownloads} active · ${it.queuedDownloads} queued" } ?: "…")
-        ActionRow("Browse downloaded music", buttonLabel = "Browse", onClick = onOpenLibraryDownloads)
+        InfoRow("Songs", st?.downloadSongs?.toString() ?: "…", showDivider = true)
+        InfoRow("Disk usage", st?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.downloadBytes) } ?: "…", showDivider = true)
+        InfoRow("Concurrent downloads", st?.let { "${it.activeDownloads} active · ${it.queuedDownloads} queued" } ?: "…", showDivider = true)
+        ActionRow("Browse downloaded music", buttonLabel = "Browse", onClick = onOpenLibraryDownloads, showDivider = true)
         ActionRow("Download queue", buttonLabel = "Open", onClick = onOpenDownloads)
     }
     SettingsSection("SONG CACHE")
     SettingsCard {
-        InfoRow("Songs cached", st?.cachedSongs?.toString() ?: "…")
+        val cacheSteps = com.feishin.mobile.core.common.StorageLimits.steps(deviceMax)
+        val cacheBytes = s.cacheSizeMb.toLong() * com.feishin.mobile.core.common.StorageLimits.MB
+        val cacheIndex = com.feishin.mobile.core.common.StorageLimits.indexOf(cacheSteps, cacheBytes)
+        InfoRow("Songs cached", st?.cachedSongs?.toString() ?: "…", showDivider = true)
         SliderRow(
-            "Cache size", "${s.cacheSizeMb} MB", s.cacheSizeMb.toFloat(), 256f..5120f, 8,
-            { vm.setCache(it.toInt()) },
-            description = "Applies on next launch.",
+            "Cache size",
+            com.feishin.mobile.core.common.StorageLimits.label(cacheSteps[cacheIndex]),
+            index = cacheIndex,
+            steps = cacheSteps.map { com.feishin.mobile.core.common.StorageLimits.label(it) },
+            onIndex = { vm.setCache((cacheSteps[it] / com.feishin.mobile.core.common.StorageLimits.MB).toInt()) },
+            description = "Applies immediately; shrinking trims the cache now.",
+            showDivider = true,
         )
         ActionRow(
             "Clear song cache", "Also removes the Cached collection",
@@ -609,12 +682,29 @@ private fun StorageScreen(
     }
     SettingsSection("IMAGE CACHE")
     SettingsCard {
+        val imageSteps = com.feishin.mobile.core.common.StorageLimits.steps(deviceMax)
+        val imageBytes = s.imageCacheMb.toLong() * com.feishin.mobile.core.common.StorageLimits.MB
+        val imageIndex = com.feishin.mobile.core.common.StorageLimits.indexOf(imageSteps, imageBytes)
         SliderRow(
-            "Cache size", "${s.imageCacheMb} MB", s.imageCacheMb.toFloat(), 100f..1024f, 8,
-            { vm.setImageCache(it.toInt()) },
-            description = "Applies on next launch.",
+            "Cache size",
+            com.feishin.mobile.core.common.StorageLimits.label(imageSteps[imageIndex]),
+            index = imageIndex,
+            steps = imageSteps.map { com.feishin.mobile.core.common.StorageLimits.label(it) },
+            onIndex = { vm.setImageCache((imageSteps[it] / com.feishin.mobile.core.common.StorageLimits.MB).toInt()) },
+            description = "Shrinking clears cached images immediately; growth takes effect on next launch.",
+            showDivider = true,
         )
         ActionRow("Clear image cache", buttonLabel = "Clear", onClick = { vm.clearImageCache() })
+        val restartPending by vm.imageCacheRestartPending.collectAsState()
+        if (restartPending) {
+            ActionRow(
+                "Restart to apply",
+                "The image cache can only grow after a restart.",
+                buttonLabel = "Restart now",
+                danger = false,
+                onClick = { vm.restartApp() },
+            )
+        }
     }
     SettingsSection("DANGEROUS")
     SettingsCard {

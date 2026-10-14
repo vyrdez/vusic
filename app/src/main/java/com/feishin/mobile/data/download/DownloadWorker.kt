@@ -152,6 +152,13 @@ class DownloadWorker @AssistedInject constructor(
                     dao.setStatus(row.songId, DownloadStatus.PAUSED.name, "Not enough storage")
                     return Outcome.PAUSED
                 }
+                // Hard floor: below 1 GB free, nothing new is written (downloads
+                // are never counted against the cache, but they must not fill the
+                // device either).
+                if (total > 0 && repo.freeBytes() < com.feishin.mobile.core.common.StorageLimits.LOW_SPACE_BYTES) {
+                    dao.setStatus(row.songId, DownloadStatus.PAUSED.name, "Low storage")
+                    return Outcome.PAUSED
+                }
                 if (total > 0 && repo.overDownloadCap(total - startAt)) {
                     dao.setStatus(row.songId, DownloadStatus.PAUSED.name, "Storage limit reached")
                     return Outcome.PAUSED

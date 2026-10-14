@@ -79,6 +79,11 @@ class PrefetchManager @Inject constructor(
                 cancelAll()
                 return@launch
             }
+            // Safety floor: caching pauses automatically below 1 GB free.
+            if (!com.feishin.mobile.core.common.StorageLimits.cachingAllowed(downloads.freeBytes())) {
+                cancelAll()
+                return@launch
+            }
             val window = PrefetchWindow.window(
                 queueIds = queue.map { it.queueId },
                 currentIndex = currentIndex,

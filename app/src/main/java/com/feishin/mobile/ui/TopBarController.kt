@@ -20,10 +20,18 @@ class TopBarController {
     /** Simple list screens (genres, downloads) show their title immediately. */
     var alwaysShowTitle by mutableStateOf(false)
 
+    /**
+     * True while a screen draws its own edge-to-edge hero and therefore hides
+     * the shared top bar (the screen then provides its own back button and
+     * collapsing title).
+     */
+    var hideBar by mutableStateOf(false)
+
     fun reset() {
         title = null
         scrolled = false
         alwaysShowTitle = false
+        hideBar = false
     }
 }
 

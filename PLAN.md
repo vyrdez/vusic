@@ -162,9 +162,46 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   Wi-Fi-only gate, auto-cache of played songs, and a built-in Cached collection
   tracked in Room that plays offline and self-prunes on eviction; 250 unit tests)
 - [ ] M6 extras (Auto polish, home screen widget, README, final APK verify)
+- [x] M6.0 UI fixes + queue freeze/root-cause + queue redesign + mini-player clear
+  (1. Library grid/list toggle: root cause was that only the Albums and Artists
+  branches read the `grid` flag — Songs/Playlists/Favorites/Downloads rendered
+  list-only, so toggling on the default Playlists tab visibly did nothing. Every
+  tab now has a grid variant (song cells, playlist cells incl. the pinned
+  Favorite/Cached collections, favorites sections, downloads covers) and the
+  screen reads the mode from the collected layouts map instead of sampling
+  StateFlow.value without subscribing; per-tab DataStore persistence covered by
+  `library_layoutToggle_isPerTab_andPersists`.
+  2. Queue freeze: root cause was the reorderable library's onMove firing on
+  EVERY drag frame straight into `player.move()`, which per frame (a) emitted a
+  new queue (full-list recompose), (b) IPC'd `moveMediaItem` to the service,
+  (c) wrote DataStore via persistAsync, and (d) re-triggered the
+  `LaunchedEffect(currentIndex, queue.size)` auto-scroll `animateScrollToItem`,
+  fighting the drag gesture — measured 18.5% janky frames, p99 101ms, 209 slow
+  UI-thread frames over 16 gestures (kill -3 thread dump not permitted on this
+  build: shell gets Operation not permitted). Fixed with commit-on-drop: onMove
+  mutates only a local displayOrder copy, one `commitOrder()` on drop goes
+  through the minimal `moveMediaItem` sequence + a single persist, stale drops
+  (radio append / swipe-remove mid-drag) are ignored via `QueueCommit`, and the
+  auto-scroll is gated on `isAnyItemDragging`. 48 consecutive drags with shuffle
+  on and off: no freeze, no ANR, zero FATALs; order commits land visibly.
+  3. Queue redesign: top row is source title (marquee) + Radio badge + text Save
+  only (Clear and X removed); rows keep 56dp cover/title/Artist-duration/⋮ plus
+  an immediate-drag handle (no long-press delay), tinted rounded current row
+  with equalizer (playing) or play (paused) indicator, tap jumps, long-press
+  actions, swipe-to-remove; pinned bottom bar with live shuffle, close chevron
+  and repeat (off/all/one) in sync with Now Playing; neighbors animate with
+  `animateItem`, dragged row lifts with elevation; Playing-from entry is now a
+  72dp+ target so tap-to-open lands reliably.
+  4. Mini-player drag-clear: downward drag follows the finger (offset + fade in
+  graphicsLayer, no recomposition), past 160px commits `clearWithUndo()` (stops
+  playback, clears queue/persisted queue/source/radio/shuffle, hides the
+  player); short releases spring back; horizontal swipe-to-skip and tap-to-open
+  untouched. Undo snackbar (~5s, Indefinite + auto-dismiss) restores queue,
+  current item and position, paused. Verified on device incl. rotation.)
+  277 unit tests)
 
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
-`testDebugUnitTest` 250/250 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
+`testDebugUnitTest` 277/277 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
 LIVE on-device test (emulator Pixel 7, API 34) against server.example.com: login OK,
 Home with real albums/art, album detail (17 tracks), streaming playback confirmed
 (mini player + Now Playing 0:33/3:42 + audio focus), zero FATAL crashes. Probe script

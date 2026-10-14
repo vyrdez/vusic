@@ -1,0 +1,76 @@
+package com.feishin.mobile.core.common
+
+/**
+ * Pure storage-limit policy for the cache/download sliders.
+ *
+ * A linear 256 MB .. 500 GB slider is unusable, so the UI offers discrete,
+ * human-sized steps and always includes the device maximum as the last step.
+ * Anything that reads the device (StatFs) is injected, so this stays testable.
+ */
+object StorageLimits {
+    const val MB = 1024L * 1024
+    const val GB = 1024L * MB
+
+    /** Fallback maximum when the device size cannot be read. */
+    const val DEFAULT_MAX_BYTES = 100L * GB
+
+    /** Caching and prefetch pause below this much free space. */
+    const val LOW_SPACE_BYTES = 1L * GB
+
+    /** Human-sized steps, ascending. */
+    private val NOMINAL = listOf(
+        256L * MB, 512L * MB,
+        1L * GB, 2L * GB, 5L * GB, 10L * GB, 20L * GB, 50L * GB,
+        100L * GB, 200L * GB, 500L * GB, 1000L * GB, 2000L * GB,
+    )
+
+    /**
+     * The device's total data-partition size, or [DEFAULT_MAX_BYTES] when the
+     * read fails or returns something implausible (< 1 GB).
+     */
+    fun deviceMaxBytes(readTotal: () -> Long): Long {
+        val total = runCatching { readTotal() }.getOrDefault(0L)
+        return if (total in (1L * GB)..(8000L * GB)) total else DEFAULT_MAX_BYTES
+    }
+
+    /**
+     * Discrete slider steps up to [maxBytes], always ending with the exact
+     * maximum (so the user can pick "all of it") and always non-empty.
+     */
+    fun steps(maxBytes: Long): List<Long> {
+        val capped = maxBytes.coerceAtLeast(64L * MB)
+        val out = ArrayList<Long>()
+        for (step in NOMINAL) if (step < capped) out += step
+        // Always include the exact maximum as the last step.
+        if (out.isEmpty() || out.last() != capped) out += capped
+        return out
+    }
+
+    /** The step nearest to [value] (used to snap a stored value back onto the rail). */
+    fun nearestStep(steps: List<Long>, value: Long): Long =
+        steps.minByOrNull { kotlin.math.abs(it - value) } ?: value
+
+    /** Slider index for a byte value on [steps]. */
+    fun indexOf(steps: List<Long>, value: Long): Int =
+        steps.indexOf(nearestStep(steps, value)).coerceAtLeast(0)
+
+    /** Human label: "256 MB", "8.0 GB", "100 GB". */
+    fun label(bytes: Long): String {
+        if (bytes < MB) return "${bytes / 1024} KB"
+        if (bytes < GB) return "${bytes / MB} MB"
+        val gb = bytes.toDouble() / GB
+        return if (gb >= 10) "%.0f GB".format(gb) else "%.1f GB".format(gb)
+    }
+
+    /**
+     * True when [limitBytes] cannot be honoured even now: the limit is bigger
+     * than what is already used plus what is free (i.e. bigger than the device).
+     */
+    fun exceedsAvailable(limitBytes: Long, usedBytes: Long, freeBytes: Long): Boolean =
+        usedBytes >= 0 && freeBytes >= 0 && limitBytes > usedBytes + freeBytes
+
+    /** Caching/prefetch are allowed only above the low-space floor. */
+    fun cachingAllowed(freeBytes: Long): Boolean = freeBytes >= LOW_SPACE_BYTES
+
+    val LOW_SPACE_MESSAGE = "Caching paused: less than 1 GB of free space."
+}

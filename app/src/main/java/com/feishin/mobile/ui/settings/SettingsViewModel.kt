@@ -81,6 +81,7 @@ class SettingsViewModel @Inject constructor(
     val network: NetworkMonitor,
     private val cachedTracks: CachedTrackStore,
     private val streamCache: androidx.media3.datasource.cache.SimpleCache,
+    private val cacheEvictor: com.feishin.mobile.data.cache.LiveLruCacheEvictor,
     private val imageLoader: coil.ImageLoader,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
@@ -97,8 +98,39 @@ class SettingsViewModel @Inject constructor(
     fun setSelfSigned(v: Boolean) = viewModelScope.launch { store.setAllowSelfSigned(v) }
     fun setCleartext(v: Boolean) = viewModelScope.launch { store.setAllowCleartext(v) }
     fun setTimeout(v: Int) = viewModelScope.launch { store.setTimeout(v) }
-    fun setCache(v: Int) = viewModelScope.launch { store.setCacheSizeMb(v) }
-    fun setImageCache(v: Int) = viewModelScope.launch { store.setImageCacheMb(v) }
+    fun setCache(v: Int) = viewModelScope.launch {
+        store.setCacheSizeMb(v)
+        // Live: a smaller limit trims the cache right away.
+        withContext(Dispatchers.IO) { runCatching { cacheEvictor.trimNow() } }
+        refreshStorageStats()
+    }
+
+    fun setImageCache(v: Int) = viewModelScope.launch {
+        val previous = runCatching { store.settingsNow().imageCacheMb }.getOrDefault(v)
+        store.setImageCacheMb(v)
+        // Coil's DiskCache capacity is fixed at construction: shrinking reclaims
+        // space immediately by clearing, growing needs a restart (the UI offers
+        // a "Restart now" button rather than silent text).
+        if (v < previous) {
+            withContext(Dispatchers.IO) { runCatching { imageLoader.diskCache?.clear() } }
+            _imageCacheRestartPending.value = false
+        } else if (v > previous) {
+            _imageCacheRestartPending.value = true
+        }
+        refreshStorageStats()
+    }
+
+    /** True when the image cache grew and a restart is needed to apply it. */
+    private val _imageCacheRestartPending = MutableStateFlow(false)
+    val imageCacheRestartPending: StateFlow<Boolean> = _imageCacheRestartPending.asStateFlow()
+
+    /** Relaunch the app process so a pending cache size takes effect. */
+    fun restartApp() {
+        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        intent?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        context.startActivity(intent)
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
     fun setCrossfade(v: Boolean) = viewModelScope.launch { store.setCrossfade(v) }
     fun setCrossfadeSeconds(v: Int) = viewModelScope.launch { store.setCrossfadeSeconds(v) }
     fun setReplayGain(v: Boolean) = viewModelScope.launch { store.setReplayGain(v) }
@@ -122,7 +154,16 @@ class SettingsViewModel @Inject constructor(
     fun setTracksToCache(v: Int) = viewModelScope.launch { store.setTracksToCache(v) }
     fun setCachePlayedSongs(v: Boolean) = viewModelScope.launch { store.setCachePlayedSongs(v) }
     fun setCacheWifiOnly(v: Boolean) = viewModelScope.launch { store.setCacheWifiOnly(v) }
-    fun setMaxDownloadMb(v: Int) = viewModelScope.launch { store.setMaxDownloadMb(v) }
+    fun setMaxDownloadMb(v: Int) = viewModelScope.launch {
+        store.setMaxDownloadMb(v)
+        refreshStorageStats()
+    }
+
+    /** Device total storage for the slider maxima (StatFs on the data dir). */
+    fun deviceMaxBytes(): Long = com.feishin.mobile.core.common.StorageLimits.deviceMaxBytes {
+        val stat = StatFs(context.filesDir.absolutePath)
+        stat.totalBytes
+    }
     fun setLibraryLayout(tab: String, v: LayoutMode) = viewModelScope.launch { store.setLibraryLayout(tab, v) }
     fun setLibrarySort(tab: String, option: String, ascending: Boolean) =
         viewModelScope.launch {

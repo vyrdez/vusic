@@ -97,10 +97,16 @@ class LibraryViewModel @Inject constructor(
     fun prefetchArtistPhoto(artist: com.feishin.mobile.domain.model.Artist) {
         if (_artistImages.value.containsKey(artist.id)) return
         viewModelScope.launch {
-            val url = (repo.artistInfo(artist.id) as? Result.Ok)?.value?.imageUrl
-                ?.takeIf { it.isNotBlank() }
-            if (url != null) _artistImages.value = _artistImages.value + (artist.id to url)
-            else _artistImages.value = _artistImages.value + (artist.id to "")
+            val info = (repo.artistInfo(artist.id) as? Result.Ok)?.value?.imageUrl
+                ?.takeIf { it.isNotBlank() && !com.feishin.mobile.core.common.AvatarFallback.isPlaceholderUrl(it) }
+            // Navidrome artist records frequently carry no cover art, so the
+            // first album cover is the last visual fallback before the initial.
+            val albumCover = if (info == null) {
+                (repo.artist(artist.id) as? Result.Ok)?.value?.albums
+                    ?.firstOrNull { it.coverArt?.isNotBlank() == true }?.coverArt
+                    ?.let { repo.coverArtUrl(it, 256) }
+            } else null
+            _artistImages.value = _artistImages.value + (artist.id to (info ?: albumCover.orEmpty()))
         }
     }
 
