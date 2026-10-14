@@ -124,4 +124,13 @@ interface SubsonicApi {
 
     @GET("getArtistInfo2.view")
     suspend fun getArtistInfo2(@Query("id") id: String): SubsonicEnvelope
+
+    @GET("startScan.view")
+    suspend fun startScan(): SubsonicEnvelope
+
+    @GET("getScanStatus.view")
+    suspend fun getScanStatus(): SubsonicEnvelope
+
+    @GET("getOpenSubsonicExtensions.view")
+    suspend fun getOpenSubsonicExtensions(): SubsonicEnvelope
 }

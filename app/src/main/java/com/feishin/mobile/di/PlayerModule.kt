@@ -16,6 +16,8 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Named
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 
 @Module
@@ -24,9 +26,25 @@ object PlayerModule {
 
     @androidx.media3.common.util.UnstableApi
     @Provides @Singleton
-    fun provideCache(@ApplicationContext ctx: Context): SimpleCache {
+    fun provideCache(
+        @ApplicationContext ctx: Context,
+        settings: com.feishin.mobile.data.settings.SettingsStore,
+    ): SimpleCache {
         val dir = File(ctx.cacheDir, "stream_cache").apply { mkdirs() }
-        return SimpleCache(dir, LeastRecentlyUsedCacheEvictor(512L * 1024 * 1024), StandaloneDatabaseProvider(ctx))
+        // Read synchronously at graph build: a changed size takes effect on the
+        // next launch (the evictor capacity is fixed at construction).
+        val mb: Int = runCatching {
+            kotlinx.coroutines.runBlocking {
+                val s: com.feishin.mobile.data.settings.SettingsStore.Settings =
+                    settings.flow.first()
+                s.cacheSizeMb
+            }
+        }.getOrDefault(512).coerceIn(256, 5120)
+        return SimpleCache(
+            dir,
+            LeastRecentlyUsedCacheEvictor(mb.toLong() * 1024 * 1024),
+            StandaloneDatabaseProvider(ctx),
+        )
     }
 
     /**

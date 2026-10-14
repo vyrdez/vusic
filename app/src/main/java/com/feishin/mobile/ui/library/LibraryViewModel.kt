@@ -10,37 +10,99 @@ import com.feishin.mobile.domain.model.Playlist
 import com.feishin.mobile.domain.model.StarredCollection
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
+import com.feishin.mobile.core.common.LibrarySorts
+import com.feishin.mobile.core.common.LibraryOrdering
 import com.feishin.mobile.core.common.Result
+import com.feishin.mobile.core.common.SortChoice
 import com.feishin.mobile.core.common.UiState
+import com.feishin.mobile.data.db.CachedTrackEntity
+import com.feishin.mobile.data.cache.CachedTrackStore
+import com.feishin.mobile.data.settings.LayoutMode
+import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.data.favorites.PlaylistEvent
 import com.feishin.mobile.data.favorites.PlaylistEvents
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-enum class LibraryTab { PLAYLISTS, ALBUMS, ARTISTS, SONGS, FAVORITES, DOWNLOADS }
-enum class SortOrder { NAME_ASC, NAME_DESC, YEAR_DESC, PLAYS_DESC }
+enum class LibraryTab { PLAYLISTS, DOWNLOADS, ALBUMS, ARTISTS, SONGS, FAVORITES }
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val repo: MusicDataRepository,
     private val playlistEvents: PlaylistEvents,
+    private val settings: SettingsStore,
+    private val cachedTracks: CachedTrackStore,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
+    private val handle: SavedStateHandle = savedStateHandle
+
+    /**
+     * The selected tab. Written through to the SavedStateHandle on every user
+     * change, so back navigation (which recreates this ViewModel from the
+     * entry's saved state) returns to the exact tab instead of the default.
+     * Fresh entries default to Playlists.
+     */
     private val _tab = MutableStateFlow(
-        runCatching { LibraryTab.valueOf(savedStateHandle.get<String>("tab") ?: "ALBUMS") }
-            .getOrDefault(LibraryTab.ALBUMS),
+        runCatching {
+            LibraryTab.valueOf(
+                handle.get<String>(KEY_TAB) ?: handle.get<String>("tab") ?: "PLAYLISTS",
+            )
+        }.getOrDefault(LibraryTab.PLAYLISTS),
     )
     val tab: StateFlow<LibraryTab> = _tab.asStateFlow()
 
-    private val _grid = MutableStateFlow(true)
-    val grid: StateFlow<Boolean> = _grid.asStateFlow()
+    /** Grid/list layout per tab (Appearance setting, falls back to the default). */
+    private val _layouts = MutableStateFlow<Map<LibraryTab, LayoutMode>>(emptyMap())
+    val layouts: StateFlow<Map<LibraryTab, LayoutMode>> = _layouts.asStateFlow()
 
-    private val _sort = MutableStateFlow(SortOrder.NAME_ASC)
-    val sort: StateFlow<SortOrder> = _sort.asStateFlow()
+    /** Sort choice per tab, persisted in DataStore. */
+    private val _sorts = MutableStateFlow<Map<LibraryTab, SortChoice>>(emptyMap())
+    val sorts: StateFlow<Map<LibraryTab, SortChoice>> = _sorts.asStateFlow()
+
+    /** Inline search queries, kept in memory while the tab is open. */
+    private val _queries = MutableStateFlow<Map<LibraryTab, String>>(emptyMap())
+    val queries: StateFlow<Map<LibraryTab, String>> = _queries.asStateFlow()
+
+    /**
+     * Nav-arg tabs already honoured. The route carries a *default* tab, so
+     * re-entering the screen (e.g. back from Downloads & storage) would
+     * re-apply that stale default and clobber the user's selected tab. Applying
+     * each distinct arg once keeps Explore pills working while leaving a
+     * user-driven selection untouched on re-entry.
+     */
+    private val appliedNavTabs = mutableSetOf<LibraryTab>()
+
+    /** Cached songs for the pinned Cached collection row. */
+    val cached: StateFlow<List<CachedTrackEntity>> = cachedTracks.tracks
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Resolved artist profile pictures (artistInfo image wins, cover art is the
+     * synchronous fallback). Fetched lazily per visible artist and cached in
+     * memory for the VM lifetime.
+     */
+    private val _artistImages = MutableStateFlow<Map<String, String>>(emptyMap())
+    val artistImages: StateFlow<Map<String, String>> = _artistImages.asStateFlow()
+
+    /** Best-known picture right now: info image if loaded, else cover art. */
+    fun artistPhotoUrl(artist: com.feishin.mobile.domain.model.Artist): String? =
+        _artistImages.value[artist.id]?.takeIf { it.isNotBlank() } ?: artist.coverArt
+
+    fun prefetchArtistPhoto(artist: com.feishin.mobile.domain.model.Artist) {
+        if (_artistImages.value.containsKey(artist.id)) return
+        viewModelScope.launch {
+            val url = (repo.artistInfo(artist.id) as? Result.Ok)?.value?.imageUrl
+                ?.takeIf { it.isNotBlank() }
+            if (url != null) _artistImages.value = _artistImages.value + (artist.id to url)
+            else _artistImages.value = _artistImages.value + (artist.id to "")
+        }
+    }
 
     private val _albums = MutableStateFlow<UiState<List<Album>>>(UiState.Loading)
     val albums: StateFlow<UiState<List<Album>>> = _albums.asStateFlow()
@@ -64,6 +126,10 @@ class LibraryViewModel @Inject constructor(
     private val albumAccum = mutableListOf<Album>()
     private var albumEnd = false
 
+    companion object {
+        const val KEY_TAB = "selected_tab"
+    }
+
     init {
         refresh()
         // Stay in sync: starring anywhere refreshes favorites, and adding
@@ -77,15 +143,61 @@ class LibraryViewModel @Inject constructor(
                 }
             }
         }
+        // Per-tab layout + sort follow the Appearance settings live.
+        viewModelScope.launch {
+            settings.flow.collect { s ->
+                _layouts.value = LibraryTab.entries.associateWith { tab ->
+                    s.libraryLayouts[tab.name] ?: s.defaultLayout
+                }
+                val next = LibraryTab.entries.associateWith { tab ->
+                    s.librarySorts[tab.name] ?: LibrarySorts.default(tab.name)
+                }
+                val changed = next.filter { (tab, choice) -> _sorts.value[tab] != choice }.keys
+                _sorts.value = next
+                if (changed.isNotEmpty()) reapplySorts(changed)
+            }
+        }
     }
 
-    fun selectTab(t: LibraryTab) { _tab.value = t }
+    fun selectTab(t: LibraryTab) {
+        handle.set(KEY_TAB, t.name)
+        _tab.value = t
+    }
 
-    fun toggleGrid() { _grid.value = !_grid.value }
+    /**
+     * Applies a nav-arg tab at most once per distinct value, so a re-entry with
+     * the route's default does not reset a tab the user picked themselves.
+     */
+    fun applyNavTab(t: LibraryTab?) {
+        if (t == null) return
+        if (!appliedNavTabs.add(t)) return
+        if (_tab.value == t) return
+        selectTab(t)
+    }
 
-    fun setSort(s: SortOrder) {
-        _sort.value = s
-        applyAlbumSort()
+    fun layoutFor(tab: LibraryTab): LayoutMode =
+        _layouts.value[tab] ?: LayoutMode.GRID
+
+    fun toggleLayout(tab: LibraryTab) {
+        val next = if (layoutFor(tab) == LayoutMode.GRID) LayoutMode.LIST else LayoutMode.GRID
+        viewModelScope.launch { settings.setLibraryLayout(tab.name, next) }
+    }
+
+    fun sortFor(tab: LibraryTab): SortChoice =
+        _sorts.value[tab] ?: LibrarySorts.default(tab.name)
+
+    fun setSort(tab: LibraryTab, choice: SortChoice) {
+        viewModelScope.launch { settings.setLibrarySort(tab.name, choice) }
+    }
+
+    fun queryFor(tab: LibraryTab): String = _queries.value[tab].orEmpty()
+
+    fun setQuery(tab: LibraryTab, query: String) {
+        _queries.value = _queries.value + (tab to query)
+    }
+
+    fun clearQuery(tab: LibraryTab) {
+        _queries.value = _queries.value - tab
     }
 
     fun refresh() {
@@ -117,25 +229,39 @@ class LibraryViewModel @Inject constructor(
     }
 
     private fun applyAlbumSort() {
-        val sorted = when (_sort.value) {
-            SortOrder.NAME_ASC -> albumAccum.sortedBy { it.name.lowercase() }
-            SortOrder.NAME_DESC -> albumAccum.sortedByDescending { it.name.lowercase() }
-            SortOrder.YEAR_DESC -> albumAccum.sortedByDescending { it.year ?: 0 }
-            SortOrder.PLAYS_DESC -> albumAccum.sortedByDescending { it.playCount }
-        }
+        val sorted = LibraryOrdering.sortAlbums(albumAccum, sortFor(LibraryTab.ALBUMS))
         _albums.value = if (sorted.isEmpty()) UiState.Empty else UiState.Data(sorted)
+    }
+
+    /** Re-sorts already-loaded lists when a per-tab choice changes. */
+    private fun reapplySorts(changed: Set<LibraryTab>) {
+        if (LibraryTab.ALBUMS in changed) applyAlbumSort()
+        if (LibraryTab.ARTISTS in changed) {
+            val current = (_artists.value as? UiState.Data)?.value
+            if (current != null) {
+                _artists.value = UiState.Data(LibraryOrdering.sortArtists(current, sortFor(LibraryTab.ARTISTS)))
+            }
+        }
+        if (LibraryTab.SONGS in changed) {
+            val current = (_songs.value as? UiState.Data)?.value
+            if (current != null) {
+                _songs.value = UiState.Data(LibraryOrdering.sortSongs(current, sortFor(LibraryTab.SONGS)))
+            }
+        }
+        if (LibraryTab.PLAYLISTS in changed) {
+            val current = (_playlists.value as? UiState.Data)?.value
+            if (current != null) {
+                _playlists.value = UiState.Data(LibraryOrdering.sortPlaylists(current, sortFor(LibraryTab.PLAYLISTS)))
+            }
+        }
     }
 
     private fun loadArtists() {
         viewModelScope.launch {
             _artists.value = UiState.Loading
             _artists.value = when (val r = repo.artists()) {
-                is Result.Ok -> if (r.value.isEmpty()) UiState.Empty else UiState.Data(
-                    when (_sort.value) {
-                        SortOrder.NAME_DESC -> r.value.sortedByDescending { it.name.lowercase() }
-                        else -> r.value.sortedBy { it.name.lowercase() }
-                    },
-                )
+                is Result.Ok -> if (r.value.isEmpty()) UiState.Empty
+                else UiState.Data(LibraryOrdering.sortArtists(r.value, sortFor(LibraryTab.ARTISTS)))
                 is Result.Err -> UiState.Error(r.message)
             }
         }
@@ -155,7 +281,8 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             if (!silent) _playlists.value = UiState.Loading
             _playlists.value = when (val r = repo.playlists()) {
-                is Result.Ok -> if (r.value.isEmpty()) UiState.Empty else UiState.Data(r.value)
+                is Result.Ok -> if (r.value.isEmpty()) UiState.Empty
+                else UiState.Data(LibraryOrdering.sortPlaylists(r.value, sortFor(LibraryTab.PLAYLISTS)))
                 is Result.Err -> UiState.Error(r.message)
             }
         }
@@ -178,7 +305,8 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             _songs.value = UiState.Loading
             _songs.value = when (val r = repo.randomSongs(500)) {
-                is Result.Ok -> if (r.value.isEmpty()) UiState.Empty else UiState.Data(r.value)
+                is Result.Ok -> if (r.value.isEmpty()) UiState.Empty
+                else UiState.Data(LibraryOrdering.sortSongs(r.value, sortFor(LibraryTab.SONGS)))
                 is Result.Err -> UiState.Error(r.message)
             }
         }

@@ -19,7 +19,7 @@ class NavRulesTest {
     @Test
     fun bottomNavTargetsAreTopLevel() {
         assertEquals(Routes.HOME, NavRules.bottomNavTarget("Home"))
-        assertEquals("library?tab=ALBUMS", NavRules.bottomNavTarget("Library"))
+        assertEquals("library?tab=PLAYLISTS", NavRules.bottomNavTarget("Library"))
         assertEquals(Routes.SEARCH, NavRules.bottomNavTarget("Search"))
         assertEquals(Routes.SETTINGS, NavRules.bottomNavTarget("Settings"))
         // Every label must resolve to a real route, never to another tab's.
@@ -65,8 +65,16 @@ class NavRulesTest {
         LibraryTab.entries.forEach { tab ->
             assertEquals("library?tab=${tab.name}", Routes.library(tab))
         }
-        // Default is Albums, matching the bottom-nav Library target.
-        assertEquals(Routes.library(LibraryTab.ALBUMS), NavRules.bottomNavTarget("Library"))
+        // Default is Playlists, matching the bottom-nav Library target.
+        assertEquals(Routes.library(LibraryTab.PLAYLISTS), NavRules.bottomNavTarget("Library"))
+    }
+
+    @Test
+    fun libraryTabOrder_isPlaylistsDownloadsFirst() {
+        assertEquals(
+            listOf("PLAYLISTS", "DOWNLOADS", "ALBUMS", "ARTISTS", "SONGS", "FAVORITES"),
+            LibraryTab.entries.map { it.name },
+        )
     }
 
     @Test

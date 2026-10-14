@@ -146,7 +146,7 @@ class M45Test {
     fun routes_buildCorrectly() {
         assertEquals("library?tab=ALBUMS", com.feishin.mobile.ui.Routes.library(ALBUMS))
         assertEquals("library?tab=PLAYLISTS", com.feishin.mobile.ui.Routes.library(PLAYLISTS))
-        assertEquals("library?tab=ALBUMS", com.feishin.mobile.ui.Routes.library())
+        assertEquals("library?tab=PLAYLISTS", com.feishin.mobile.ui.Routes.library())
         assertEquals("album/abc", com.feishin.mobile.ui.Routes.album("abc"))
         assertEquals("artist/xyz", com.feishin.mobile.ui.Routes.artist("xyz"))
         assertEquals("playlist/p1", com.feishin.mobile.ui.Routes.playlist("p1"))

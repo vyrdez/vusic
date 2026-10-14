@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.BookmarkAdded
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Favorite
@@ -108,6 +109,7 @@ fun EntityActionsSheet(
     messenger: UiMessenger,
     favs: FavoritesStore,
     downloads: com.feishin.mobile.data.download.DownloadRepository,
+    cachedTracks: com.feishin.mobile.data.cache.CachedTrackStore,
     playlistEvents: PlaylistEvents? = null,
     onStartRadio: () -> Unit = {},
     onAlbum: (String) -> Unit,
@@ -120,7 +122,7 @@ fun EntityActionsSheet(
             is ActionTarget.Track -> TrackSheetContent(target.track, onDismiss, player, repo, settings, messenger, favs, downloads, playlistEvents, onStartRadio, onAlbum, onArtist)
             is ActionTarget.Album -> AlbumSheetContent(target.album, target.tracks, onDismiss, player, repo, settings, messenger, downloads, playlistEvents, onStartRadio, onAlbum, onArtist)
             is ActionTarget.Artist -> ArtistSheetContent(target.artist, onDismiss, player, repo, settings, messenger, downloads, playlistEvents, onStartRadio, onAlbum, onArtist)
-            is ActionTarget.Playlist -> PlaylistSheetContent(target.playlist, target.tracks, onDismiss, player, repo, settings, messenger, downloads, playlistEvents, onAlbum, onArtist)
+            is ActionTarget.Playlist -> PlaylistSheetContent(target.playlist, target.tracks, onDismiss, player, repo, settings, messenger, downloads, cachedTracks, playlistEvents, onAlbum, onArtist)
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -569,11 +571,14 @@ private fun PlaylistSheetContent(
     settings: SettingsStore,
     messenger: UiMessenger,
     downloads: com.feishin.mobile.data.download.DownloadRepository,
+    cachedTracks: com.feishin.mobile.data.cache.CachedTrackStore,
     playlistEvents: PlaylistEvents?,
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
 ) {
     val isVirtual = playlist.id == FAVORITE_SONGS_PLAYLIST_ID
+    val isCached = playlist.id == com.feishin.mobile.data.cache.CACHED_SONGS_PLAYLIST_ID
+    val isBuiltIn = isVirtual || isCached
     val groupId = if (isVirtual) "favorites" else "playlist:${playlist.id}"
     val groupType = if (isVirtual) "favorites" else "playlist"
     val scope = rememberCoroutineScope()
@@ -622,9 +627,9 @@ private fun PlaylistSheetContent(
         messenger.show("Added to queue: ${playlist.name}")
         onDismiss()
     })
-    if (isVirtual && tracks.isNotEmpty()) {
-        // The Favorite songs collection can't be deleted or renamed; its menu
-        // offers playback plus collecting into other playlists.
+    if (isBuiltIn && tracks.isNotEmpty()) {
+        // Built-in collections can't be deleted or renamed; their menus offer
+        // playback plus collecting into other playlists.
         SheetRow("Play next", Icons.AutoMirrored.Filled.PlaylistPlay, onClick = {
             player.playNextAll(tracks)
             messenger.show("Playing next: ${playlist.name}")
@@ -632,31 +637,45 @@ private fun PlaylistSheetContent(
         })
         SheetRow("Add all to playlist", Icons.AutoMirrored.Filled.PlaylistAdd, onClick = { showPicker = true })
     }
-    // Keep the collection available offline and in sync with the server.
-    var keep by remember(playlist.id) { mutableStateOf(false) }
-    LaunchedEffect(playlist.id) { keep = downloads.isKeepDownloaded(groupId) }
-    SheetRow(
-        if (keep) "Stop keeping downloaded" else "Keep downloaded",
-        if (keep) Icons.Default.DownloadDone else Icons.Default.Download,
-        onClick = {
+    if (isCached) {
+        // The Cached collection mirrors the stream cache: clearing it here is
+        // the same action as Settings > Storage > Clear song cache.
+        SheetRow("Clear cache", Icons.Default.Delete, onClick = {
             scope.launch {
-                if (keep) {
-                    downloads.setKeepDownloaded(groupId, groupType, playlist.name, false)
-                    keep = false
-                    messenger.show("Downloads kept, sync stopped")
-                } else if (tracks.isEmpty()) {
-                    messenger.show("Tracks not loaded yet")
-                } else {
-                    if (isVirtual) downloads.enqueueFavorites(tracks)
-                    else downloads.enqueueTracks(tracks, groupId)
-                    downloads.setKeepDownloaded(groupId, groupType, playlist.name, true)
-                    keep = true
-                    messenger.show("Keeping downloaded: ${playlist.name}")
-                }
+                cachedTracks.clearSongCache()
+                messenger.show("Song cache cleared")
+                onDismiss()
             }
-        },
-    )
-    if (!isVirtual) {
+        })
+    }
+    // Keep the collection available offline and in sync with the server.
+    // (The Cached collection is already local, so it has no keep toggle.)
+    var keep by remember(playlist.id) { mutableStateOf(false) }
+    LaunchedEffect(playlist.id) { keep = if (isCached) false else downloads.isKeepDownloaded(groupId) }
+    if (!isCached) {
+        SheetRow(
+            if (keep) "Stop keeping downloaded" else "Keep downloaded",
+            if (keep) Icons.Default.DownloadDone else Icons.Default.Download,
+            onClick = {
+                scope.launch {
+                    if (keep) {
+                        downloads.setKeepDownloaded(groupId, groupType, playlist.name, false)
+                        keep = false
+                        messenger.show("Downloads kept, sync stopped")
+                    } else if (tracks.isEmpty()) {
+                        messenger.show("Tracks not loaded yet")
+                    } else {
+                        if (isVirtual) downloads.enqueueFavorites(tracks)
+                        else downloads.enqueueTracks(tracks, groupId)
+                        downloads.setKeepDownloaded(groupId, groupType, playlist.name, true)
+                        keep = true
+                        messenger.show("Keeping downloaded: ${playlist.name}")
+                    }
+                }
+            },
+        )
+    }
+    if (!isBuiltIn) {
         SheetRow(if (pinned) "Unpin from Speed dial" else "Pin to Speed dial", Icons.Default.PushPin, onClick = {
             scope.launch {
                 settings.setPinned(pinKey, !pinned)

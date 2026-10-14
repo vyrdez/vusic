@@ -81,7 +81,7 @@ object Routes {
     const val DOWNLOADS = "downloads"
     const val GENRE = "genre/{name}"
     const val GENRES = "genres"
-    fun library(tab: LibraryTab = LibraryTab.ALBUMS) = "library?tab=${tab.name}"
+    fun library(tab: LibraryTab = LibraryTab.PLAYLISTS) = "library?tab=${tab.name}"
 
     /** Route pattern, for comparing against the current destination. */
     const val LIBRARY_PATTERN = "library?tab={tab}"
@@ -150,7 +150,13 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 },
             ) { padding ->
                 Box(Modifier.fillMaxSize().padding(padding)) {
-                    if (!online) {
+                    // Effective offline: manual toggle, or auto mode following
+                    // the live network. The banner respects "Show offline chip".
+                    val settingsState by main.settings.flow.collectAsState(initial = null)
+                    val effectiveOffline = settingsState?.let { s ->
+                        s.offlineMode || (s.autoOffline && !online)
+                    } == true
+                    if (effectiveOffline && settingsState?.showOfflineChip != false) {
                         OfflineBanner(
                             modifier = Modifier.align(androidx.compose.ui.Alignment.TopCenter),
                         )
@@ -174,7 +180,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                             arguments = listOf(
                                 navArgument("tab") {
                                     type = NavType.StringType
-                                    defaultValue = LibraryTab.ALBUMS.name
+                                    defaultValue = LibraryTab.PLAYLISTS.name
                                 },
                             ),
                         ) { entry ->
@@ -199,6 +205,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                                 settings = main.settings,
                                 onAlbum = { nav.navigate(Routes.album(it)) },
                                 onArtist = { nav.navigate(Routes.artist(it)) },
+                                onPlaylist = { nav.navigate(Routes.playlist(it)) },
                                 onActions = { actionsTarget = it },
                             )
                         }
@@ -206,6 +213,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                             SettingsScreen(
                                 onLogout = onLogout,
                                 onOpenDownloads = { nav.navigate(Routes.DOWNLOADS) },
+                                onOpenLibraryDownloads = { nav.goToLibraryTab(LibraryTab.DOWNLOADS) },
                             )
                         }
                         composable(Routes.ALBUM) {
@@ -281,6 +289,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 messenger = main.messenger,
                 favs = main.favs,
                 downloads = main.downloads,
+                cachedTracks = main.cachedTracks,
                 playlistEvents = main.playlistEvents,
                 onStartRadio = { showNowPlaying = true },
                 onAlbum = {

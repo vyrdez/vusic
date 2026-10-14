@@ -15,6 +15,8 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -82,14 +84,25 @@ object NetworkModule {
     fun provideImageLoader(
         @ApplicationContext ctx: Context,
         @javax.inject.Named("coil") coilClient: OkHttpClient,
-    ): ImageLoader =
-        ImageLoader.Builder(ctx)
+        settings: com.feishin.mobile.data.settings.SettingsStore,
+    ): ImageLoader {
+        // Same deal as the stream cache: the size is fixed at construction, so
+        // a changed value takes effect on the next launch.
+        val mb: Int = runCatching {
+            runBlocking {
+                val s: com.feishin.mobile.data.settings.SettingsStore.Settings =
+                    settings.flow.first()
+                s.imageCacheMb
+            }
+        }.getOrDefault(250).coerceIn(100, 1024)
+        return ImageLoader.Builder(ctx)
             .okHttpClient(coilClient)
             .crossfade(true)
             .placeholder(com.feishin.mobile.R.drawable.art_placeholder)
             .error(com.feishin.mobile.R.drawable.art_error)
             .fallback(com.feishin.mobile.R.drawable.art_placeholder)
             .memoryCache { MemoryCache.Builder(ctx).maxSizePercent(0.25).build() }
-            .diskCache { DiskCache.Builder().directory(ctx.cacheDir.resolve("coil")).maxSizeBytes(256L * 1024 * 1024).build() }
+            .diskCache { DiskCache.Builder().directory(ctx.cacheDir.resolve("coil")).maxSizeBytes(mb.toLong() * 1024 * 1024).build() }
             .build()
+    }
 }

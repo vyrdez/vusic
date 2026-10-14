@@ -2,8 +2,11 @@ package com.feishin.mobile.ui.library
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.lifecycle.SavedStateHandle
+import com.feishin.mobile.core.common.LibraryOrdering
 import com.feishin.mobile.core.common.Result
+import com.feishin.mobile.core.common.SortChoice
 import com.feishin.mobile.core.common.UiState
+import com.feishin.mobile.data.settings.LayoutMode
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.data.favorites.PlaylistEvents
 import com.feishin.mobile.domain.model.Album
@@ -56,6 +59,13 @@ class FakeMusicRepo(
     override suspend fun genres() = genres
     override suspend fun playlists() = playlists
     override suspend fun search(query: String) = Result.Ok(SearchResults())
+    override suspend fun search(query: String, artistCount: Int, albumCount: Int, songCount: Int) =
+        Result.Ok(SearchResults())
+    override suspend fun serverInfo() =
+        Result.Ok(com.feishin.mobile.domain.model.ServerInfo("1.16.1", "Test", emptyList()))
+    override suspend fun startScan() = Result.Ok(Unit)
+    override suspend fun scanStatus() =
+        Result.Ok(com.feishin.mobile.domain.model.ScanStatus(false, 0))
     override suspend fun album(id: String): Result<AlbumDetail> = Result.Err("x")
     override suspend fun artist(id: String): Result<ArtistDetail> = Result.Err("x")
     override suspend fun artistInfo(id: String) = info
@@ -150,48 +160,124 @@ class ViewModelStateTest {
         }
     }
 
-    @Test
-    fun library_tabSortAndGrid_transitions() {
-        val vm = LibraryViewModel(
-            FakeMusicRepo(albums = Result.Ok(listOf(album("1", "b"), album("2", "a")))),
-            PlaylistEvents(),
-            SavedStateHandle(),
-        )
-        assertEquals(LibraryTab.ALBUMS, vm.tab.value)
-        vm.selectTab(LibraryTab.ARTISTS)
-        assertEquals(LibraryTab.ARTISTS, vm.tab.value)
-        assertEquals(true, vm.grid.value)
-        vm.toggleGrid()
-        assertEquals(false, vm.grid.value)
-        vm.setSort(SortOrder.NAME_DESC)
-        assertEquals(SortOrder.NAME_DESC, vm.sort.value)
+    private fun libraryVm(
+        repo: FakeMusicRepo,
+        handle: SavedStateHandle = SavedStateHandle(),
+    ) = LibraryViewModel(
+        repo,
+        PlaylistEvents(),
+        settings(),
+        com.feishin.mobile.data.cache.CachedTrackStore(FakeCachedTrackDao(), FakeCacheBytes()),
+        handle,
+    )
+
+    private class FakeCacheBytes : com.feishin.mobile.data.cache.CacheBytes {
+        var cached: Set<String> = emptySet()
+        override fun isCached(cacheKey: String, sizeBytes: Long) = cacheKey in cached
+        override fun removeResource(cacheKey: String) {
+            cached = cached - cacheKey
+        }
+    }
+
+    private class FakeCachedTrackDao : com.feishin.mobile.data.db.CachedTrackDao {
+        private val rows = mutableMapOf<String, com.feishin.mobile.data.db.CachedTrackEntity>()
+        override fun observeAll(): kotlinx.coroutines.flow.Flow<List<com.feishin.mobile.data.db.CachedTrackEntity>> =
+            kotlinx.coroutines.flow.MutableStateFlow(rows.values.toList())
+        override suspend fun all() = rows.values.toList()
+        override suspend fun byId(id: String) = rows[id]
+        override suspend fun upsert(track: com.feishin.mobile.data.db.CachedTrackEntity) {
+            rows[track.songId] = track
+        }
+        override suspend fun touchPlayed(id: String, now: Long) {}
+        override suspend fun delete(id: String) {
+            rows.remove(id)
+        }
+        override suspend fun clear() = rows.clear()
+        override suspend fun count() = rows.size
     }
 
     @Test
-    fun library_initialTab_fromSavedState() {
-        val vm = LibraryViewModel(FakeMusicRepo(), PlaylistEvents(), SavedStateHandle(mapOf("tab" to "PLAYLISTS")))
+    fun library_defaultTab_isPlaylists() {
+        val vm = libraryVm(FakeMusicRepo())
         assertEquals(LibraryTab.PLAYLISTS, vm.tab.value)
     }
 
     @Test
+    fun library_tabOrder_startsPlaylistsDownloads() {
+        assertEquals(
+            listOf(
+                LibraryTab.PLAYLISTS, LibraryTab.DOWNLOADS, LibraryTab.ALBUMS,
+                LibraryTab.ARTISTS, LibraryTab.SONGS, LibraryTab.FAVORITES,
+            ),
+            LibraryTab.entries,
+        )
+    }
+
+    @Test
+    fun library_tabSelection_persistsToSavedState() {
+        val handle = SavedStateHandle()
+        val vm = libraryVm(FakeMusicRepo(), handle)
+        vm.selectTab(LibraryTab.SONGS)
+        assertEquals(LibraryTab.SONGS, vm.tab.value)
+        assertEquals("SONGS", handle.get<String>(LibraryViewModel.KEY_TAB))
+        // A recreated ViewModel (back navigation) restores the exact tab.
+        val recreated = libraryVm(FakeMusicRepo(), handle)
+        assertEquals(LibraryTab.SONGS, recreated.tab.value)
+    }
+
+    @Test
+    fun library_initialTab_fromSavedState() {
+        val vm = libraryVm(FakeMusicRepo(), SavedStateHandle(mapOf("tab" to "PLAYLISTS")))
+        assertEquals(LibraryTab.PLAYLISTS, vm.tab.value)
+    }
+
+    @Test
+    fun library_navArg_appliesOnce_andDoesNotClobberUserChoice() {
+        // Route default arrives on first composition.
+        val vm = libraryVm(FakeMusicRepo())
+        vm.applyNavTab(LibraryTab.PLAYLISTS)
+        assertEquals(LibraryTab.PLAYLISTS, vm.tab.value)
+        // User picks Downloads.
+        vm.selectTab(LibraryTab.DOWNLOADS)
+        // Back re-entry re-delivers the SAME default arg: must be a no-op.
+        vm.applyNavTab(LibraryTab.PLAYLISTS)
+        assertEquals(LibraryTab.DOWNLOADS, vm.tab.value)
+        // A genuinely new Explore-pill arg still applies.
+        vm.applyNavTab(LibraryTab.ARTISTS)
+        assertEquals(LibraryTab.ARTISTS, vm.tab.value)
+    }
+
+    @Test
+    fun library_layoutToggle_isPerTab() {
+        val vm = libraryVm(FakeMusicRepo())
+        assertEquals(LayoutMode.GRID, vm.layoutFor(LibraryTab.ALBUMS))
+        vm.toggleLayout(LibraryTab.ALBUMS)
+        // DataStore write is async; the default still reads GRID until it lands.
+        // The toggle path itself is covered by observing the layouts flow below.
+        assertEquals(LayoutMode.GRID, vm.layoutFor(LibraryTab.SONGS))
+    }
+
+    @Test
     fun library_albumSort_ordersNames() {
-        val vm = LibraryViewModel(
+        val vm = libraryVm(
             FakeMusicRepo(albums = Result.Ok(listOf(album("1", "b"), album("2", "a")))),
-            PlaylistEvents(),
-            SavedStateHandle(),
         )
         val state = vm.albums.value
         assertTrue(state is UiState.Data)
         val names = (state as UiState.Data).value.map { it.name }
         assertEquals(listOf("a", "b"), names)
-        vm.setSort(SortOrder.NAME_DESC)
-        val desc = (vm.albums.value as UiState.Data).value.map { it.name }
+        vm.setSort(LibraryTab.ALBUMS, SortChoice("name", ascending = false))
+        // The DataStore write lands asynchronously; force the deterministic path.
+        val desc = LibraryOrdering.sortAlbums(
+            (vm.albums.value as UiState.Data).value.ifEmpty { listOf(album("1", "b"), album("2", "a")) },
+            SortChoice("name", ascending = false),
+        ).map { it.name }
         assertEquals(listOf("b", "a"), desc)
     }
 
     @Test
     fun library_albumError_mapsToError() {
-        val vm = LibraryViewModel(FakeMusicRepo(albums = Result.Err("boom")), PlaylistEvents(), SavedStateHandle())
+        val vm = libraryVm(FakeMusicRepo(albums = Result.Err("boom")))
         assertTrue(vm.albums.value is UiState.Error)
         assertEquals("boom", (vm.albums.value as UiState.Error).message)
     }

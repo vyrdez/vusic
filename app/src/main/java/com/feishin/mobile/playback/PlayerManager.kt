@@ -40,6 +40,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.random.Random
@@ -65,6 +67,9 @@ class PlayerManager @Inject constructor(
     private val fetcher: RadioFetcher,
     private val downloads: com.feishin.mobile.data.download.DownloadRepository,
     private val network: com.feishin.mobile.data.network.NetworkMonitor,
+    private val prefetch: PrefetchManager,
+    private val cachedTracks: com.feishin.mobile.data.cache.CachedTrackStore,
+    private val streamCache: androidx.media3.datasource.cache.SimpleCache,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var queueSeq = 0L
@@ -131,6 +136,17 @@ class PlayerManager @Inject constructor(
     init {
         connect()
         scope.launch { refreshDownloadedTracks() }
+        // The prefetch window follows every queue change automatically: edits,
+        // shuffle toggles, radio appends, skip/seek and restores all flow
+        // through _queue/_currentIndex. Debounced so rapid edits coalesce.
+        scope.launch {
+            combine(_queue, _currentIndex) { q, i -> q to i }
+                .debounce(800)
+                .collect { (q, i) -> prefetch.onQueue(q, i) }
+        }
+        // Auto-cache played songs: once past 50%, ensure the current item is
+        // fully cached (a finished song always passes 50% first).
+        var autoCachedId: String? = null
         scope.launch {
             var ticks = 0
             while (true) {
@@ -140,6 +156,21 @@ class PlayerManager @Inject constructor(
                 _duration.value = c.duration.takeIf { it > 0 } ?: 0L
                 // Crossfade ramp + ReplayGain, recomputed on the same 500ms tick.
                 if (c.isPlaying) updateVolume(_position.value, _duration.value)
+                val cur = _current.value
+                val dur = _duration.value
+                if (c.isPlaying && cur != null && dur > 0 && _position.value >= dur / 2) {
+                    val key = "${cur.id}@${_currentIndex.value}"
+                    if (autoCachedId != key) {
+                        autoCachedId = key
+                        scope.launch {
+                            val s = settings.flow.first()
+                            if (s.cachePlayedSongs) {
+                                val qid = currentQueueId()
+                                if (qid != null) prefetch.ensureFull(cur, qid)
+                            }
+                        }
+                    }
+                }
                 // Persist position cheaply: every ~15s while playing.
                 if (c.isPlaying && ++ticks % 30 == 0) persist()
             }
@@ -172,7 +203,9 @@ class PlayerManager @Inject constructor(
                         ?: mediaItem?.let { TrackMediaItems.toTrack(it) }
                     _current.value?.let { recordRecent(it) }
                     scope.launch { applyReplayGain(_current.value) }
+                    scope.launch { cachedTracks.touchPlayed(_current.value?.id.orEmpty()) }
                     maybeAppendRadio()
+                    refreshPrefetchWindow()
                     scope.launch { persist() }
                 }
 
@@ -324,7 +357,12 @@ class PlayerManager @Inject constructor(
     /** Fresh, signed stream URL (stream auth params are single-use). */
     private suspend fun streamUrlFor(track: Track): String? {
         val c = creds.state.value ?: return null
-        val (bitrate, format) = streamParams()
+        // A fully cached copy was stored at a specific quality. Offline, or when
+        // the network would pick a DIFFERENT quality than the cached copy, using
+        // the cached quality is what makes the CacheDataSource hit instead of
+        // silently trying the (unreachable) network.
+        val cachedQuality = if (isOffline()) cachedTracks.cachedQuality(track.id) else null
+        val (bitrate, format) = cachedQuality ?: streamParams()
         return StreamUrlProvider.build(c.serverUrl, c.username, c.password, track.id, bitrate, format)
     }
 
@@ -461,9 +499,10 @@ class PlayerManager @Inject constructor(
                 var attempts = 0
                 var filled = false
                 var transientFailure = false
+                val batchSize = settings.flow.first().radioBatchSize
                 while (gen == radioTrigger.currentGeneration() && !filled && attempts < 4) {
                     attempts++
-                    when (val result = fetcher.fetchBatch(seed, exclusions(), RadioProgrammer.BATCH_SIZE)) {
+                    when (val result = fetcher.fetchBatch(seed, exclusions(), batchSize)) {
                         is Result.Ok -> {
                             val batch = result.value
                             if (gen != radioTrigger.currentGeneration()) break
@@ -516,8 +555,17 @@ class PlayerManager @Inject constructor(
         _queue.value.map { it.song.id }.toSet() + recentTracks.map { it.id }.toSet() + radioPlayedIds.snapshot()
 
     /** True when reads must not touch the network. */
-    private suspend fun isOffline(): Boolean =
-        runCatching { settings.settingsNow().offlineMode }.getOrDefault(false) || !network.isOnline.value
+    suspend fun isOffline(): Boolean {
+        val s = runCatching { settings.settingsNow() }.getOrDefault(null)
+        // Auto offline follows the live network state when the user enables it.
+        val auto = s?.autoOffline == true && !network.isOnline.value
+        return s?.offlineMode == true || auto || !network.isOnline.value
+    }
+
+    /** Snapshot for the prefetch window; safe to call from any state change. */
+    private fun refreshPrefetchWindow() {
+        prefetch.onQueue(_queue.value.toList(), _currentIndex.value)
+    }
 
     /** Offline radio: same genre first, then any downloaded song. */
     private fun localRadioBatch(seed: Track, excludeIds: Set<String>): List<Track> {
@@ -561,6 +609,7 @@ class PlayerManager @Inject constructor(
                 }
                 var attempts = 0
                 var appended = false
+                val batchSize = settings.flow.first().radioBatchSize
                 while (gen == radioTrigger.currentGeneration() && _radioActive.value &&
                     RadioProgrammer.shouldAppend(_currentIndex.value, _queue.value.size) && attempts < 6 && !appended
                 ) {
@@ -568,7 +617,7 @@ class PlayerManager @Inject constructor(
                     val seed = recentTracks.lastOrNull { it.id != _current.value?.id }
                         ?: _radioSeed.value ?: _current.value
                     if (seed == null) break
-                    when (val result = fetcher.fetchBatch(seed, exclusions(), RadioProgrammer.BATCH_SIZE)) {
+                    when (val result = fetcher.fetchBatch(seed, exclusions(), batchSize)) {
                         is Result.Ok -> {
                             if (gen != radioTrigger.currentGeneration()) break
                             if (result.value.isNotEmpty()) {

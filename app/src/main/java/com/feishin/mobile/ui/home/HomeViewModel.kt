@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
@@ -273,20 +274,21 @@ class HomeViewModel @Inject constructor(
 
     /** Mixes are extra content; they must never block the rest of Home. */
     private suspend fun loadMixes() {
+        val batch = settings.flow.first().radioBatchSize
         val seeds = _ui.value.frequent.mapNotNull { it.artistId }.distinct().take(3)
         val mixes = ArrayList<Mix>()
         val found = supervisorScope {
             seeds.mapIndexed { i, seed ->
                 async {
-                    val similar = (repo.similarSongs(null, seed, 25) as? Result.Ok)?.value.orEmpty()
-                    if (similar.size >= 5) Mix("My Mix ${i + 1}", similar) else null
+                    val similar = (repo.similarSongs(null, seed, batch + 5) as? Result.Ok)?.value.orEmpty()
+                    if (similar.size >= 5) Mix("My Mix ${i + 1}", similar.take(batch)) else null
                 }
             }.awaitAll().filterNotNull()
         }
         mixes += found
         if (mixes.isEmpty()) {
             val songs = _ui.value.quickPicks
-            if (songs.size >= 10) mixes += Mix("My Mix 1", songs.shuffled().take(25))
+            if (songs.size >= 10) mixes += Mix("My Mix 1", songs.shuffled().take(batch))
         }
         if (mixes.isNotEmpty()) _ui.value = _ui.value.copy(mixes = mixes)
     }

@@ -94,6 +94,17 @@ class DownloadRepository @Inject constructor(
 
     suspend fun completedTracks(): List<DownloadEntity> = dao.completed()
 
+    /** Actively transferring rows (for the Storage screen counters). */
+    suspend fun activeDownloads(): List<DownloadEntity> = dao.pending()
+
+    suspend fun activeCount(): Int = activeDownloads().count {
+        it.statusEnum == com.feishin.mobile.data.db.DownloadStatus.DOWNLOADING
+    }
+
+    suspend fun queuedCount(): Int = activeDownloads().count {
+        it.statusEnum == com.feishin.mobile.data.db.DownloadStatus.QUEUED
+    }
+
     suspend fun totalBytes(): Long = dao.completed().fold(0L) { acc, e -> acc + e.sizeBytes }
 
     // ---------- enqueue ----------
@@ -286,7 +297,20 @@ class DownloadRepository @Inject constructor(
         covers.upsert(CachedCoverEntity(coverArtId, file.absolutePath, file.length()))
     }
 
-    suspend fun coverCacheBytes(): Long = covers.allSizes().sum()
+    suspend fun coverCacheBytes(): Long = covers.allSizes().fold(0L) { acc, v -> acc + v }
+
+    /** Finished-download bytes on disk. */
+    suspend fun downloadedBytes(): Long = dao.completed().fold(0L) { acc, e -> acc + e.sizeBytes }
+
+    /**
+     * True when storing [extraBytes] more would exceed the user's download
+     * storage cap (0 = unlimited).
+     */
+    suspend fun overDownloadCap(extraBytes: Long): Boolean {
+        val capMb = settings.settingsNow().maxDownloadMb
+        if (capMb <= 0 || extraBytes <= 0) return false
+        return downloadedBytes() + extraBytes > capMb.toLong() * 1024 * 1024
+    }
 
     suspend fun clearCoverCache() {
         covers.clear()

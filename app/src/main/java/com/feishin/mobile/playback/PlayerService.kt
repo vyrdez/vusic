@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package com.feishin.mobile.playback
 
 import android.app.PendingIntent
@@ -31,7 +33,6 @@ import kotlinx.coroutines.launch
  * us the media notification, lock-screen controls and Bluetooth/headset buttons
  * for free. ExoPlayer handles audio focus and noisy transitions.
  */
-@androidx.media3.common.util.UnstableApi
 @AndroidEntryPoint
 class PlayerService : MediaSessionService() {
 
@@ -54,8 +55,24 @@ class PlayerService : MediaSessionService() {
         val upstream = androidx.media3.datasource.DefaultDataSource.Factory(this, httpFactory)
         val cacheFactory = CacheDataSource.Factory()
             .setCache(cache)
-            .setUpstreamDataSourceFactory(upstream)
+            .setUpstreamDataSourceFactory(UpstreamLogger(upstream))
+            // Stable keys (song + quality, no per-request salt): prefetched
+            // bytes and replays hit the same spans instead of re-downloading.
+            .setCacheKeyFactory { spec ->
+                com.feishin.mobile.core.common.StableCacheKey.keyFor(spec.uri.toString())
+            }
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+            .setEventListener(
+                object : CacheDataSource.EventListener {
+                    override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
+                        android.util.Log.d(TAG, "cache hit bytes=$cachedBytesRead cacheSize=$cacheSizeBytes")
+                    }
+
+                    override fun onCacheIgnored(reason: Int) {
+                        android.util.Log.d(TAG, "cache ignored reason=$reason")
+                    }
+                },
+            )
 
         val exo = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(cacheFactory))
@@ -141,5 +158,29 @@ class PlayerService : MediaSessionService() {
     private fun stopTicker() {
         ticker?.cancel()
         ticker = null
+    }
+
+    companion object {
+        const val TAG = "PlayerCache"
+    }
+}
+
+/**
+ * Upstream decorator that logs every real network open with its stable key.
+ * A second play of a fully cached song must produce cache-hit logs and no
+ * "upstream open" line at all — that is the zero-network-request proof.
+ */
+private class UpstreamLogger(
+    private val delegate: androidx.media3.datasource.DataSource.Factory,
+) : androidx.media3.datasource.DataSource.Factory {
+    override fun createDataSource(): androidx.media3.datasource.DataSource {
+        val inner = delegate.createDataSource()
+        return object : androidx.media3.datasource.DataSource by inner {
+            override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long {
+                val key = com.feishin.mobile.core.common.StableCacheKey.keyFor(dataSpec.uri.toString())
+                android.util.Log.d(PlayerService.TAG, "upstream open key=$key uri=${dataSpec.uri.host}${dataSpec.uri.path}")
+                return inner.open(dataSpec)
+            }
+        }
     }
 }

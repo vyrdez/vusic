@@ -152,6 +152,10 @@ class DownloadWorker @AssistedInject constructor(
                     dao.setStatus(row.songId, DownloadStatus.PAUSED.name, "Not enough storage")
                     return Outcome.PAUSED
                 }
+                if (total > 0 && repo.overDownloadCap(total - startAt)) {
+                    dao.setStatus(row.songId, DownloadStatus.PAUSED.name, "Storage limit reached")
+                    return Outcome.PAUSED
+                }
                 val expected = if (total > 0) total else row.expectedBytes
                 var written = if (appending) startAt else 0L
                 partial.parentFile?.mkdirs()

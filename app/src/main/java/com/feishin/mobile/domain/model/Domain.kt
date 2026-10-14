@@ -119,6 +119,7 @@ data class SearchResults(
     val artists: List<Artist> = emptyList(),
     val albums: List<Album> = emptyList(),
     val tracks: List<Track> = emptyList(),
+    val playlists: List<Playlist> = emptyList(),
 )
 
 @Serializable
@@ -126,4 +127,22 @@ data class ArtistInfo(
     val biography: String = "",
     val imageUrl: String? = null,
     val similarArtists: List<Artist> = emptyList(),
+)
+
+/** What the Server & Account screen shows about the backend. */
+@Serializable
+data class ServerInfo(
+    /** API version from ping, e.g. "1.16.1". */
+    val apiVersion: String = "",
+    /** Inferred product: Navidrome, Subsonic-compatible, or Unknown. */
+    val product: String = "Unknown",
+    /** Extension names from getOpenSubsonicExtensions, empty when unsupported. */
+    val extensions: List<String> = emptyList(),
+)
+
+/** Library scan state for the "Scan library" row. */
+@Serializable
+data class ScanStatus(
+    val scanning: Boolean = false,
+    val count: Int = 0,
 )

@@ -14,8 +14,10 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.DropdownMenu
@@ -34,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
@@ -42,7 +45,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.feishin.mobile.core.common.UiState
+import com.feishin.mobile.data.cache.CACHED_SONGS_PLAYLIST_ID
 import com.feishin.mobile.data.favorites.FAVORITE_SONGS_PLAYLIST_ID
+import com.feishin.mobile.data.settings.LayoutMode
 import com.feishin.mobile.domain.model.PlaylistCover
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
@@ -87,41 +92,50 @@ fun LibraryScreen(
     onActions: (ActionTarget) -> Unit,
 ) {
     val tab by vm.tab.collectAsState()
-    val grid by vm.grid.collectAsState()
-    val sort by vm.sort.collectAsState()
-    var sortMenu by remember { mutableStateOf(false) }
+    val layouts by vm.layouts.collectAsState()
+    val sorts by vm.sorts.collectAsState()
+    val queries by vm.queries.collectAsState()
+    val grid = vm.layoutFor(tab) == LayoutMode.GRID
+    var showSortSheet by remember { mutableStateOf(false) }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
     val nowPlaying by player.current.collectAsState()
     val isPlaying by player.isPlaying.collectAsState()
     val scope = rememberCoroutineScope()
+    val query = queries[tab].orEmpty()
 
-    // The nav arg is authoritative when it changes (Explore pills / restored entry).
-    LaunchedEffect(initialTab) { initialTab?.let { vm.selectTab(it) } }
+    // The nav arg is authoritative only the first time each value is seen
+    // (Explore pills); a back re-entry must not reset the user's tab.
+    LaunchedEffect(initialTab) { vm.applyNavTab(initialTab) }
 
     Column(Modifier.fillMaxSize()) {
-        // Title row: title on the left, view/sort controls on the right, so the
-        // chip row below can scroll horizontally without colliding with them.
+        // Title row: title on the left; search, view toggle and sort on the
+        // right, so the chip row below can scroll without colliding with them.
         Row(
             Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("Library", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            IconButton(onClick = { vm.toggleGrid() }, modifier = Modifier.size(48.dp)) {
+            IconButton(onClick = { searchOpen = !searchOpen }, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Default.Search, contentDescription = "Search library")
+            }
+            IconButton(onClick = { vm.toggleLayout(tab) }, modifier = Modifier.size(48.dp)) {
                 Icon(
                     if (grid) Icons.Default.ViewList else Icons.Default.GridView,
                     contentDescription = "Toggle view",
                 )
             }
-            IconButton(onClick = { sortMenu = true }, modifier = Modifier.size(48.dp)) {
+            IconButton(onClick = { showSortSheet = true }, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Default.Sort, contentDescription = "Sort")
             }
-            DropdownMenu(sortMenu, onDismissRequest = { sortMenu = false }) {
-                SortOrder.entries.forEach { s ->
-                    DropdownMenuItem(
-                        text = { Text(s.name) },
-                        onClick = { vm.setSort(s); sortMenu = false },
-                    )
-                }
-            }
+        }
+        // Inline search: filters the current tab locally, query kept in memory
+        // while the tab is open.
+        if (searchOpen) {
+            LibrarySearchField(
+                query = query,
+                onQuery = { vm.setQuery(tab, it) },
+                onClose = { searchOpen = false; vm.clearQuery(tab) },
+            )
         }
         // Chips own their line and scroll on their own.
         FilterChipRow(
@@ -129,6 +143,14 @@ fun LibraryScreen(
             selected = tabLabel(tab),
             onSelect = { label -> vm.selectTab(LibraryTab.entries.first { tabLabel(it) == label }) },
         )
+        if (showSortSheet) {
+            SortBottomSheet(
+                tabName = tab.name,
+                current = sorts[tab] ?: com.feishin.mobile.core.common.LibrarySorts.default(tab.name),
+                onSelect = { vm.setSort(tab, it) },
+                onDismiss = { showSortSheet = false },
+            )
+        }
         LibraryPullToRefresh(vm, tab) {
             when (tab) {
                 LibraryTab.ALBUMS -> {
@@ -136,28 +158,32 @@ fun LibraryScreen(
                     when (val s = ui) {
                         is UiState.Loading -> com.feishin.mobile.ui.LoadingBox()
                         is UiState.Error -> ErrorState(message = s.message, onRetry = { vm.loadAlbums(true) })
-                        is UiState.Empty -> EmptyState("No albums")
-                        is UiState.Data -> if (grid) {
-                            val gridState = rememberSavableGridState()
-                            val atEnd = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
-                                ?.let { it >= s.value.size - 6 } == true
-                            LaunchedEffect(atEnd, s.value.size) { if (atEnd) vm.loadAlbums() }
-                            LazyVerticalGrid(GridCells.Fixed(2), Modifier.fillMaxSize(), state = gridState, contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp)) {
-                                items(s.value, key = { it.id }) { a ->
-                                    AlbumCard(a, repo.coverArtUrl(a.coverArt, 300), onClick = { onAlbum(a.id) })
+                        is UiState.Empty -> EmptyState(if (query.isBlank()) "No albums" else "No albums match \"$query\"")
+                        is UiState.Data -> {
+                            val shown = com.feishin.mobile.core.common.LibraryOrdering.filterAlbums(s.value, query)
+                            if (shown.isEmpty()) {
+                                EmptyState("No albums match \"$query\"")
+                            } else if (grid) {
+                                val gridState = rememberSavableGridState()
+                                val atEnd = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+                                    ?.let { it >= shown.size - 6 } == true
+                                LaunchedEffect(atEnd, shown.size) { if (atEnd) vm.loadAlbums() }
+                                LazyVerticalGrid(GridCells.Fixed(2), Modifier.fillMaxSize(), state = gridState, contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp)) {
+                                    items(shown, key = { it.id }) { a ->
+                                        AlbumCard(a, repo.coverArtUrl(a.coverArt, 300), onClick = { onAlbum(a.id) })
+                                    }
                                 }
-                            }
-                        } else {
-                            val listState = rememberSavableListState()
-                            val atEnd = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
-                                ?.let { it >= s.value.size - 6 } == true
-                            LaunchedEffect(atEnd, s.value.size) { if (atEnd) vm.loadAlbums() }
-                            LazyColumn(
-                                Modifier.fillMaxSize(),
-                                state = listState,
-                                contentPadding = PaddingValues(bottom = 160.dp),
-                            ) {
-                                items(s.value, key = { it.id }) { a ->
+                            } else {
+                                val listState = rememberSavableListState()
+                                val atEnd = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+                                    ?.let { it >= shown.size - 6 } == true
+                                LaunchedEffect(atEnd, shown.size) { if (atEnd) vm.loadAlbums() }
+                                LazyColumn(
+                                    Modifier.fillMaxSize(),
+                                    state = listState,
+                                    contentPadding = PaddingValues(bottom = 160.dp),
+                                ) {
+                                    items(shown, key = { it.id }) { a ->
                                     Row(
                                         Modifier.fillMaxWidth()
                                             .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
@@ -184,38 +210,38 @@ fun LibraryScreen(
                         }
                     }
                 }
+                }
                 LibraryTab.ARTISTS -> {
                     val ui by vm.artists.collectAsState()
                     when (val s = ui) {
                         is UiState.Loading -> com.feishin.mobile.ui.LoadingBox()
                         is UiState.Error -> ErrorState(s.message, vm::refresh)
-                        is UiState.Empty -> EmptyState("No artists")
-                        is UiState.Data -> if (grid) {
-                            LazyVerticalGrid(
-                                GridCells.Fixed(2),
-                                Modifier.fillMaxSize(),
-                                state = rememberSavableGridState(),
-                                contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp),
-                            ) {
-                                items(s.value, key = { it.id }) { a ->
-                                    ArtistCard(a, repo.coverArtUrl(a.coverArt, 300), onClick = { onArtist(a.id) })
+                        is UiState.Empty -> EmptyState(if (query.isBlank()) "No artists" else "No artists match \"$query\"")
+                        is UiState.Data -> {
+                            val shown = com.feishin.mobile.core.common.LibraryOrdering.filterArtists(s.value, query)
+                            if (shown.isEmpty()) {
+                                EmptyState("No artists match \"$query\"")
+                            } else if (grid) {
+                                LazyVerticalGrid(
+                                    GridCells.Fixed(2),
+                                    Modifier.fillMaxSize(),
+                                    state = rememberSavableGridState(),
+                                    contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp),
+                                ) {
+                                    items(shown, key = { it.id }) { a ->
+                                        ArtistPhotoCard(a, photoUrl = vm.artistPhotoUrl(a), repo = repo, onClick = { onArtist(a.id) })
+                                        LaunchedEffect(a.id) { vm.prefetchArtistPhoto(a) }
+                                    }
                                 }
-                            }
-                        } else {
-                            LazyColumn(
-                                Modifier.fillMaxSize(),
-                                state = rememberSavableListState(),
-                                contentPadding = PaddingValues(bottom = 160.dp),
-                            ) {
-                                items(s.value, key = { it.id }) { a ->
-                                    androidx.compose.foundation.layout.Row(
-                                        Modifier.fillMaxWidth()
-                                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                                            .clickable(onClick = { onArtist(a.id) })
-                                            .padding(16.dp, 12.dp),
-                                    ) {
-                                        Text(a.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                                        Text("${a.albumCount}", style = MaterialTheme.typography.bodySmall)
+                            } else {
+                                LazyColumn(
+                                    Modifier.fillMaxSize(),
+                                    state = rememberSavableListState(),
+                                    contentPadding = PaddingValues(bottom = 160.dp),
+                                ) {
+                                    items(shown, key = { it.id }) { a ->
+                                        ArtistPhotoRow(a, photoUrl = vm.artistPhotoUrl(a), repo = repo, onClick = { onArtist(a.id) })
+                                        LaunchedEffect(a.id) { vm.prefetchArtistPhoto(a) }
                                     }
                                 }
                             }
@@ -227,20 +253,27 @@ fun LibraryScreen(
                     when (val s = ui) {
                         is UiState.Loading -> com.feishin.mobile.ui.LoadingBox()
                         is UiState.Error -> ErrorState(s.message, vm::refresh)
-                        is UiState.Empty -> EmptyState("No songs")
-                        is UiState.Data -> LazyColumn(
-                            Modifier.fillMaxSize(),
-                            state = rememberSavableListState(),
-                            contentPadding = PaddingValues(bottom = 160.dp),
-                        ) {
-                            items(s.value, key = { it.id }) { song ->
-                                TrackRow(
-                                    track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),
-                                    onClick = { player.playAll(s.value, s.value.indexOf(song), source = "Songs") },
-                                    onActions = { onActions(ActionTarget.Track(song)) },
-                                    onArtist = { id -> onArtist(id) },
-                                    isCurrent = song.id == nowPlaying?.id, isPlaying = isPlaying,
-                                )
+                        is UiState.Empty -> EmptyState(if (query.isBlank()) "No songs" else "No songs match \"$query\"")
+                        is UiState.Data -> {
+                            val shown = com.feishin.mobile.core.common.LibraryOrdering.filterSongs(s.value, query)
+                            if (shown.isEmpty()) {
+                                EmptyState("No songs match \"$query\"")
+                            } else {
+                                LazyColumn(
+                                    Modifier.fillMaxSize(),
+                                    state = rememberSavableListState(),
+                                    contentPadding = PaddingValues(bottom = 160.dp),
+                                ) {
+                                    items(shown, key = { it.id }) { song ->
+                                        TrackRow(
+                                            track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),
+                                            onClick = { player.playAll(shown, shown.indexOf(song), source = "Songs") },
+                                            onActions = { onActions(ActionTarget.Track(song)) },
+                                            onArtist = { id -> onArtist(id) },
+                                            isCurrent = song.id == nowPlaying?.id, isPlaying = isPlaying,
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -249,32 +282,53 @@ fun LibraryScreen(
                     val ui by vm.playlists.collectAsState()
                     val favsUi by vm.favs.collectAsState()
                     val favTracks = (favsUi as? UiState.Data)?.value?.tracks.orEmpty()
+                    val cached by vm.cached.collectAsState()
                     when (val s = ui) {
                         is UiState.Loading -> com.feishin.mobile.ui.LoadingBox()
                         is UiState.Error -> ErrorState(s.message, vm::refresh)
                         is UiState.Empty -> {
-                            // Even with no server playlists, Favorite songs is pinned.
+                            // Even with no server playlists, the built-ins stay pinned.
                             FavoriteSongsRow(
                                 count = favTracks.size,
                                 covers = favTracks.map { it.coverArt },
                                 repo = repo,
                                 onClick = { onPlaylist(FAVORITE_SONGS_PLAYLIST_ID) },
                             )
+                            CachedSongsRow(
+                                count = cached.size,
+                                covers = cached.map { it.coverArt },
+                                repo = repo,
+                                onClick = { onPlaylist(CACHED_SONGS_PLAYLIST_ID) },
+                            )
                         }
-                        is UiState.Data -> LazyColumn(
-                            Modifier.fillMaxSize(),
-                            state = rememberSavableListState(),
-                            contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom),
-                        ) {
-                            item(key = "favorites") {
-                                FavoriteSongsRow(
-                                    count = favTracks.size,
-                                    covers = favTracks.map { it.coverArt },
-                                    repo = repo,
-                                    onClick = { onPlaylist(FAVORITE_SONGS_PLAYLIST_ID) },
-                                )
-                            }
-                            items(s.value, key = { it.id }) { p ->
+                        is UiState.Data -> {
+                            val shown = com.feishin.mobile.core.common.LibraryOrdering.filterPlaylists(s.value, query)
+                            LazyColumn(
+                                Modifier.fillMaxSize(),
+                                state = rememberSavableListState(),
+                                contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom),
+                            ) {
+                                // Built-in collections stay pinned above server playlists.
+                                item(key = "favorites") {
+                                    FavoriteSongsRow(
+                                        count = favTracks.size,
+                                        covers = favTracks.map { it.coverArt },
+                                        repo = repo,
+                                        onClick = { onPlaylist(FAVORITE_SONGS_PLAYLIST_ID) },
+                                    )
+                                }
+                                item(key = "cached") {
+                                    CachedSongsRow(
+                                        count = cached.size,
+                                        covers = cached.map { it.coverArt },
+                                        repo = repo,
+                                        onClick = { onPlaylist(CACHED_SONGS_PLAYLIST_ID) },
+                                    )
+                                }
+                                if (shown.isEmpty() && query.isNotBlank()) {
+                                    item { EmptyState("No playlists match \"$query\"") }
+                                }
+                                items(shown, key = { it.id }) { p ->
                                 Row(
                                     Modifier.fillMaxWidth()
                                         .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
@@ -301,6 +355,7 @@ fun LibraryScreen(
                             }
                         }
                     }
+                }
                 }
                 LibraryTab.FAVORITES -> {
                     val ui by vm.favs.collectAsState()

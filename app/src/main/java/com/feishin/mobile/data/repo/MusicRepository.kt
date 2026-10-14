@@ -20,6 +20,8 @@ import com.feishin.mobile.domain.model.Genre
 import com.feishin.mobile.domain.model.Playlist
 import com.feishin.mobile.domain.model.PlaylistDetail
 import com.feishin.mobile.domain.model.SearchResults
+import com.feishin.mobile.domain.model.ServerInfo
+import com.feishin.mobile.domain.model.ScanStatus
 import com.feishin.mobile.domain.model.StarredCollection
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
@@ -50,8 +52,11 @@ class MusicRepository @Inject constructor(
     }
 
     /** True when the app should not attempt network reads at all. */
-    private suspend fun offline(): Boolean =
-        settings.settingsNow().offlineMode || !network.isOnline.value
+    private suspend fun offline(): Boolean {
+        val s = runCatching { settings.settingsNow() }.getOrDefault(null) ?: return true
+        val auto = s.autoOffline && !network.isOnline.value
+        return s.offlineMode || auto || !network.isOnline.value
+    }
 
     /**
      * Stale-while-revalidate read:
@@ -140,14 +145,51 @@ class MusicRepository @Inject constructor(
             }
         }
 
-    override suspend fun search(query: String): Result<SearchResults> = call {
-        val r = api.search3(query).response
+    override suspend fun search(query: String): Result<SearchResults> =
+        search(query, artistCount = 20, albumCount = 20, songCount = 50)
+
+    override suspend fun search(query: String, artistCount: Int, albumCount: Int, songCount: Int): Result<SearchResults> =
+        call {
+            val r = api.search3(query, artistCount, albumCount, songCount).response
+            unwrap(r.status, r.error?.message) {
+                SearchResults(
+                    artists = r.searchResult3?.artist.orEmpty().map { it.toDomain() },
+                    albums = r.searchResult3?.album.orEmpty().map { it.toDomain() },
+                    tracks = r.searchResult3?.song.orEmpty().map { it.toDomain() },
+                    playlists = r.searchResult3?.playlist.orEmpty().map { it.toDomain() },
+                )
+            }
+        }
+
+    override suspend fun serverInfo(): Result<ServerInfo> = call {
+        val ping = api.ping().response
+        if (ping.status != "ok") {
+            return@call Result.Err(ping.error?.message?.ifBlank { null } ?: "Server error")
+        }
+        val extensions = runCatching {
+            api.getOpenSubsonicExtensions().response.openSubsonicExtensions.orEmpty()
+                .map { it.name }.filter { it.isNotBlank() }
+        }.getOrDefault(emptyList())
+        val product = when {
+            // Navidrome advertises transcode/formats support; plain Subsonic
+            // servers reject the extensions endpoint entirely.
+            extensions.any { it.equals("transcode", true) || it.equals("format", true) } -> "Navidrome"
+            extensions.isNotEmpty() -> "OpenSubsonic"
+            else -> "Subsonic-compatible"
+        }
+        Result.Ok(ServerInfo(apiVersion = ping.version.ifBlank { SubsonicAuth.API_VERSION }, product = product, extensions = extensions))
+    }
+
+    override suspend fun startScan(): Result<Unit> = call {
+        val r = api.startScan().response
+        unwrap(r.status, r.error?.message) { }
+    }
+
+    override suspend fun scanStatus(): Result<ScanStatus> = call {
+        val r = api.getScanStatus().response
         unwrap(r.status, r.error?.message) {
-            SearchResults(
-                artists = r.searchResult3?.artist.orEmpty().map { it.toDomain() },
-                albums = r.searchResult3?.album.orEmpty().map { it.toDomain() },
-                tracks = r.searchResult3?.song.orEmpty().map { it.toDomain() },
-            )
+            val s = r.scanStatus
+            ScanStatus(scanning = s?.scanning == true, count = s?.count ?: 0)
         }
     }
 

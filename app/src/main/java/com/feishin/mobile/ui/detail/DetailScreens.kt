@@ -226,11 +226,15 @@ fun PlaylistDetailScreen(
     val ui by vm.ui.collectAsState()
     val nowPlaying by player.current.collectAsState()
     val isPlaying by player.isPlaying.collectAsState()
-    val isVirtual = vm.isVirtualFavorites
+    val isVirtual = vm.isVirtualFavorites || vm.isVirtualCached
     when (val s = ui) {
         is UiState.Loading -> LoadingBox()
         is UiState.Error -> ErrorBox(s.message, vm::refresh)
-        is UiState.Empty -> EmptyBox(if (isVirtual) "Nothing starred yet" else "Playlist not found")
+        is UiState.Empty -> EmptyBox(
+            if (vm.isVirtualFavorites) "Nothing starred yet"
+            else if (vm.isVirtualCached) "Nothing cached yet"
+            else "Playlist not found",
+        )
         is UiState.Data -> {
             val p = s.value
             val refreshing by vm.refreshing.collectAsState()
@@ -241,7 +245,12 @@ fun PlaylistDetailScreen(
                 topBar.scrolled = listState.firstVisibleItemIndex > 0 ||
                     listState.firstVisibleItemScrollOffset > 120
             }
-            val cover = if (isVirtual) {
+            val cover = if (vm.isVirtualCached) {
+                PlaylistCover.select(
+                    serverCoverArtId = null,
+                    trackCoverArtIds = p.tracks.map { it.coverArt },
+                )
+            } else if (isVirtual) {
                 PlaylistCover.Favorites(
                     p.tracks.mapNotNull { it.coverArt }.distinct().take(4),
                 )

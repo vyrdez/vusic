@@ -68,6 +68,15 @@ class SettingsStore internal constructor(
         val downloadFormat = stringPreferencesKey("download_format")
         val dynamicNpColor = booleanPreferencesKey("dynamic_np_color")
         val defaultLayout = stringPreferencesKey("default_layout")
+        // M5.5 additions
+        val showOfflineChip = booleanPreferencesKey("show_offline_chip")
+        val autoOffline = booleanPreferencesKey("auto_offline")
+        val radioBatchSize = intPreferencesKey("radio_batch_size")
+        val cacheUpcoming = booleanPreferencesKey("cache_upcoming")
+        val tracksToCache = intPreferencesKey("tracks_to_cache")
+        val cachePlayedSongs = booleanPreferencesKey("cache_played_songs")
+        val cacheWifiOnly = booleanPreferencesKey("cache_wifi_only")
+        val maxDownloadMb = intPreferencesKey("max_download_mb")
     }
 
     data class Settings(
@@ -100,6 +109,21 @@ class SettingsStore internal constructor(
         val downloadFormat: String = "raw",
         val dynamicNpColor: Boolean = true,
         val defaultLayout: LayoutMode = LayoutMode.GRID,
+        val showOfflineChip: Boolean = true,
+        val autoOffline: Boolean = false,
+        /** Songs per generated radio/mix batch. */
+        val radioBatchSize: Int = 20,
+        val cacheUpcoming: Boolean = true,
+        /** Upcoming tracks to keep fully buffered (1..5). */
+        val tracksToCache: Int = 2,
+        val cachePlayedSongs: Boolean = false,
+        val cacheWifiOnly: Boolean = true,
+        /** Download storage cap in MB. 0 = unlimited. */
+        val maxDownloadMb: Int = 0,
+        /** Per-tab sort choices, keyed by tab name. */
+        val librarySorts: Map<String, com.feishin.mobile.core.common.SortChoice> = emptyMap(),
+        /** Per-tab grid/list layout, keyed by tab name. */
+        val libraryLayouts: Map<String, LayoutMode> = emptyMap(),
     ) {
         /** Effective ReplayGain mode: the master switch overrides the picker. */
         val effectiveReplayGain: com.feishin.mobile.core.common.ReplayGainMode
@@ -139,7 +163,37 @@ class SettingsStore internal constructor(
             dynamicNpColor = p[K.dynamicNpColor] ?: true,
             defaultLayout = runCatching { LayoutMode.valueOf(p[K.defaultLayout] ?: "GRID") }
                 .getOrDefault(LayoutMode.GRID),
+            showOfflineChip = p[K.showOfflineChip] ?: true,
+            autoOffline = p[K.autoOffline] ?: false,
+            radioBatchSize = (p[K.radioBatchSize] ?: 20).coerceIn(10, 50),
+            cacheUpcoming = p[K.cacheUpcoming] ?: true,
+            tracksToCache = (p[K.tracksToCache] ?: 2).coerceIn(1, 5),
+            cachePlayedSongs = p[K.cachePlayedSongs] ?: false,
+            cacheWifiOnly = p[K.cacheWifiOnly] ?: true,
+            maxDownloadMb = (p[K.maxDownloadMb] ?: 0).coerceAtLeast(0),
+            librarySorts = p.asMap()
+                .filterKeys { it.name.startsWith(SORT_PREFIX) }
+                .mapNotNull { (k, v) ->
+                    val tab = k.name.removePrefix(SORT_PREFIX)
+                    (v as? String)?.let { raw ->
+                        tab to com.feishin.mobile.core.common.SortChoice.parse(
+                            raw, com.feishin.mobile.core.common.LibrarySorts.default(tab).option,
+                        )
+                    }
+                }.toMap(),
+            libraryLayouts = p.asMap()
+                .filterKeys { it.name.startsWith(LAYOUT_PREFIX) }
+                .mapNotNull { (k, v) ->
+                    val tab = k.name.removePrefix(LAYOUT_PREFIX)
+                    runCatching { LayoutMode.valueOf(v as String) }.getOrNull()?.let { tab to it }
+                }.toMap(),
         )
+    }
+
+    companion object {
+        const val SORT_PREFIX = "library_sort_"
+        const val LAYOUT_PREFIX = "library_layout_"
+        val RADIO_BATCH_OPTIONS = listOf(10, 20, 30, 50)
     }
 
     suspend fun setTheme(v: ThemeMode) = edit { it[K.theme] = v.name }
@@ -166,6 +220,46 @@ class SettingsStore internal constructor(
     suspend fun setDownloadFormat(v: String) = edit { it[K.downloadFormat] = v }
     suspend fun setDynamicNpColor(v: Boolean) = edit { it[K.dynamicNpColor] = v }
     suspend fun setDefaultLayout(v: LayoutMode) = edit { it[K.defaultLayout] = v.name }
+    suspend fun setShowOfflineChip(v: Boolean) = edit { it[K.showOfflineChip] = v }
+    suspend fun setAutoOffline(v: Boolean) = edit { it[K.autoOffline] = v }
+    suspend fun setRadioBatchSize(v: Int) = edit { it[K.radioBatchSize] = v.coerceIn(10, 50) }
+    suspend fun setCacheUpcoming(v: Boolean) = edit { it[K.cacheUpcoming] = v }
+    suspend fun setTracksToCache(v: Int) = edit { it[K.tracksToCache] = v.coerceIn(1, 5) }
+    suspend fun setCachePlayedSongs(v: Boolean) = edit { it[K.cachePlayedSongs] = v }
+    suspend fun setCacheWifiOnly(v: Boolean) = edit { it[K.cacheWifiOnly] = v }
+    suspend fun setMaxDownloadMb(v: Int) = edit { it[K.maxDownloadMb] = v.coerceAtLeast(0) }
+
+    /** Per-tab sort choice, e.g. tab = "ALBUMS". */
+    suspend fun setLibrarySort(tab: String, choice: com.feishin.mobile.core.common.SortChoice) =
+        edit { it[stringPreferencesKey(SORT_PREFIX + tab)] = choice.serialize() }
+
+    /** Per-tab grid/list layout, e.g. tab = "ALBUMS". */
+    suspend fun setLibraryLayout(tab: String, mode: LayoutMode) =
+        edit { it[stringPreferencesKey(LAYOUT_PREFIX + tab)] = mode.name }
+
+    fun librarySortFlow(tab: String): Flow<com.feishin.mobile.core.common.SortChoice> =
+        flow.map { s ->
+            s.librarySorts[tab] ?: com.feishin.mobile.core.common.LibrarySorts.default(tab)
+        }
+
+    fun libraryLayoutFlow(tab: String): Flow<LayoutMode> =
+        flow.map { s -> s.libraryLayouts[tab] ?: s.defaultLayout }
+
+    /**
+     * Resets the Sound & Playback section to defaults (used by the confirm
+     * dialog). Connectivity/appearance/library/download prefs are untouched.
+     */
+    suspend fun resetPlaybackDefaults() = edit {
+        it.remove(K.wifiBitrate); it.remove(K.wifiFormat)
+        it.remove(K.mobileBitrate); it.remove(K.mobileFormat)
+        it.remove(K.downloadBitrate); it.remove(K.downloadFormat); it.remove(K.downloadOriginal)
+        it.remove(K.replayGain); it.remove(K.replayGainMode)
+        it.remove(K.replayGainPreampDb); it.remove(K.replayGainFallbackDb)
+        it.remove(K.gapless); it.remove(K.crossfade); it.remove(K.crossfadeSeconds)
+        it.remove(K.cacheUpcoming); it.remove(K.tracksToCache); it.remove(K.cachePlayedSongs)
+        it.remove(K.cacheWifiOnly)
+        it.remove(K.pauseOnHeadphone); it.remove(K.resumeOnFocusGain)
+    }
 
     suspend fun setPinned(key: String, pinned: Boolean) = edit {
         it[K.pins] = if (pinned) it[K.pins].orEmpty() + key else it[K.pins].orEmpty() - key
@@ -181,6 +275,13 @@ class SettingsStore internal constructor(
     }
 
     suspend fun clearRecentSearches() = edit { it.remove(K.recentSearches) }
+
+    suspend fun removeRecentSearch(query: String) {
+        edit {
+            val current = it[K.recentSearches]?.split(RECENT_SEP)?.filter { s -> s.isNotBlank() } ?: emptyList()
+            it[K.recentSearches] = current.filter { s -> s != query }.joinToString(RECENT_SEP)
+        }
+    }
 
     suspend fun pinsNow(): Set<String> = flow.first().pins
 

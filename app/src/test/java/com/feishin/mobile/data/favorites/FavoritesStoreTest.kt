@@ -35,6 +35,11 @@ private class FavFakeRepo : MusicDataRepository {
     override suspend fun genres() = Result.Ok(emptyList<com.feishin.mobile.domain.model.Genre>())
     override suspend fun playlists() = Result.Ok(emptyList<com.feishin.mobile.domain.model.Playlist>())
     override suspend fun search(query: String) = Result.Ok(SearchResults())
+    override suspend fun search(query: String, artistCount: Int, albumCount: Int, songCount: Int) =
+        Result.Ok(SearchResults())
+    override suspend fun serverInfo() = Result.Ok(com.feishin.mobile.domain.model.ServerInfo())
+    override suspend fun startScan() = Result.Ok(Unit)
+    override suspend fun scanStatus() = Result.Ok(com.feishin.mobile.domain.model.ScanStatus())
     override suspend fun album(id: String): Result<AlbumDetail> = Result.Err("x")
     override suspend fun artist(id: String): Result<ArtistDetail> = Result.Err("x")
     override suspend fun artistInfo(id: String) = Result.Ok(ArtistInfo())

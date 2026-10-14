@@ -139,10 +139,32 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   long-press alone was unreliable for the user. Tap still jumps, the handle
   still drags, swipe still removes; opening the sheet does not close the queue.
 - [ ] M5 offline+settings (downloads, stream cache, bitrate wifi/mobile, theme, cert toggle, logout)
-- [ ] M6 extras (Auto manifest support, home screen widget, README, final APK verify)
+- [x] M5.5 library fixes, Search and Settings redesign, smart cache
+  (Library: tab selection persisted through SavedStateHandle so back from
+  Downloads & storage returns to the Downloads tab, new tab order
+  Playlists/Downloads/Albums/Artists/Songs/Favorites with Playlists as the
+  fresh-launch default, inline per-tab search that filters locally, circular
+  artist photos from getArtistInfo2 with cover-art and initial fallbacks, and a
+  "Sort by" bottom sheet with readable per-tab options, direction toggle,
+  checkmark and DataStore persistence; Search: pill field with back/clear and
+  autofocus, filter chips, recent searches with per-item removal, All view with
+  colored section titles, top result, 5-song preview + View more, single-type
+  paging with infinite scroll, 300ms debounce with stale-request cancellation,
+  skeletons, empty/error states and local offline search; Settings: card home
+  with live state summaries and an Offline chip, sub-screens (Server & Account
+  with server type/API version/scan/test/logout+keep-downloads, Appearance &
+  Layout per-tab layout+sort+mix length, Sound & Playback with ReplayGain
+  sliders, transitions, the playback-cache section, battery exemption and reset
+  to defaults, Connectivity with auto-offline and warnings, Storage with a usage
+  bar, download cap, song/image cache controls and a Dangerous section, About);
+  smart cache: CacheWriter-based prefetch of the next N queue items with
+  stable Media3 cache keys shared with playback, cancellation on queue changes,
+  Wi-Fi-only gate, auto-cache of played songs, and a built-in Cached collection
+  tracked in Room that plays offline and self-prunes on eviction; 250 unit tests)
+- [ ] M6 extras (Auto polish, home screen widget, README, final APK verify)
 
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
-`testDebugUnitTest` 217/217 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
+`testDebugUnitTest` 250/250 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
 LIVE on-device test (emulator Pixel 7, API 34) against server.example.com: login OK,
 Home with real albums/art, album detail (17 tracks), streaming playback confirmed
 (mini player + Now Playing 0:33/3:42 + audio focus), zero FATAL crashes. Probe script
@@ -200,6 +222,33 @@ playlists/genres/starred2 all OK. No adb physical device; emulator AVD `feishin_
   queued scrobbles/stars were observed in Room (8 rows) then replayed to 0 pending
   on reconnect with the starred song confirmed on the server via getStarred2;
   switching settings mid-song did not restart playback; zero FATALs.
+- M5.5 root cause (Library back navigation): the Library route carries a default
+  tab argument, and the screen re-applied it with `selectTab(initialTab)` on
+  every entry. Coming back from Downloads & storage re-delivered that stale
+  default (Playlists) over the user's Downloads selection. Fixed by persisting
+  the tab in the SavedStateHandle and applying each nav-arg value only once.
+- M5.5 cache keys: Media3 keys the cache by the full URI, and stream URLs carry a
+  fresh salt per request, so nothing could ever hit. `StableCacheKey` keeps only
+  the endpoint path plus id/maxBitRate/format and is shared by the player, the
+  prefetch writer and the Cached collection. Verified on device: a prefetched
+  song plays with a cache hit and zero upstream opens, including offline.
+- M5.5 cache note: because the requested quality follows the network (Wi-Fi vs
+  mobile), offline playback requests the quality the cached copy was stored at,
+  otherwise airplane mode would build a mobile-quality key and miss the cache.
+- M5.5 limitations: stream/image cache sizes apply on next launch (Media3/Coil
+  fix capacity at construction); "auto offline" and the offline chip share one
+  effective-offline rule; the Cached collection prunes itself when the LRU
+  evictor removes bytes; Library inline search filters the loaded page only.
+- M5.5 device verification (emulator Pixel 7, live server): Library opens on
+  Playlists with the specified tab order; Downloads > Manage > back returns to
+  the Downloads tab; the Sort sheet shows readable options + direction; Search
+  renders the pill, chips, recent searches and the All view (Top result, colored
+  Song/Album/Artist titles); Settings renders every card and sub-screen; a song
+  downloaded (7.8 MB on disk) and appears in the Downloads tab; prefetch logged
+  two completed songs with stable keys and a skipped track produced a cache hit
+  with no upstream open; with airplane mode on, the Cached collection listed the
+  cached songs and played one from cache with zero network requests and zero
+  FATALs.
 - M4.7 root cause (the "Nothing playing" text): after Clear the queue is empty
   so `player.current` becomes null, but `showNowPlaying` stayed true and the
   Now Playing overlay's null branch rendered a transparent box with

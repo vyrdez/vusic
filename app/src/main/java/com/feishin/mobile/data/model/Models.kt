@@ -57,6 +57,9 @@ data class SubsonicResponse(
     val topSongs: TopSongsDto? = null,
     val similarSongs2: SimilarSongs2Dto? = null,
     val artistInfo2: ArtistInfo2Dto? = null,
+    val scanStatus: ScanStatusDto? = null,
+    @SerialName("openSubsonicExtensions")
+    val openSubsonicExtensions: List<OpenSubsonicExtensionDto>? = null,
 )
 
 @Serializable
@@ -177,6 +180,8 @@ data class SearchResult3Dto(
     val album: List<AlbumDto> = emptyList(),
     @Serializable(with = SongDtoListSerializer::class)
     val song: List<SongDto> = emptyList(),
+    @Serializable(with = PlaylistDtoListSerializer::class)
+    val playlist: List<PlaylistDto> = emptyList(),
 )
 
 @Serializable
@@ -287,6 +292,22 @@ data class TopSongsDto(
 data class SimilarSongs2Dto(
     @Serializable(with = SongDtoListSerializer::class)
     val song: List<SongDto> = emptyList(),
+)
+
+/** startScan / getScanStatus. `scanning` false with a count means idle. */
+@Serializable
+data class ScanStatusDto(
+    val scanning: Boolean = false,
+    val count: Int = 0,
+    val folderCount: Int? = null,
+    val lastScan: String? = null,
+)
+
+/** getOpenSubsonicExtensions: one entry per supported extension. */
+@Serializable
+data class OpenSubsonicExtensionDto(
+    val name: String = "",
+    val versions: List<Int> = emptyList(),
 )
 
 /** getArtistInfo2. Every field is optional; servers differ wildly. */

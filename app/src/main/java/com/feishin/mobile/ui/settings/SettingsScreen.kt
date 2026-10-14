@@ -1,9 +1,6 @@
 package com.feishin.mobile.ui.settings
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,25 +12,35 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.SettingsInputAntenna
+import androidx.compose.material.icons.filled.Speaker
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.feishin.mobile.BuildConfig
@@ -45,144 +52,237 @@ import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.data.settings.ThemeMode
 import com.feishin.mobile.ui.theme.VusicColors
 
+private enum class SettingsRoute {
+    HOME, SERVER, APPEARANCE, SOUND, CONNECTIVITY, STORAGE, ABOUT
+}
+
 @Composable
 fun SettingsScreen(
     vm: SettingsViewModel = hiltViewModel(),
     onLogout: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenLibraryDownloads: () -> Unit = onOpenDownloads,
 ) {
-    val settings by vm.store.flow.collectAsState(initial = null)
-    val test by vm.test.collectAsState()
-    val online by vm.network.isOnline.collectAsState()
-    val pending by vm.offlineSync.pendingCount.collectAsState(initial = 0)
-    val totalBytes by vm.downloads.totalSizeBytes.collectAsState(initial = 0L)
-    val s = settings
-
-    var showLogout by remember { mutableStateOf(false) }
-    var keepDownloads by remember { mutableStateOf(true) }
+    var route by rememberSaveable { mutableStateOf(SettingsRoute.HOME) }
     val topBar = com.feishin.mobile.ui.LocalTopBarController.current
-    val creds by vm.credentials.collectAsState()
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        topBar.title = "Settings"
+    LaunchedEffect(route) {
+        topBar.title = if (route == SettingsRoute.HOME) "Settings" else null
         topBar.alwaysShowTitle = true
     }
-
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        if (s == null) {
-            Text("Loading…")
-            return@Column
+    if (route != SettingsRoute.HOME) {
+        BackHandler { route = SettingsRoute.HOME }
+    }
+    when (route) {
+        SettingsRoute.HOME -> SettingsHome(vm, onOpen = { route = it })
+        SettingsRoute.SERVER -> SubScreen("Server & Account", onBack = { route = SettingsRoute.HOME }) {
+            ServerAccountScreen(vm, onLogout)
         }
+        SettingsRoute.APPEARANCE -> SubScreen("Appearance & Layout", onBack = { route = SettingsRoute.HOME }) {
+            AppearanceScreen(vm)
+        }
+        SettingsRoute.SOUND -> SubScreen("Sound & Playback", onBack = { route = SettingsRoute.HOME }) {
+            SoundScreen(vm)
+        }
+        SettingsRoute.CONNECTIVITY -> SubScreen("Connectivity", onBack = { route = SettingsRoute.HOME }) {
+            ConnectivityScreen(vm)
+        }
+        SettingsRoute.STORAGE -> SubScreen("Storage", onBack = { route = SettingsRoute.HOME }) {
+            StorageScreen(vm, onOpenDownloads, onOpenLibraryDownloads)
+        }
+        SettingsRoute.ABOUT -> SubScreen("About", onBack = { route = SettingsRoute.HOME }) {
+            AboutScreen()
+        }
+    }
+}
 
-        // ---------- Account ----------
-        Section("Account")
-        var serverUrl by remember(creds?.serverUrl) { mutableStateOf(creds?.serverUrl.orEmpty()) }
-        OutlinedTextField(
-            value = serverUrl,
-            onValueChange = { serverUrl = it },
-            label = { Text("Server URL") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
+@Composable
+private fun SubScreen(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+            }
+            Text(title, style = MaterialTheme.typography.headlineSmall)
+        }
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+            content()
+            Spacer(Modifier.height(48.dp))
+        }
+    }
+}
+
+@Composable
+private fun SettingsHome(
+    vm: SettingsViewModel,
+    onOpen: (SettingsRoute) -> Unit,
+) {
+    val settings by vm.store.flow.collectAsState(initial = null)
+    val s = settings
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+    ) {
+        if (s != null && (s.offlineMode || !vm.network.isOnline.collectAsState().value) && s.showOfflineChip) {
+            OfflineChip()
+            Spacer(Modifier.height(8.dp))
+        }
+        SettingsHomeCard(
+            icon = Icons.Default.AccountCircle,
+            title = "Server & Account",
+            summary = vm.credentials.collectAsState().value?.let { "${it.username} · ${it.serverUrl}" } ?: "Not signed in",
+            onClick = { onOpen(SettingsRoute.SERVER) },
         )
-        Spacer(Modifier.height(4.dp))
+        SettingsHomeCard(
+            icon = Icons.Default.Palette,
+            title = "Appearance & Layout",
+            summary = s?.let { "${it.theme.name.lowercase().replaceFirstChar(Char::uppercase)} · ${it.defaultLayout.name.lowercase()} layout" } ?: "…",
+            onClick = { onOpen(SettingsRoute.APPEARANCE) },
+        )
+        SettingsHomeCard(
+            icon = Icons.Default.Speaker,
+            title = "Sound & Playback",
+            summary = s?.let {
+                val q = if (it.wifiBitrate == 0) "Original" else "${it.wifiBitrate} kbps"
+                "$q · ${it.replayGainMode.name.lowercase()} gain" +
+                    if (it.crossfade) " · crossfade ${it.crossfadeSeconds}s" else ""
+            } ?: "…",
+            onClick = { onOpen(SettingsRoute.SOUND) },
+        )
+        SettingsHomeCard(
+            icon = Icons.Default.SettingsInputAntenna,
+            title = "Connectivity",
+            summary = s?.let {
+                buildList {
+                    if (it.offlineMode) add("Offline mode")
+                    if (it.autoOffline) add("Auto offline")
+                    if (it.allowSelfSigned) add("Self-signed allowed")
+                    if (isEmpty()) add("Online")
+                }.joinToString(" · ")
+            } ?: "…",
+            onClick = { onOpen(SettingsRoute.CONNECTIVITY) },
+        )
+        SettingsHomeCard(
+            icon = Icons.Default.Storage,
+            title = "Storage",
+            summary = "Downloads, song cache and image cache",
+            onClick = { onOpen(SettingsRoute.STORAGE) },
+        )
+        SettingsHomeCard(
+            icon = Icons.Default.Info,
+            title = "About",
+            summary = "Vusic ${BuildConfig.VERSION_NAME}",
+            onClick = { onOpen(SettingsRoute.ABOUT) },
+        )
+        Spacer(Modifier.height(16.dp))
         Text(
-            "Signed in as ${creds?.username ?: "—"}",
-            style = MaterialTheme.typography.bodyMedium,
+            "Vusic ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})",
+            style = MaterialTheme.typography.bodySmall,
             color = VusicColors.SecondaryText,
+            modifier = Modifier.padding(start = 4.dp, bottom = 48.dp),
         )
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(
-                onClick = { vm.setServerUrl(serverUrl); vm.testConnection() },
-                enabled = test !is TestState.Testing && serverUrl.isNotBlank(),
-            ) { Text(if (test is TestState.Testing) "Testing…" else "Test connection") }
-            OutlinedButton(onClick = { showLogout = true }) { Text("Logout") }
-        }
-        when (val t = test) {
-            is TestState.Ok -> Label("Connection OK", VusicColors.OnAccent)
-            is TestState.Failed -> Label("Failed: ${t.message}", MaterialTheme.colorScheme.error)
-            else -> Unit
-        }
-        if (!online) Label("You're offline — showing cached library", VusicColors.SecondaryText)
+    }
+}
 
-        // ---------- Playback ----------
-        Section("Playback")
-        BitrateRow("Wi-Fi", s.wifiBitrate, s.wifiFormat, vm::setWifi)
-        BitrateRow("Mobile", s.mobileBitrate, s.mobileFormat, vm::setMobile)
-        SwitchRow("Offline mode (downloaded music only)", s.offlineMode, vm::setOfflineMode)
-        SwitchRow("Gapless playback", s.gapless, vm::setGapless)
-        SwitchRow("Pause when headphones disconnect", s.pauseOnHeadphone, vm::setPauseOnHeadphone)
-        SwitchRow("Resume after audio focus loss", s.resumeOnFocusGain, vm::setResumeOnFocusGain)
-        SwitchRow("Crossfade (best-effort volume ramp)", s.crossfade, vm::setCrossfade)
-        if (s.crossfade) {
-            NumberRow("Crossfade length", "${s.crossfadeSeconds}s", listOf(1, 3, 6, 9, 12)) {
-                vm.setCrossfadeSeconds(it)
-            }
-        }
+@Composable
+private fun OfflineChip() {
+    Row(
+        Modifier.clip(RoundedCornerShape(16.dp))
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Default.CloudOff, null, tint = Color(0xFFFFB74D), modifier = Modifier.size(18.dp))
+        Text(
+            "Offline",
+            style = MaterialTheme.typography.labelLarge,
+            color = Color(0xFFFFB74D),
+            modifier = Modifier.padding(start = 6.dp),
+        )
+    }
+}
 
-        // ---------- ReplayGain ----------
-        SwitchRow("ReplayGain", s.replayGain, vm::setReplayGain)
-        if (s.replayGain) {
-            ChoiceRow(
-                "Mode",
-                ReplayGainMode.entries.map { it.name },
-                s.replayGainMode.name,
-            ) { vm.setReplayGainMode(runCatching { ReplayGainMode.valueOf(it) }.getOrDefault(ReplayGainMode.TRACK)) }
-            NumberRow("Pre-amp", "${s.replayGainPreampDb} dB", (-15..15 step 3).toList()) {
-                vm.setReplayGainPreamp(it)
-            }
-            NumberRow("Fallback gain", "${s.replayGainFallbackDb} dB", (-15..15 step 3).toList()) {
-                vm.setReplayGainFallback(it)
-            }
-        }
+// ---------- Server & Account ----------
 
-        // ---------- Downloads & storage ----------
-        Section("Downloads & storage")
-        SwitchRow("Download over Wi-Fi only", s.downloadWifiOnly, vm::setDownloadWifiOnly)
-        SwitchRow("Download original files", s.downloadOriginal, vm::setDownloadOriginal)
-        if (!s.downloadOriginal) {
-            ChoiceRow("Download quality", QualityPolicy.BITRATES.map { it.toString() }, s.downloadBitrate.toString()) {
-                vm.setDownloadBitrate(it.toIntOrNull() ?: 320)
-            }
-            ChoiceRow("Download format", QualityPolicy.FORMATS, s.downloadFormat, vm::setDownloadFormat)
-        }
-        Label("Downloads: ${CacheSizePolicy.human(totalBytes)} · ${pending} pending upload(s)", VusicColors.SecondaryText)
-        NumberRow(
-            "Stream cache",
-            "${s.cacheSizeMb} MB",
-            CacheSizePolicy.STREAM_SIZES_MB,
-        ) { vm.setCache(it) }
-        NumberRow(
-            "Image cache",
-            "${s.imageCacheMb} MB",
-            CacheSizePolicy.IMAGE_SIZES_MB,
-        ) { vm.setImageCache(it) }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onOpenDownloads) { Text("Manage downloads") }
-            OutlinedButton(onClick = { vm.clearMetadataCache() }) { Text("Clear library cache") }
-        }
+@Composable
+private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
+    val creds by vm.credentials.collectAsState()
+    val test by vm.test.collectAsState()
+    val online by vm.network.isOnline.collectAsState()
+    val info by vm.serverInfo.collectAsState()
+    val scan by vm.scanStatus.collectAsState()
+    val counts by vm.libraryCounts.collectAsState()
+    var showLogout by androidx.compose.runtime.remember { mutableStateOf(false) }
+    var keepDownloads by androidx.compose.runtime.remember { mutableStateOf(true) }
+    var serverUrl by androidx.compose.runtime.remember(creds?.serverUrl) {
+        mutableStateOf(creds?.serverUrl.orEmpty())
+    }
 
-        // ---------- Network & security ----------
-        Section("Network & security")
-        SwitchRow("Allow self-signed certificates", s.allowSelfSigned, vm::setSelfSigned)
-        SwitchRow("Allow cleartext HTTP (insecure on public networks)", s.allowCleartext, vm::setCleartext)
-        NumberRow("Connection timeout", "${s.timeoutSeconds}s", listOf(10, 20, 30, 60, 120)) { vm.setTimeout(it) }
+    LaunchedEffect(Unit) { vm.refreshServerInfo() }
 
-        // ---------- Appearance ----------
-        Section("Appearance")
-        ChoiceRow("Theme", ThemeMode.entries.map { it.name }, s.theme.name) {
-            vm.setTheme(runCatching { ThemeMode.valueOf(it) }.getOrDefault(ThemeMode.DARK))
+    SettingsSection("SERVER")
+    SettingsCard {
+        InfoRow("Type", info?.product ?: "…")
+        InfoRow("API version", info?.apiVersion ?: "…")
+        if (!info?.extensions.isNullOrEmpty()) {
+            InfoRow("Extensions", info!!.extensions.take(4).joinToString(", "))
         }
-        SwitchRow("Dynamic Now Playing color", s.dynamicNpColor, vm::setDynamicNpColor)
-        ChoiceRow("Default layout", LayoutMode.entries.map { it.name }, s.defaultLayout.name) {
-            vm.setDefaultLayout(runCatching { LayoutMode.valueOf(it) }.getOrDefault(LayoutMode.GRID))
+        InfoRow("Server URL", creds?.serverUrl ?: "—")
+    }
+    var editing by androidx.compose.runtime.remember { mutableStateOf(false) }
+    if (!editing) {
+        ActionRow("Change server URL", creds?.serverUrl ?: "", buttonLabel = "Edit", onClick = { editing = true })
+    } else {
+        OutlinedTextField(
+            value = serverUrl, onValueChange = { serverUrl = it },
+            label = { Text("Server URL") }, singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        )
+        Row {
+            androidx.compose.material3.TextButton(onClick = {
+                editing = false
+                vm.setServerUrl(serverUrl)
+                vm.testConnection()
+            }) { Text("Save & test") }
+            androidx.compose.material3.TextButton(onClick = { editing = false }) { Text("Cancel") }
         }
+    }
+    when (val t = test) {
+        is TestState.Ok -> Text("Connection OK", color = VusicColors.OnAccent, style = MaterialTheme.typography.bodySmall)
+        is TestState.Failed -> Text("Failed: ${t.message}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        else -> Unit
+    }
 
-        // ---------- About ----------
-        Section("About")
-        Label("Vusic ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})", VusicColors.SecondaryText)
-        Spacer(Modifier.height(8.dp))
-        TextButton(onClick = { /* licenses screen lives in the About sheet */ }) { Text("Open source licenses") }
-        Spacer(Modifier.height(48.dp))
+    SettingsSection("LIBRARY")
+    SettingsCard {
+        InfoRow("Artists", counts.artists.toString())
+        InfoRow("Albums", counts.albums.toString())
+        InfoRow("Playlists", counts.playlists.toString())
+        InfoRow("Downloaded songs", counts.downloaded.toString())
+    }
+    ActionRow(
+        "Scan library",
+        when {
+            scan?.scanning == true -> "Scanning… (${scan?.count ?: 0} files)"
+            !online -> "Unavailable offline"
+            else -> "Ask the server to rescan its folders"
+        },
+        buttonLabel = "Scan",
+        onClick = { vm.startScan() },
+    )
+
+    SettingsSection("ACCOUNT")
+    SettingsCard {
+        InfoRow("Username", creds?.username ?: "—")
+        InfoRow("Device", vm.deviceName)
+    }
+    Spacer(Modifier.height(12.dp))
+    androidx.compose.material3.OutlinedButton(
+        onClick = { showLogout = true },
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF8A80)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text("Log out", color = Color(0xFFFF8A80))
     }
 
     if (showLogout) {
@@ -193,7 +293,10 @@ fun SettingsScreen(
                 Column {
                     Text("Your credentials, cached library data and caches will be cleared.")
                     Spacer(Modifier.height(8.dp))
-                    SwitchRow("Keep downloaded music", keepDownloads) { keepDownloads = it }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Keep downloaded music", modifier = Modifier.weight(1f))
+                        Switch(keepDownloads, { keepDownloads = it })
+                    }
                 }
             },
             confirmButton = {
@@ -207,70 +310,170 @@ fun SettingsScreen(
     }
 }
 
-@Composable
-private fun Section(title: String) {
-    Spacer(Modifier.height(20.dp))
-    Text(title, style = MaterialTheme.typography.titleMedium)
-    Spacer(Modifier.height(4.dp))
-}
+// ---------- Appearance & Layout ----------
 
 @Composable
-private fun Label(text: String, color: androidx.compose.ui.graphics.Color) {
-    Text(text, style = MaterialTheme.typography.bodySmall, color = color)
-}
-
-@Composable
-private fun SwitchRow(label: String, value: Boolean, onSet: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Switch(value, { onSet(it) })
+private fun AppearanceScreen(vm: SettingsViewModel) {
+    val settings by vm.store.flow.collectAsState(initial = null)
+    val s = settings ?: return
+    SettingsSection("THEME")
+    SettingsCard {
+        ChoiceRow(
+            "Theme",
+            s.theme.name.lowercase().replaceFirstChar(Char::uppercase),
+            ThemeMode.entries.map { it.name.lowercase().replaceFirstChar(Char::uppercase) },
+            onSelect = { vm.setTheme(ThemeMode.valueOf(it.uppercase())) },
+        )
+        SwitchRow("Dynamic Now Playing color", s.dynamicNpColor, vm::setDynamicNpColor)
+    }
+    SettingsSection("LIBRARY LAYOUT")
+    SettingsCard {
+        listOf("Songs" to "SONGS", "Albums" to "ALBUMS", "Artists" to "ARTISTS", "Playlists" to "PLAYLISTS").forEach { (label, tab) ->
+            val current = s.libraryLayouts[tab] ?: s.defaultLayout
+            ChoiceRow(label, current.name.lowercase().replaceFirstChar(Char::uppercase), listOf("Grid", "List"), onSelect = {
+                vm.setLibraryLayout(tab, if (it == "Grid") LayoutMode.GRID else LayoutMode.LIST)
+            })
+        }
+    }
+    SettingsSection("DEFAULT SORT")
+    SettingsCard {
+        listOf("Songs" to "SONGS", "Albums" to "ALBUMS", "Artists" to "ARTISTS", "Playlists" to "PLAYLISTS").forEach { (label, tab) ->
+            val choice = s.librarySorts[tab]
+                ?: com.feishin.mobile.core.common.LibrarySorts.default(tab)
+            val options = com.feishin.mobile.core.common.LibrarySorts.options(tab)
+            ChoiceRow(
+                label,
+                "${options.firstOrNull { it.id == choice.option }?.label ?: choice.option} " +
+                    if (choice.ascending) "↑" else "↓",
+                options.map { it.label },
+                onSelect = { picked ->
+                    val id = options.firstOrNull { it.label == picked }?.id ?: choice.option
+                    vm.setLibrarySort(tab, id, choice.ascending)
+                },
+            )
+        }
+    }
+    SettingsSection("GENERATED LISTS")
+    SettingsCard {
+        ChoiceRow(
+            "Mix & radio length",
+            "${s.radioBatchSize} songs",
+            SettingsStore.RADIO_BATCH_OPTIONS.map { "$it songs" },
+            onSelect = { vm.setRadioBatchSize(it.split(" ").first().toIntOrNull() ?: 20) },
+            description = "Songs per generated mix and radio batch.",
+        )
     }
 }
 
+// ---------- Sound & Playback ----------
+
 @Composable
-private fun ChoiceRow(label: String, options: List<String>, selected: String, onSet: (String) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Box {
-            OutlinedButton(onClick = { open = true }) { Text(selected) }
-            DropdownMenu(open, onDismissRequest = { open = false }) {
-                options.forEach { o ->
-                    DropdownMenuItem(text = { Text(o) }, onClick = { onSet(o); open = false })
-                }
+private fun SoundScreen(vm: SettingsViewModel) {
+    val settings by vm.store.flow.collectAsState(initial = null)
+    val storage by vm.storageStats.collectAsState()
+    val s = settings ?: return
+    var showReset by androidx.compose.runtime.remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { vm.refreshStorageStats() }
+
+    SettingsSection("STREAMING")
+    SettingsCard {
+        BitrateChoiceRow("Wi-Fi max bitrate", s.wifiBitrate, s.wifiFormat, vm::setWifi)
+        BitrateChoiceRow("Mobile max bitrate", s.mobileBitrate, s.mobileFormat, vm::setMobile)
+    }
+    SettingsSection("DOWNLOADS")
+    SettingsCard {
+        SwitchRow("Download original files", s.downloadOriginal, vm::setDownloadOriginal)
+        if (!s.downloadOriginal) {
+            BitrateChoiceRow("Download max bitrate", s.downloadBitrate, s.downloadFormat) { br, fmt ->
+                vm.setDownloadBitrate(br)
+                vm.setDownloadFormat(fmt)
             }
         }
     }
-}
-
-@Composable
-private fun NumberRow(label: String, current: String, options: List<Int>, onSet: (Int) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Box {
-            OutlinedButton(onClick = { open = true }) { Text(current) }
-            DropdownMenu(open, onDismissRequest = { open = false }) {
-                options.forEach { o ->
-                    DropdownMenuItem(text = { Text(o.toString()) }, onClick = { onSet(o); open = false })
-                }
-            }
+    SettingsSection("REPLAYGAIN")
+    SettingsCard {
+        ChoiceRow(
+            "Mode", s.replayGainMode.name.lowercase().replaceFirstChar(Char::uppercase),
+            ReplayGainMode.entries.map { it.name.lowercase().replaceFirstChar(Char::uppercase) },
+            onSelect = { vm.setReplayGainMode(ReplayGainMode.valueOf(it.uppercase())) },
+        )
+        SliderRow(
+            "Pre-amp", "${s.replayGainPreampDb} dB", s.replayGainPreampDb.toFloat(), -15f..15f, 29,
+            { vm.setReplayGainPreamp(it.toInt()) },
+        )
+        SliderRow(
+            "Fallback gain", "${s.replayGainFallbackDb} dB", s.replayGainFallbackDb.toFloat(), -15f..15f, 29,
+            { vm.setReplayGainFallback(it.toInt()) },
+        )
+    }
+    SettingsSection("TRANSITIONS")
+    SettingsCard {
+        SwitchRow("Gapless playback", s.gapless, vm::setGapless)
+        SwitchRow(
+            "Crossfade", s.crossfade, vm::setCrossfade,
+            description = "Best-effort volume ramp; true overlap would break gapless.",
+        )
+        if (s.crossfade) {
+            SliderRow(
+                "Crossfade duration", "${s.crossfadeSeconds}s", s.crossfadeSeconds.toFloat(), 1f..12f, 10,
+                { vm.setCrossfadeSeconds(it.toInt()) },
+            )
         }
+    }
+    SettingsSection("PLAYBACK CACHE")
+    SettingsCard {
+        SwitchRow("Cache upcoming tracks", s.cacheUpcoming, vm::setCacheUpcoming)
+        if (s.cacheUpcoming) {
+            SliderRow(
+                "Tracks to cache", s.tracksToCache.toString(), s.tracksToCache.toFloat(), 1f..5f, 3,
+                { vm.setTracksToCache(it.toInt()) },
+                description = "Next songs are fully buffered ahead of time.",
+            )
+        }
+        SwitchRow(
+            "Cache played songs", s.cachePlayedSongs, vm::setCachePlayedSongs,
+            description = "Keep every song you finish (or pass 50% of).",
+        )
+        SwitchRow("Cache on Wi-Fi only", s.cacheWifiOnly, vm::setCacheWifiOnly)
+        InfoRow("Song cache usage", storage?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.cachedBytes) } ?: "…")
+    }
+    SettingsSection("BEHAVIOR")
+    SettingsCard {
+        SwitchRow("Pause on headphone disconnect", s.pauseOnHeadphone, vm::setPauseOnHeadphone)
+        SwitchRow("Resume after audio focus loss", s.resumeOnFocusGain, vm::setResumeOnFocusGain)
+        ActionRow(
+            "Battery optimization",
+            if (vm.batteryExempted()) "Exempted — playback survives doze" else "Not exempted — playback may pause in background",
+            buttonLabel = if (vm.batteryExempted()) "OK" else "Exempt",
+            onClick = { if (!vm.batteryExempted()) vm.requestBatteryExemption() },
+        )
+    }
+    SettingsSection("DEFAULTS")
+    SettingsCard {
+        ActionRow(
+            "Reset to defaults", "Restore this screen's original settings",
+            confirmTitle = "Reset playback settings?",
+            confirmBody = "Streaming, download, ReplayGain, transition and cache settings return to defaults.",
+            buttonLabel = "Reset",
+            onClick = { vm.resetPlaybackDefaults() },
+        )
     }
 }
 
 @Composable
-private fun BitrateRow(label: String, br: Int, fmt: String, onSet: (Int, String) -> Unit) {
-    var brMenu by remember { mutableStateOf(false) }
-    var fmtMenu by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("$label streaming", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Row {
-            Box {
-                OutlinedButton(onClick = { brMenu = true }) { Text(if (br == 0) "Original" else "$br kbps") }
-                DropdownMenu(brMenu, onDismissRequest = { brMenu = false }) {
+private fun BitrateChoiceRow(label: String, br: Int, fmt: String, onSet: (Int, String) -> Unit) {
+    var brMenu by androidx.compose.runtime.remember { mutableStateOf(false) }
+    var fmtMenu by androidx.compose.runtime.remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            androidx.compose.foundation.layout.Box {
+                androidx.compose.material3.OutlinedButton(onClick = { brMenu = true }) {
+                    Text(if (br == 0) "Original" else "$br kbps")
+                }
+                androidx.compose.material3.DropdownMenu(brMenu, onDismissRequest = { brMenu = false }) {
                     QualityPolicy.BITRATES.forEach { b ->
-                        DropdownMenuItem(
+                        androidx.compose.material3.DropdownMenuItem(
                             text = { Text(if (b == 0) "Original" else "$b kbps") },
                             onClick = { onSet(b, fmt); brMenu = false },
                         )
@@ -278,14 +481,171 @@ private fun BitrateRow(label: String, br: Int, fmt: String, onSet: (Int, String)
                 }
             }
             Spacer(Modifier.size(6.dp))
-            Box {
-                OutlinedButton(onClick = { fmtMenu = true }) { Text(fmt) }
-                DropdownMenu(fmtMenu, onDismissRequest = { fmtMenu = false }) {
+            androidx.compose.foundation.layout.Box {
+                androidx.compose.material3.OutlinedButton(onClick = { fmtMenu = true }) { Text(fmt) }
+                androidx.compose.material3.DropdownMenu(fmtMenu, onDismissRequest = { fmtMenu = false }) {
                     QualityPolicy.FORMATS.forEach { f ->
-                        DropdownMenuItem(text = { Text(f) }, onClick = { onSet(br, f); fmtMenu = false })
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text(f) },
+                            onClick = { onSet(br, f); fmtMenu = false },
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+// ---------- Connectivity ----------
+
+@Composable
+private fun ConnectivityScreen(vm: SettingsViewModel) {
+    val settings by vm.store.flow.collectAsState(initial = null)
+    val online by vm.network.isOnline.collectAsState()
+    val s = settings ?: return
+    SettingsSection("OFFLINE")
+    SettingsCard {
+        SwitchRow(
+            "Offline mode", s.offlineMode, vm::setOfflineMode,
+            description = "Downloaded and cached music only.",
+        )
+        SwitchRow("Show offline chip", s.showOfflineChip, vm::setShowOfflineChip)
+        SwitchRow(
+            "Auto offline", s.autoOffline, vm::setAutoOffline,
+            description = "Follow the network automatically when offline mode is off.",
+        )
+        InfoRow("Connection", if (online) "Online" else "Offline")
+    }
+    SettingsSection("CERTIFICATES")
+    SettingsCard {
+        SwitchRow(
+            "Self-signed certificates", s.allowSelfSigned, vm::setSelfSigned,
+            description = "Applies immediately, no restart.",
+            warning = "Only enable for servers you trust.",
+        )
+        SwitchRow(
+            "Allow cleartext HTTP", s.allowCleartext, vm::setCleartext,
+            warning = "Traffic can be read on public networks.",
+        )
+        ChoiceRow(
+            "Connection timeout", "${s.timeoutSeconds}s",
+            listOf("10s", "20s", "30s", "60s", "120s"),
+            onSelect = { vm.setTimeout(it.removeSuffix("s").toIntOrNull() ?: 20) },
+        )
+    }
+}
+
+// ---------- Storage ----------
+
+@Composable
+private fun StorageScreen(
+    vm: SettingsViewModel,
+    onOpenDownloads: () -> Unit,
+    onOpenLibraryDownloads: () -> Unit,
+) {
+    val settings by vm.store.flow.collectAsState(initial = null)
+    val storage by vm.storageStats.collectAsState()
+    val s = settings ?: return
+    LaunchedEffect(Unit) { vm.refreshStorageStats() }
+    val st = storage
+    val total = (st?.let { it.downloadBytes + it.coverBytes + it.streamCacheBytes + it.imageCacheBytes } ?: 1L)
+        .coerceAtLeast(1L)
+
+    SettingsSection("USAGE")
+    SettingsCard {
+        UsageBar(
+            segments = listOf(
+                (st?.imageCacheBytes?.toFloat()?.div(total) ?: 0f) to Color(0xFF8AB4F8),
+                (st?.downloadBytes?.toFloat()?.div(total) ?: 0f) to Color(0xFF7DD8A8),
+                (st?.streamCacheBytes?.toFloat()?.div(total) ?: 0f) to Color(0xFFFFC66E),
+            ),
+        )
+        UsageLegend(
+            listOf(
+                Triple("Images", st?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.imageCacheBytes + it.coverBytes) } ?: "…", Color(0xFF8AB4F8)),
+                Triple("Music downloads", st?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.downloadBytes) } ?: "…", Color(0xFF7DD8A8)),
+                Triple("Song cache", st?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.streamCacheBytes) } ?: "…", Color(0xFFFFC66E)),
+                Triple("Free space", st?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.freeBytes) } ?: "…", VusicColors.SecondaryText),
+            ),
+        )
+    }
+    SettingsSection("LIMITS")
+    SettingsCard {
+        val capOff = s.maxDownloadMb <= 0
+        SwitchRow(
+            "Limit download storage", !capOff,
+            onSet = { on -> vm.setMaxDownloadMb(if (on) 2048 else 0) },
+        )
+        if (!capOff) {
+            SliderRow(
+                "Download cap", "${s.maxDownloadMb / 1024} GB", (s.maxDownloadMb / 1024).toFloat(), 1f..32f, 30,
+                { vm.setMaxDownloadMb((it.toInt() * 1024).coerceAtLeast(1024)) },
+                description = "New downloads pause when the cap is reached.",
+            )
+        }
+    }
+    SettingsSection("DOWNLOADED MUSIC")
+    SettingsCard {
+        InfoRow("Songs", st?.downloadSongs?.toString() ?: "…")
+        InfoRow("Disk usage", st?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.downloadBytes) } ?: "…")
+        InfoRow("Concurrent downloads", st?.let { "${it.activeDownloads} active · ${it.queuedDownloads} queued" } ?: "…")
+        ActionRow("Browse downloaded music", buttonLabel = "Browse", onClick = onOpenLibraryDownloads)
+        ActionRow("Download queue", buttonLabel = "Open", onClick = onOpenDownloads)
+    }
+    SettingsSection("SONG CACHE")
+    SettingsCard {
+        InfoRow("Songs cached", st?.cachedSongs?.toString() ?: "…")
+        SliderRow(
+            "Cache size", "${s.cacheSizeMb} MB", s.cacheSizeMb.toFloat(), 256f..5120f, 8,
+            { vm.setCache(it.toInt()) },
+            description = "Applies on next launch.",
+        )
+        ActionRow(
+            "Clear song cache", "Also removes the Cached collection",
+            confirmTitle = "Clear song cache?",
+            buttonLabel = "Clear",
+            onClick = { vm.clearSongCache() },
+        )
+    }
+    SettingsSection("IMAGE CACHE")
+    SettingsCard {
+        SliderRow(
+            "Cache size", "${s.imageCacheMb} MB", s.imageCacheMb.toFloat(), 100f..1024f, 8,
+            { vm.setImageCache(it.toInt()) },
+            description = "Applies on next launch.",
+        )
+        ActionRow("Clear image cache", buttonLabel = "Clear", onClick = { vm.clearImageCache() })
+    }
+    SettingsSection("DANGEROUS")
+    SettingsCard {
+        ActionRow(
+            "Delete all downloads", "Removes every downloaded song and its files",
+            danger = true, confirmTitle = "Delete all downloads?",
+            buttonLabel = "Delete",
+            onClick = { vm.deleteAllDownloads() },
+        )
+        ActionRow(
+            "Clear library cache", "Browsing falls back to the network",
+            danger = true, confirmTitle = "Clear library cache?",
+            buttonLabel = "Clear",
+            onClick = { vm.clearMetadataCache() },
+        )
+    }
+}
+
+// ---------- About ----------
+
+@Composable
+private fun AboutScreen() {
+    SettingsSection("APP")
+    SettingsCard {
+        InfoRow("Vusic", "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})")
+        InfoRow("Protocol", "Subsonic / OpenSubsonic API")
+    }
+    SettingsSection("OPEN SOURCE")
+    SettingsCard {
+        InfoRow("Kotlin, Compose, Media3", "Apache 2.0")
+        InfoRow("Hilt, Room, WorkManager", "Apache 2.0")
+        InfoRow("Coil, OkHttp, Retrofit", "Apache 2.0 / MIT")
     }
 }

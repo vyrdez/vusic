@@ -1,51 +1,104 @@
 package com.feishin.mobile.ui.search
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.feishin.mobile.core.common.SearchGrouping
 import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.data.settings.SettingsStore
+import com.feishin.mobile.domain.model.Album
+import com.feishin.mobile.domain.model.Artist
+import com.feishin.mobile.domain.model.Playlist
+import com.feishin.mobile.domain.model.SearchResults
+import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
-import com.feishin.mobile.ui.EmptyBox
-import com.feishin.mobile.ui.LoadingBox
 import com.feishin.mobile.ui.components.ActionTarget
 import com.feishin.mobile.ui.components.AlbumCard
+import com.feishin.mobile.ui.components.CoverImage
 import com.feishin.mobile.ui.components.EmptyState
 import com.feishin.mobile.ui.components.ErrorState
-import com.feishin.mobile.ui.components.SectionHeader
+import com.feishin.mobile.ui.components.FilterChipRow
+import com.feishin.mobile.ui.components.PlaylistCoverArt
+import com.feishin.mobile.domain.model.PlaylistCover
+import com.feishin.mobile.ui.components.SkeletonLoader
 import com.feishin.mobile.ui.components.TrackRow
 import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.components.rememberSavableListState
+import com.feishin.mobile.ui.library.ArtistPhoto
 import com.feishin.mobile.ui.theme.VusicColors
 import kotlinx.coroutines.launch
+
+private val FILTER_LABELS = listOf("All", "Songs", "Albums", "Artists", "Playlists")
+
+private fun filterOf(label: String): SearchFilter = when (label) {
+    "Songs" -> SearchFilter.SONGS
+    "Albums" -> SearchFilter.ALBUMS
+    "Artists" -> SearchFilter.ARTISTS
+    "Playlists" -> SearchFilter.PLAYLISTS
+    else -> SearchFilter.ALL
+}
+
+private fun labelOf(filter: SearchFilter): String = when (filter) {
+    SearchFilter.ALL -> "All"
+    SearchFilter.SONGS -> "Songs"
+    SearchFilter.ALBUMS -> "Albums"
+    SearchFilter.ARTISTS -> "Artists"
+    SearchFilter.PLAYLISTS -> "Playlists"
+}
+
+/** Section title colors: one muted hue per section on near-black. */
+private fun sectionColor(filter: SearchFilter): Color = when (filter) {
+    SearchFilter.SONGS -> Color(0xFF8AB4F8)
+    SearchFilter.ALBUMS -> Color(0xFF7DD8A8)
+    SearchFilter.ARTISTS -> Color(0xFFF19ED2)
+    SearchFilter.PLAYLISTS -> Color(0xFFC4A7F5)
+    SearchFilter.ALL -> Color.White
+}
 
 @Composable
 fun SearchScreen(
@@ -56,113 +109,445 @@ fun SearchScreen(
     messenger: UiMessenger,
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
+    onPlaylist: (String) -> Unit,
     onActions: (ActionTarget) -> Unit,
+    onBack: (() -> Unit)? = null,
 ) {
     val q by vm.query.collectAsState()
+    val filter by vm.filter.collectAsState()
     val ui by vm.ui.collectAsState()
+    val visible by vm.visibleCount.collectAsState()
+    val songsExpanded by vm.songsExpanded.collectAsState()
     val settingsState by settings.flow.collectAsState(initial = null)
+    val offlineNotice by vm.offlineNotice.collectAsState()
     val nowPlaying by player.current.collectAsState()
     val isPlaying by player.isPlaying.collectAsState()
     val scope = rememberCoroutineScope()
-    androidx.compose.runtime.LaunchedEffect(ui) {
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    LaunchedEffect(ui) {
         if (ui is UiState.Data && q.isNotBlank()) settings.addRecentSearch(q)
     }
-    Column(Modifier.fillMaxSize()) {
+    if (offlineNotice && (ui is UiState.Data || ui is UiState.Empty)) {
         Text(
-            "Search",
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(start = 16.dp, top = 12.dp),
+            "Offline — searching downloaded music",
+            style = MaterialTheme.typography.labelMedium,
+            color = VusicColors.SecondaryText,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
         )
-        OutlinedTextField(
-            q, vm::onQuery,
-            label = { Text("Artists, albums, songs") },
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            singleLine = true,
+    }
+
+    Column(Modifier.fillMaxSize().navigationBarsPadding()) {
+        // Rounded pill: back arrow, field, clear X. No voice button.
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (onBack != null) {
+                IconButton(onClick = { keyboard?.hide(); onBack() }, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+                }
+            }
+            Box(
+                Modifier.weight(1f)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(VusicColors.SurfaceHigh)
+                    .padding(horizontal = 18.dp, vertical = 11.dp),
+            ) {
+                if (q.isEmpty()) {
+                    Text("Artists, albums, songs", style = MaterialTheme.typography.bodyMedium, color = VusicColors.SecondaryText)
+                }
+                BasicTextField(
+                    value = q,
+                    onValueChange = vm::onQuery,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                    cursorBrush = SolidColor(Color.White),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                )
+            }
+            if (q.isNotEmpty()) {
+                IconButton(onClick = { vm.onQuery("") }, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Default.Close, "Clear", tint = Color.White)
+                }
+            } else {
+                Spacer(Modifier.size(40.dp))
+            }
+        }
+        FilterChipRow(
+            options = FILTER_LABELS,
+            selected = labelOf(filter),
+            onSelect = { vm.onFilter(filterOf(it)) },
         )
         when (val s = ui) {
-            is UiState.Loading -> LoadingBox()
+            is UiState.Loading -> {
+                SkeletonLoader()
+                SkeletonLoader()
+            }
             is UiState.Error -> ErrorState(message = s.message, onRetry = { vm.onQuery(q) })
             is UiState.Empty -> {
-                val recent = settingsState?.recentSearches.orEmpty()
-                if (q.isBlank() && recent.isNotEmpty()) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(16.dp, 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("Recent searches", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { scope.launch { settings.clearRecentSearches() } }, modifier = Modifier.size(48.dp)) {
-                            Icon(Icons.Default.Close, "Clear recent searches")
-                        }
-                    }
-                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
-                        items(recent, key = { "rs$it" }) { r ->
-                            Row(
-                                Modifier.fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        vm.onQuery(r)
-                                        scope.launch { settings.addRecentSearch(r) }
-                                    }
-                                    .padding(16.dp, 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(Icons.Default.History, null, tint = VusicColors.SecondaryText)
-                                Text(r, modifier = Modifier.padding(start = 12.dp))
-                            }
-                        }
-                    }
+                if (q.isBlank()) {
+                    RecentSearches(
+                        recent = settingsState?.recentSearches.orEmpty(),
+                        onRun = { vm.onQuery(it) },
+                        onRemove = { r -> scope.launch { settings.removeRecentSearch(r) } },
+                        onClearAll = { scope.launch { settings.clearRecentSearches() } },
+                    )
                 } else {
-                    EmptyState(if (q.isBlank()) "Type to search" else "No results")
+                    EmptyState("No results for \"$q\"")
                 }
             }
             is UiState.Data -> {
                 val res = s.value
-                LazyColumn(
-                    Modifier.fillMaxSize(),
-                    state = rememberSavableListState(),
-                    contentPadding = PaddingValues(bottom = 160.dp),
-                ) {
-                    if (res.tracks.isNotEmpty()) {
-                        item { SectionHeader(title = "Songs") }
-                        items(res.tracks, key = { "s${it.id}" }) { song ->
-                            TrackRow(
-                                track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),
-                                onClick = { player.playAll(res.tracks, res.tracks.indexOf(song), source = "Search") },
-                                onActions = { onActions(ActionTarget.Track(song)) },
-                                onArtist = { id -> onArtist(id) },
-                                isCurrent = song.id == nowPlaying?.id, isPlaying = isPlaying,
-                            )
-                        }
-                    }
-                    if (res.albums.isNotEmpty()) {
-                        item { SectionHeader(title = "Albums") }
-                        item {
-                            LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
-                                items(res.albums, key = { "b${it.id}" }) { a ->
-                                    AlbumCard(a, repo.coverArtUrl(a.coverArt, 300), onClick = { onAlbum(a.id) }, modifier = Modifier.width(140.dp))
-                                }
-                            }
-                        }
-                    }
-                    if (res.artists.isNotEmpty()) {
-                        item { SectionHeader(title = "Artists") }
-                        items(res.artists, key = { "a${it.id}" }) { a ->
-                            Row(
-                                Modifier.fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable { onArtist(a.id) }
-                                    .padding(16.dp, 12.dp),
-                            ) {
-                                Text(a.name, modifier = Modifier.weight(1f))
-                                Text(
-                                    "${a.albumCount}", style = MaterialTheme.typography.bodySmall,
-                                    color = VusicColors.SecondaryText,
-                                )
-                            }
+                if (filter == SearchFilter.ALL) {
+                    AllResults(
+                        res = res, songsExpanded = songsExpanded,
+                        player = player, repo = repo,
+                        nowPlayingId = nowPlaying?.id, isPlaying = isPlaying,
+                        onAlbum = onAlbum, onArtist = onArtist, onPlaylist = onPlaylist,
+                        onActions = onActions,
+                        onExpandSongs = vm::expandSongs,
+                        onSongsFilter = { vm.onFilter(SearchFilter.SONGS) },
+                    )
+                } else {
+                    SingleTypeResults(
+                        res = res, filter = filter, visible = visible,
+                        player = player, repo = repo,
+                        nowPlayingId = nowPlaying?.id, isPlaying = isPlaying,
+                        onAlbum = onAlbum, onArtist = onArtist, onPlaylist = onPlaylist,
+                        onActions = onActions,
+                        onShowMore = vm::showMore,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentSearches(
+    recent: List<String>,
+    onRun: (String) -> Unit,
+    onRemove: (String) -> Unit,
+    onClearAll: () -> Unit,
+) {
+    if (recent.isEmpty()) {
+        EmptyState("Type to search")
+        return
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(16.dp, 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Recent searches", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        TextButton(onClick = onClearAll) { Text("Clear all") }
+    }
+    LazyColumn(Modifier.fillMaxSize().imePadding(), contentPadding = PaddingValues(bottom = 160.dp)) {
+        items(recent, key = { "rs$it" }) { r ->
+            Row(
+                Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onRun(r) }
+                    .padding(16.dp, 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.History, null, tint = VusicColors.SecondaryText)
+                Text(r, modifier = Modifier.weight(1f).padding(start = 12.dp))
+                IconButton(onClick = { onRemove(r) }, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Default.Close, "Remove", tint = VusicColors.SecondaryText)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String, color: Color) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleMedium,
+        color = color,
+        modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 4.dp),
+    )
+}
+
+@Composable
+private fun AllResults(
+    res: SearchResults,
+    songsExpanded: Boolean,
+    player: PlayerManager,
+    repo: MusicDataRepository,
+    nowPlayingId: String?,
+    isPlaying: Boolean,
+    onAlbum: (String) -> Unit,
+    onArtist: (String) -> Unit,
+    onPlaylist: (String) -> Unit,
+    onActions: (ActionTarget) -> Unit,
+    onExpandSongs: () -> Unit,
+    onSongsFilter: () -> Unit,
+) {
+    val top = SearchGrouping.topResult(res)
+    val songs = if (songsExpanded) res.tracks else SearchGrouping.previewSongs(res)
+    val moreSongs = !songsExpanded && SearchGrouping.remainingSongs(res).isNotEmpty()
+    LazyColumn(
+        Modifier.fillMaxSize().imePadding(),
+        state = rememberSavableListState(),
+        contentPadding = PaddingValues(bottom = 160.dp),
+    ) {
+        if (top != null) {
+            item(key = "top") {
+                SectionTitle("Top result", Color(0xFFFFC66E))
+                when (top) {
+                    is SearchGrouping.TopHit.Artist -> TopArtistRow(
+                        id = top.id, name = top.name, repo = repo, onArtist = onArtist, onActions = onActions,
+                    )
+                    is SearchGrouping.TopHit.Album -> {
+                        val album = res.albums.firstOrNull { it.id == top.id }
+                        if (album != null) {
+                            AlbumRow(album, repo, onAlbum, onActions)
                         }
                     }
                 }
             }
+        }
+        if (res.tracks.isNotEmpty()) {
+            item(key = "songs-h") { SectionTitle("Songs", sectionColor(SearchFilter.SONGS)) }
+            items(songs, key = { "s${it.id}" }) { song ->
+                TrackRow(
+                    track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),
+                    onClick = { player.playAll(res.tracks, res.tracks.indexOf(song), source = "Search") },
+                    onActions = { onActions(ActionTarget.Track(song)) },
+                    onArtist = { id -> onArtist(id) },
+                    isCurrent = song.id == nowPlayingId, isPlaying = isPlaying,
+                )
+            }
+            if (moreSongs) {
+                item(key = "songs-more") {
+                    TextButton(onClick = onExpandSongs, modifier = Modifier.padding(start = 8.dp)) {
+                        Text("View more")
+                    }
+                }
+            }
+        }
+        if (res.albums.isNotEmpty()) {
+            item(key = "albums-h") { SectionTitle("Albums", sectionColor(SearchFilter.ALBUMS)) }
+            items(res.albums, key = { "b${it.id}" }) { a ->
+                AlbumRow(a, repo, onAlbum, onActions)
+            }
+        }
+        if (res.artists.isNotEmpty()) {
+            item(key = "artists-h") { SectionTitle("Artists", sectionColor(SearchFilter.ARTISTS)) }
+            items(res.artists, key = { "a${it.id}" }) { a ->
+                ArtistSearchRow(a, repo, onArtist, onActions)
+            }
+        }
+        if (res.playlists.isNotEmpty()) {
+            item(key = "playlists-h") { SectionTitle("Playlists", sectionColor(SearchFilter.PLAYLISTS)) }
+            items(res.playlists, key = { "p${it.id}" }) { p ->
+                PlaylistSearchRow(p, repo, onPlaylist, onActions)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SingleTypeResults(
+    res: SearchResults,
+    filter: SearchFilter,
+    visible: Int,
+    player: PlayerManager,
+    repo: MusicDataRepository,
+    nowPlayingId: String?,
+    isPlaying: Boolean,
+    onAlbum: (String) -> Unit,
+    onArtist: (String) -> Unit,
+    onPlaylist: (String) -> Unit,
+    onActions: (ActionTarget) -> Unit,
+    onShowMore: () -> Unit,
+) {
+    val listState = rememberSavableListState()
+    // Infinite scroll: reveal the next page as the end approaches.
+    val atEnd = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.let { info ->
+        val total = listState.layoutInfo.totalItemsCount
+        total > 0 && info.index >= total - 4
+    } == true
+    LaunchedEffect(atEnd, visible) { if (atEnd) onShowMore() }
+    LazyColumn(
+        Modifier.fillMaxSize().imePadding(),
+        state = listState,
+        contentPadding = PaddingValues(bottom = 160.dp),
+    ) {
+        when (filter) {
+            SearchFilter.SONGS -> {
+                val shown = res.tracks.take(visible)
+                items(shown, key = { "s${it.id}" }) { song ->
+                    TrackRow(
+                        track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),
+                        onClick = { player.playAll(res.tracks, res.tracks.indexOf(song), source = "Search") },
+                        onActions = { onActions(ActionTarget.Track(song)) },
+                        onArtist = { id -> onArtist(id) },
+                        isCurrent = song.id == nowPlayingId, isPlaying = isPlaying,
+                    )
+                }
+            }
+            SearchFilter.ALBUMS -> {
+                items(res.albums.take(visible), key = { "b${it.id}" }) { a ->
+                    AlbumRow(a, repo, onAlbum, onActions)
+                }
+            }
+            SearchFilter.ARTISTS -> {
+                items(res.artists.take(visible), key = { "a${it.id}" }) { a ->
+                    ArtistSearchRow(a, repo, onArtist, onActions)
+                }
+            }
+            SearchFilter.PLAYLISTS -> {
+                items(res.playlists.take(visible), key = { "p${it.id}" }) { p ->
+                    PlaylistSearchRow(p, repo, onPlaylist, onActions)
+                }
+            }
+            SearchFilter.ALL -> Unit
+        }
+    }
+}
+
+@Composable
+private fun TopArtistRow(
+    id: String,
+    name: String,
+    repo: MusicDataRepository,
+    onArtist: (String) -> Unit,
+    onActions: (ActionTarget) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(VusicColors.SurfaceHigh)
+            .clickable { onArtist(id) }
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ArtistPhoto(
+            name = name,
+            photoUrl = null,
+            repo = repo,
+            modifier = Modifier.size(64.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Artist", style = MaterialTheme.typography.labelMedium, color = VusicColors.SecondaryText)
+            Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun AlbumRow(
+    album: Album,
+    repo: MusicDataRepository,
+    onAlbum: (String) -> Unit,
+    onActions: (ActionTarget) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = { onAlbum(album.id) })
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CoverImage(repo.coverArtUrl(album.coverArt, 128), album.name, modifier = Modifier.size(56.dp), roundedDp = 4.dp)
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(album.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                "Album • ${album.artist}",
+                style = MaterialTheme.typography.bodySmall,
+                color = VusicColors.SecondaryText,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(onClick = { onActions(ActionTarget.Album(album)) }, modifier = Modifier.size(48.dp)) {
+            Icon(Icons.Default.MoreVert, "Album options")
+        }
+    }
+}
+
+@Composable
+private fun ArtistSearchRow(
+    artist: Artist,
+    repo: MusicDataRepository,
+    onArtist: (String) -> Unit,
+    onActions: (ActionTarget) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onArtist(artist.id) }
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ArtistPhoto(
+            name = artist.name,
+            photoUrl = artist.coverArt?.let { repo.coverArtUrl(it, 128) },
+            repo = repo,
+            modifier = Modifier.size(56.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(artist.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                "${artist.albumCount} albums",
+                style = MaterialTheme.typography.bodySmall,
+                color = VusicColors.SecondaryText,
+            )
+        }
+        IconButton(onClick = { onActions(ActionTarget.Artist(artist)) }, modifier = Modifier.size(48.dp)) {
+            Icon(Icons.Default.MoreVert, "Artist options")
+        }
+    }
+}
+
+@Composable
+private fun PlaylistSearchRow(
+    playlist: Playlist,
+    repo: MusicDataRepository,
+    onPlaylist: (String) -> Unit,
+    onActions: (ActionTarget) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = { onPlaylist(playlist.id) })
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PlaylistCoverArt(
+            cover = PlaylistCover.select(playlist.coverArt, emptyList()),
+            resolver = { id -> repo.coverArtUrl(id, 128) },
+            contentDescription = playlist.name,
+            modifier = Modifier.size(56.dp),
+            roundedDp = 4.dp,
+        )
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(playlist.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                "${playlist.songCount} songs",
+                style = MaterialTheme.typography.bodySmall,
+                color = VusicColors.SecondaryText,
+            )
+        }
+        IconButton(
+            onClick = {
+                onActions(
+                    ActionTarget.Playlist(
+                        playlist,
+                        null,
+                    ),
+                )
+            },
+            modifier = Modifier.size(48.dp),
+        ) {
+            Icon(Icons.Default.MoreVert, "Playlist options")
         }
     }
 }

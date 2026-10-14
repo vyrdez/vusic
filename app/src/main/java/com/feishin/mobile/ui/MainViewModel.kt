@@ -23,4 +23,5 @@ class MainViewModel @Inject constructor(
     val downloads: com.feishin.mobile.data.download.DownloadRepository,
     val offlineSync: com.feishin.mobile.data.download.OfflineSyncStore,
     val network: com.feishin.mobile.data.network.NetworkMonitor,
+    val cachedTracks: com.feishin.mobile.data.cache.CachedTrackStore,
 ) : ViewModel()

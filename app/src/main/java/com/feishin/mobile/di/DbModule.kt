@@ -24,4 +24,5 @@ object DbModule {
     @Provides fun provideMetadataCacheDao(db: MusicDatabase) = db.metadataCacheDao()
     @Provides fun provideCachedCoverDao(db: MusicDatabase) = db.cachedCoverDao()
     @Provides fun providePendingActionDao(db: MusicDatabase) = db.pendingActionDao()
+    @Provides fun provideCachedTrackDao(db: MusicDatabase) = db.cachedTrackDao()
 }

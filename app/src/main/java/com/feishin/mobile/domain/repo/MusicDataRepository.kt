@@ -10,6 +10,8 @@ import com.feishin.mobile.domain.model.Genre
 import com.feishin.mobile.domain.model.Playlist
 import com.feishin.mobile.domain.model.PlaylistDetail
 import com.feishin.mobile.domain.model.SearchResults
+import com.feishin.mobile.domain.model.ServerInfo
+import com.feishin.mobile.domain.model.ScanStatus
 import com.feishin.mobile.domain.model.StarredCollection
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.core.network.SyncedLyrics
@@ -22,6 +24,11 @@ interface MusicDataRepository {
     suspend fun genres(): Result<List<Genre>>
     suspend fun playlists(): Result<List<Playlist>>
     suspend fun search(query: String): Result<SearchResults>
+    /** Search with explicit per-type counts (paging single-type views). */
+    suspend fun search(query: String, artistCount: Int, albumCount: Int, songCount: Int): Result<SearchResults>
+    suspend fun serverInfo(): Result<ServerInfo>
+    suspend fun startScan(): Result<Unit>
+    suspend fun scanStatus(): Result<ScanStatus>
     suspend fun album(id: String): Result<AlbumDetail>
     suspend fun artist(id: String): Result<ArtistDetail>
     suspend fun artistInfo(id: String): Result<ArtistInfo>

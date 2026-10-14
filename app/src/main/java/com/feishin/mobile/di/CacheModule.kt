@@ -14,4 +14,7 @@ abstract class CacheModule {
     /** Disk-backed in the app; tests construct the in-memory implementation. */
     @Binds @Singleton
     abstract fun bindHomeCache(impl: DiskHomeCache): HomeCache
+
+    @Binds @Singleton
+    abstract fun bindCacheBytes(impl: com.feishin.mobile.data.cache.Media3CacheBytes): com.feishin.mobile.data.cache.CacheBytes
 }

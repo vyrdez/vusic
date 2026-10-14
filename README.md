@@ -28,6 +28,11 @@ Set `sdk.dir` in `local.properties` if the SDK lives elsewhere.
 - Offline: downloads live in app-private storage per server; playback, radio,
   favorites and library browsing all work with no connection, and offline
   scrobbles/stars are queued in Room and replayed with their original timestamps.
+- Smart cache: the next few queue items are fetched into a shared Media3 cache
+  using stable keys (song + quality, no per-request salt), so transitions have no
+  loading gap and a repeat play makes no network request. A built-in "Cached"
+  collection lists fully cached songs and plays them offline; it prunes itself as
+  the LRU evicts bytes. Enable under Settings > Sound & Playback > Playback cache.
 - Stream cache uses Media3 `SimpleCache` (LRU); a changed cache size takes effect
   on the next launch. The image cache size is configurable the same way.
 - "Allow cleartext HTTP" records intent; Android's cleartext policy is static per

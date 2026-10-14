@@ -226,6 +226,59 @@ interface PendingActionDao {
     suspend fun clear()
 }
 
+/**
+ * Stream-cache registry: one row per fully cached song. The bytes themselves
+ * live in Media3's SimpleCache (LRU); this table is what makes the "Cached"
+ * collection work with no network, and what gets pruned when bytes evaporate.
+ */
+@Entity(tableName = "cached_tracks")
+data class CachedTrackEntity(
+    @PrimaryKey val songId: String,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val albumId: String? = null,
+    val artistId: String? = null,
+    val coverArt: String? = null,
+    val durationSec: Int = 0,
+    val trackNo: Int? = null,
+    val year: Int? = null,
+    val genre: String? = null,
+    val suffix: String? = null,
+    /** Stable cache key (song + quality, no per-request salt). */
+    val cacheKey: String,
+    val sizeBytes: Long = 0,
+    val cachedAt: Long = System.currentTimeMillis(),
+    val lastPlayedAt: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface CachedTrackDao {
+    @Query("SELECT * FROM cached_tracks ORDER BY cachedAt DESC")
+    fun observeAll(): Flow<List<CachedTrackEntity>>
+
+    @Query("SELECT * FROM cached_tracks ORDER BY cachedAt DESC")
+    suspend fun all(): List<CachedTrackEntity>
+
+    @Query("SELECT * FROM cached_tracks WHERE songId = :id LIMIT 1")
+    suspend fun byId(id: String): CachedTrackEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(track: CachedTrackEntity)
+
+    @Query("UPDATE cached_tracks SET lastPlayedAt = :now WHERE songId = :id")
+    suspend fun touchPlayed(id: String, now: Long = System.currentTimeMillis())
+
+    @Query("DELETE FROM cached_tracks WHERE songId = :id")
+    suspend fun delete(id: String)
+
+    @Query("DELETE FROM cached_tracks")
+    suspend fun clear()
+
+    @Query("SELECT COUNT(*) FROM cached_tracks")
+    suspend fun count(): Int
+}
+
 @androidx.room.Database(
     entities = [
         DownloadEntity::class,
@@ -233,8 +286,9 @@ interface PendingActionDao {
         CachedMetadataEntity::class,
         CachedCoverEntity::class,
         PendingActionEntity::class,
+        CachedTrackEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class MusicDatabase : RoomDatabase() {
@@ -243,4 +297,5 @@ abstract class MusicDatabase : RoomDatabase() {
     abstract fun metadataCacheDao(): MetadataCacheDao
     abstract fun cachedCoverDao(): CachedCoverDao
     abstract fun pendingActionDao(): PendingActionDao
+    abstract fun cachedTrackDao(): CachedTrackDao
 }
