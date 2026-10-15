@@ -264,6 +264,42 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   floats over Home/Library/Search/Settings and detail screens, content scrolls
   behind it, the keyboard still does not leave a black bar, and the clear/Undo
   path is unchanged.)
+- [x] M6.5c settings and login polish
+  (C1 the login switch had no *visible* label, and the cause was neither a
+  missing Text nor clipping: LoginScreen was a bare Column, never a Surface, so
+  LocalContentColor kept Compose's default Color.Black and every Text without an
+  explicit colour — the "Vusic" title, the "Connect to your Navidrome server"
+  subtitle and the self-signed switch's label — was drawn black on the black
+  background. The field labels showed because OutlinedTextField takes its colours
+  from the scheme, not from the content colour. Fixed by wrapping the screen in
+  a Surface with an explicit contentColor. The switch is now a full-width
+  labelled row (title + one-line explanation, 56dp min, whole row tappable and
+  aligned with the fields), with an animated inline warning when it is on, and
+  both buttons share one shape/height/padding. The screen scrolls so the fields
+  and buttons stay reachable with the keyboard open at 1.3 font scale.
+  C2 the "Settings" and "Library" titles sat 21px apart because ScreenTitleRow
+  had no fixed height: the title was only centred inside whatever the tallest
+  child happened to be, and Library carries three 48dp icon buttons while
+  Settings has nothing but text. One TopLevelTitleBar (fixed 64dp row, one
+  inset handler, one padding, one typography) now backs ScreenTitleRow, so
+  every top-level screen matches by construction.
+  C3 one SettingsActionButton + ChoicePills + UsageLegendRow for every Settings
+  screen: always outlined, 1dp, rounded, 40dp min height, 16dp padding, content
+  width, left-aligned under its row text (the "Original"/"raw" bitrate pills and
+  every Browse/Open/Exempt/Clear/Delete/Reset/Log out button were either stranded
+  at the far right or borderless), destructive actions red text + red border at
+  78%, and pills flow left-to-right with 8dp gaps. Switches and sliders
+  untouched; descriptions cap at 3 lines.
+  C4 the usage bar divided each category by Vusic's own usage only and left free
+  space out of the bar entirely, so the largest category was always ~100% of the
+  bar (347 MB of song cache filled it end to end next to 3.94 GB free). New pure
+  UsageBarMath makes every segment — free space included — a share of one
+  total, gives non-zero segments a 2% minimum width decided by bytes rather than
+  by fraction (so a 1-byte entry next to a terabyte is still visible), and keeps
+  the bar summing to exactly 1 by settling the difference on the largest segment.
+  The island is rebuilt with 16dp padding, a 12dp rounded bar, a "X used by
+  Vusic, Y free" total label, one legend row per item with an 8dp dot, and
+  animated segment widths. 11 UsageBarMath unit tests.)
 - [x] M6.0 UI fixes + queue freeze/root-cause + queue redesign + mini-player clear
   (1. Library grid/list toggle: root cause was that only the Albums and Artists
   branches read the `grid` flag — Songs/Playlists/Favorites/Downloads rendered

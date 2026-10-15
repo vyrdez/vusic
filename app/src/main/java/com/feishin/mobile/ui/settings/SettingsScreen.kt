@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
@@ -513,12 +514,22 @@ private fun BitrateChoiceRow(label: String, br: Int, fmt: String, onSet: (Int, S
     var brMenu by androidx.compose.runtime.remember { mutableStateOf(false) }
     var fmtMenu by androidx.compose.runtime.remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        // Label on its own line, then the two controls left-aligned under it, so
+        // the "Original" / "raw" pills are no longer stranded at the far right.
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(VusicSpacing.ControlGap / 2))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             androidx.compose.foundation.layout.Box {
-                androidx.compose.material3.OutlinedButton(onClick = { brMenu = true }) {
-                    Text(if (br == 0) "Original" else "$br kbps")
-                }
+                SettingsActionButton(
+                    label = if (br == 0) "Original" else "$br kbps",
+                    onClick = { brMenu = true },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.ArrowDropDown,
+                            "Open bitrates", tint = Color.White, modifier = Modifier.size(20.dp),
+                        )
+                    },
+                )
                 androidx.compose.material3.DropdownMenu(brMenu, onDismissRequest = { brMenu = false }) {
                     QualityPolicy.BITRATES.forEach { b ->
                         androidx.compose.material3.DropdownMenuItem(
@@ -528,9 +539,18 @@ private fun BitrateChoiceRow(label: String, br: Int, fmt: String, onSet: (Int, S
                     }
                 }
             }
-            Spacer(Modifier.size(6.dp))
+            Spacer(Modifier.size(VusicSpacing.ControlGap / 2))
             androidx.compose.foundation.layout.Box {
-                androidx.compose.material3.OutlinedButton(onClick = { fmtMenu = true }) { Text(fmt) }
+                SettingsActionButton(
+                    label = fmt,
+                    onClick = { fmtMenu = true },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.ArrowDropDown,
+                            "Open formats", tint = Color.White, modifier = Modifier.size(20.dp),
+                        )
+                    },
+                )
                 androidx.compose.material3.DropdownMenu(fmtMenu, onDismissRequest = { fmtMenu = false }) {
                     QualityPolicy.FORMATS.forEach { f ->
                         androidx.compose.material3.DropdownMenuItem(
@@ -602,20 +622,12 @@ private fun StorageScreen(
 
     SettingsSection("USAGE")
     SettingsCard {
-        UsageBar(
-            segments = listOf(
-                (st?.imageCacheBytes?.toFloat()?.div(total) ?: 0f) to Color(0xFF8AB4F8),
-                (st?.downloadBytes?.toFloat()?.div(total) ?: 0f) to Color(0xFF7DD8A8),
-                (st?.streamCacheBytes?.toFloat()?.div(total) ?: 0f) to Color(0xFFFFC66E),
-            ),
-        )
-        UsageLegend(
-            listOf(
-                Triple("Images", st?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.imageCacheBytes + it.coverBytes) } ?: "…", Color(0xFF8AB4F8)),
-                Triple("Music downloads", st?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.downloadBytes) } ?: "…", Color(0xFF7DD8A8)),
-                Triple("Song cache", st?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.streamCacheBytes) } ?: "…", Color(0xFFFFC66E)),
-                Triple("Free space", st?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.freeBytes) } ?: "…", VusicColors.SecondaryText),
-            ),
+        UsageCard(
+            imagesBytes = st?.let { it.imageCacheBytes + it.coverBytes } ?: 0L,
+            downloadsBytes = st?.downloadBytes ?: 0L,
+            songCacheBytes = st?.streamCacheBytes ?: 0L,
+            freeBytes = st?.freeBytes ?: 0L,
+            human = { com.feishin.mobile.core.common.CacheSizePolicy.human(it) },
         )
     }
     SettingsSection("LIMITS")

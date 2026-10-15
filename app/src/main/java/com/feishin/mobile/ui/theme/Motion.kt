@@ -43,6 +43,9 @@ object Motion {
     /** Longest allowed: only for large surfaces, never for input feedback. */
     const val Slow = 300
 
+    /** Colour cross-fade, for borders, pill fills and warning text. */
+    fun color(duration: Int = Normal) = tweenSpec<androidx.compose.ui.graphics.Color>(duration)
+
     /** Stagger step for list/card entrance animations. */
     const val Stagger = 28
 
@@ -93,6 +96,12 @@ object Motion {
 
     /** Dp variant of [layoutSpring], for paddings and sizes. */
     fun layoutDp(): FiniteAnimationSpec<androidx.compose.ui.unit.Dp> = spring(
+        dampingRatio = 1f,
+        stiffness = Spring.StiffnessLow,
+    )
+
+    /** IntSize variant, for expand/shrink of a container's height. */
+    fun layoutSize(): FiniteAnimationSpec<androidx.compose.ui.unit.IntSize> = spring(
         dampingRatio = 1f,
         stiffness = Spring.StiffnessLow,
     )

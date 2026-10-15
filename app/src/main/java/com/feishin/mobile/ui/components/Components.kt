@@ -154,19 +154,9 @@ fun ScreenTitleRow(
     modifier: Modifier = Modifier,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    Row(
-        modifier.fillMaxWidth().padding(start = VusicSpacing.ScreenHorizontal, end = 4.dp, top = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            title,
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        actions()
-    }
+    // Thin alias: every top-level screen shares the one fixed-height title row
+    // so the baselines line up to the pixel (see TopLevelTitleBar).
+    TopLevelTitleBar(title = title, modifier = modifier, actions = actions)
 }
 
 @Composable

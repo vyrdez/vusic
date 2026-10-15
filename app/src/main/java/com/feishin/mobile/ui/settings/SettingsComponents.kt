@@ -23,6 +23,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -43,6 +45,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.VusicControlColors
 import com.feishin.mobile.ui.theme.VusicControlDefaults
@@ -167,34 +170,51 @@ fun ChoiceRow(
 ) {
     var open by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
-        Row(
+        Column(
             Modifier.fillMaxWidth()
                 .defaultMinSize(minHeight = VusicSpacing.RowMinHeight)
                 .padding(vertical = VusicSpacing.RowVertical),
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            RowText(label, description, Modifier.weight(1f))
-            Spacer(Modifier.width(VusicSpacing.ControlGap))
-            Box(Modifier.widthIn(min = 96.dp)) {
-                OutlinedButton(onClick = { open = true }) {
-                    Text(value, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                DropdownMenu(open, onDismissRequest = { open = false }) {
-                    options.forEach { o ->
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(o, modifier = Modifier.weight(1f))
-                                    if (o == value) {
-                                        Icon(
-                                            Icons.Default.Check, "Selected",
-                                            tint = Color.White, modifier = Modifier.size(18.dp),
-                                        )
+            // Left-aligned under the row text, never at the far right.
+            RowText(label, description)
+            Spacer(Modifier.height(VusicSpacing.ControlGap / 2))
+            // Two or three visible options render as pills side by side; a long
+            // list stays a dropdown so the row cannot grow unbounded.
+            if (options.size <= 3) {
+                ChoicePills(
+                    options = options,
+                    selected = value,
+                    onSelect = onSelect,
+                )
+            } else {
+                Box {
+                    SettingsActionButton(
+                        label = value,
+                        onClick = { open = true },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.ArrowDropDown, "Open options",
+                                tint = Color.White, modifier = Modifier.size(20.dp),
+                            )
+                        },
+                    )
+                    DropdownMenu(open, onDismissRequest = { open = false }) {
+                        options.forEach { o ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(o, modifier = Modifier.weight(1f))
+                                        if (o == value) {
+                                            Icon(
+                                                Icons.Default.Check, "Selected",
+                                                tint = Color.White, modifier = Modifier.size(18.dp),
+                                            )
+                                        }
                                     }
-                                }
-                            },
-                            onClick = { onSelect(o); open = false },
-                        )
+                                },
+                                onClick = { onSelect(o); open = false },
+                            )
+                        }
                     }
                 }
             }
@@ -286,9 +306,11 @@ fun InfoRow(label: String, value: String, showDivider: Boolean = false) {
 }
 
 /**
- * A row with an action button. The button sits on the end while the text fits in
- * three lines; when the description is long it stacks under the text at full
- * width so nothing runs under the button.
+ * A row with an action button.
+ *
+ * The button is always left-aligned under the row's title and description,
+ * never floating at the far right of the row, and it is always the same
+ * outlined style (see [SettingsActionButton]).
  */@Composable
 fun ActionRow(
     label: String,
@@ -302,25 +324,18 @@ fun ActionRow(
     onClick: () -> Unit,
 ) {
     var confirm by remember { mutableStateOf(false) }
-    val stacks = (description?.length ?: 0) > 44
     Column(Modifier.fillMaxWidth()) {
         Column(
             Modifier.fillMaxWidth()
                 .defaultMinSize(minHeight = VusicSpacing.RowMinHeight)
                 .padding(vertical = VusicSpacing.RowVertical),
         ) {
-            if (stacks) {
-                RowText(label, description, labelColor = if (danger) Color(0xFFFF8A80) else Color.White)
-                Spacer(Modifier.height(12.dp))
+            // Text first, button directly underneath and left-aligned: the eye
+            // reads label -> explanation -> control in one column.
+            RowText(label, description, labelColor = if (danger) DangerRed else Color.White)
+            Spacer(Modifier.height(VusicSpacing.ControlGap / 2))
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
                 ActionButton(danger, enabled, buttonLabel) { if (confirmTitle != null) confirm = true else onClick() }
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RowText(label, description, Modifier.weight(1f), labelColor = if (danger) Color(0xFFFF8A80) else Color.White)
-                    Spacer(Modifier.width(VusicSpacing.ControlGap))
-                    Box(Modifier.widthIn(min = 96.dp)) {
-                        ActionButton(danger, enabled, buttonLabel) { if (confirmTitle != null) confirm = true else onClick() }
-                    }
-                }
             }
         }
         if (showDivider) SettingsDivider()
@@ -338,37 +353,83 @@ fun ActionRow(
 
 @Composable
 private fun ActionButton(danger: Boolean, enabled: Boolean, label: String, onClick: () -> Unit) {
-    OutlinedButton(
-        onClick = onClick,
-        enabled = enabled,
-        border = if (danger) BorderStroke(1.dp, Color(0xFFFF8A80)) else null,
-        modifier = Modifier.heightIn(min = 40.dp),
-    ) {
-        Text(
-            label,
-            color = when {
-                !enabled -> VusicControlColors.DisabledThumb
-                danger -> Color(0xFFFF8A80)
-                else -> Color.White
-            },
-            maxLines = 1,
+    SettingsActionButton(label = label, onClick = onClick, danger = danger, enabled = enabled)
+}
+
+/**
+ * Usage island: a 12dp rounded bar whose segments are proportional to bytes
+ * (including free space), a total label, and one legend row per item.
+ * Segment widths animate when the values change.
+ */
+@Composable
+fun UsageCard(
+    imagesBytes: Long,
+    downloadsBytes: Long,
+    songCacheBytes: Long,
+    freeBytes: Long,
+    human: (Long) -> String,
+    modifier: Modifier = Modifier,
+) {
+    val math = remember(imagesBytes, downloadsBytes, songCacheBytes, freeBytes) {
+        com.feishin.mobile.core.common.UsageBarMath.compute(
+            vusicSegments = listOf(
+                com.feishin.mobile.core.common.UsageBarMath.Segment("Images", imagesBytes, 0),
+                com.feishin.mobile.core.common.UsageBarMath.Segment("Music downloads", downloadsBytes, 1),
+                com.feishin.mobile.core.common.UsageBarMath.Segment("Song cache", songCacheBytes, 2),
+            ),
+            freeBytes = freeBytes,
         )
+    }
+    val colors = listOf(Color(0xFF8AB4F8), Color(0xFF7DD8A8), Color(0xFFFFC66E))
+    val barColors = colors + VusicColors.SurfaceHigh
+
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        UsageBar(fractions = math.fractions, colors = barColors)
+        Text(
+            com.feishin.mobile.core.common.UsageBarMath.totalLabel(math.usedBytes, math.freeBytes, human),
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            UsageLegendRow("Images", human(imagesBytes), colors[0])
+            UsageLegendRow("Music downloads", human(downloadsBytes), colors[1])
+            UsageLegendRow("Song cache", human(songCacheBytes), colors[2])
+            UsageLegendRow("Free space", human(freeBytes), VusicColors.SurfaceHigh)
+        }
     }
 }
 
-/** Stacked usage bar: each segment is (fraction, color). */
+/**
+ * Stacked usage bar. [fractions] must sum to 1 (see UsageBarMath); widths are
+ * animated so a resize or a download updates smoothly.
+ */
 @Composable
 fun UsageBar(
-    segments: List<Pair<Float, Color>>,
+    fractions: List<Float>,
+    colors: List<Color>,
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier.fillMaxWidth().height(10.dp)
-            .clip(RoundedCornerShape(5.dp))
+        modifier
+            .fillMaxWidth()
+            .height(12.dp)
+            .clip(RoundedCornerShape(6.dp))
             .background(VusicColors.Surface),
     ) {
-        segments.filter { it.first > 0f }.forEach { (fraction, color) ->
-            Box(Modifier.weight(fraction).height(10.dp).background(color))
+        fractions.forEachIndexed { i, f ->
+            if (f > 0f) {
+                val animated by animateFloatAsState(
+                    targetValue = f,
+                    animationSpec = Motion.layoutSpring(),
+                    label = "usage-$i",
+                )
+                Box(
+                    Modifier
+                        .weight(animated.coerceAtLeast(0.0001f))
+                        .height(12.dp)
+                        .background(colors.getOrElse(i) { VusicColors.SurfaceHigh }),
+                )
+            }
         }
     }
 }
