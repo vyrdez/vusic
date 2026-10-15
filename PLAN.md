@@ -379,6 +379,18 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   long (revisited in the color pass). Verified on the emulator at font scales
   1.0 and 1.3: every sub-screen, no overlaps, no under-runs; narrow widths are
   covered by unit tests (down to 70dp rows), not on-device.)
+- [x] M6.7a home pager peek
+  (Shared SongPagerSection now reserves endPadding = peek(32) + spacing(12):
+  page width = viewport - 4 - 44, so the next page's first column peeks in by
+  exactly 32dp (measured on-device: 84px on a 1080px screen). Left margin, ⋮
+  inside the page, snapping, dots and Play-all unchanged; the math lives in
+  pure PagerPeek with 5 unit tests over 320/360/411/600dp, including a
+  100dp+ text-column floor so titles truncate instead of reaching the peek at
+  1.3 scale. Follow-up per review: a lone page (no next column) now fills the
+  full width instead of stranding the 44dp peek reservation. The last page of
+  a multi-page section keeps its trailing gap: HorizontalPager sizes every page
+  uniformly, so only the last page could be widened with a custom pager — out
+  of scope; the reservation is structural, not a bug.)
 - [x] M6.6d M6.5 leftover re-verification (fixes were needed)
   (D1 usage island verified: full-width bar with proportional segments (556 MB
   used renders ~13% against 3.63 GB free), "X used by Vusic, Y free" label,

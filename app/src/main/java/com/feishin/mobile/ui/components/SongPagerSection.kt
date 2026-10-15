@@ -58,7 +58,16 @@ fun SongPagerSection(
         HorizontalPager(
             state = pager,
             modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 4.dp),
+            // The next page peeks in at the right edge (see PagerPeek): the
+            // first page keeps its normal left margin, rows and the ⋮ menu
+            // stay inside the page width, snapping and dots are untouched. A
+            // lone page has no next column, so it fills the full width.
+            contentPadding = PaddingValues(
+                start = com.feishin.mobile.core.common.PagerPeek.START_DP.dp,
+                end = com.feishin.mobile.core.common.PagerPeek
+                    .endPaddingDp(pages.size).dp,
+            ),
+            pageSpacing = com.feishin.mobile.core.common.PagerPeek.SPACING_DP.dp,
         ) { page ->
             Column {
                 pages[page].forEach { t ->
