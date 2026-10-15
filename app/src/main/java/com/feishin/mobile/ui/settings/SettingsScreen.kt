@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -285,13 +286,17 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
             label = { Text("Server URL") }, singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         )
-        Row {
-            androidx.compose.material3.TextButton(onClick = {
-                editing = false
-                vm.setServerUrl(serverUrl)
-                vm.testConnection()
-            }) { Text("Save & test") }
-            androidx.compose.material3.TextButton(onClick = { editing = false }) { Text("Cancel") }
+        // Outlined pair, not borderless text buttons: same style as every row.
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SettingsActionButton(
+                label = "Save & test",
+                onClick = {
+                    editing = false
+                    vm.setServerUrl(serverUrl)
+                    vm.testConnection()
+                },
+            )
+            SettingsActionButton(label = "Cancel", onClick = { editing = false })
         }
     }
     when (val t = test) {
@@ -324,13 +329,9 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
         InfoRow("Device", vm.deviceName)
     }
     Spacer(Modifier.height(12.dp))
-    androidx.compose.material3.OutlinedButton(
-        onClick = { showLogout = true },
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF8A80)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Text("Log out", color = Color(0xFFFF8A80))
-    }
+    // Destructive, so red — but a row-style wrap-content button like every
+    // other action, with the confirm dialog.
+    SettingsActionButton(label = "Log out", danger = true, onClick = { showLogout = true })
 
     if (showLogout) {
         AlertDialog(
@@ -374,6 +375,7 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
             s.theme.name.lowercase().replaceFirstChar(Char::uppercase),
             ThemeMode.entries.map { it.name.lowercase().replaceFirstChar(Char::uppercase) },
             onSelect = { vm.setTheme(ThemeMode.valueOf(it.uppercase())) },
+            segmented = true,
         )
         SwitchRow("Dynamic Now Playing color", s.dynamicNpColor, vm::setDynamicNpColor)
     }
@@ -383,7 +385,9 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
             val current = s.libraryLayouts[tab] ?: s.defaultLayout
             ChoiceRow(label, current.name.lowercase().replaceFirstChar(Char::uppercase), listOf("Grid", "List"), onSelect = {
                 vm.setLibraryLayout(tab, if (it == "Grid") LayoutMode.GRID else LayoutMode.LIST)
-            })
+            },
+            segmented = true,
+        )
         }
     }
     SettingsSection("DEFAULT SORT")
@@ -447,6 +451,7 @@ private fun SoundScreen(vm: SettingsViewModel) {
             "Mode", s.replayGainMode.name.lowercase().replaceFirstChar(Char::uppercase),
             ReplayGainMode.entries.map { it.name.lowercase().replaceFirstChar(Char::uppercase) },
             onSelect = { vm.setReplayGainMode(ReplayGainMode.valueOf(it.uppercase())) },
+            segmented = true,
         )
         // Discrete-step rows: ReplayGain sliders snap to whole dB.
         val dbSteps = (-15..15 step 3).map { "$it dB" }
@@ -550,15 +555,24 @@ private fun nearestIndex(steps: List<String>, value: String): Int {
 private fun BitrateChoiceRow(label: String, br: Int, fmt: String, onSet: (Int, String) -> Unit) {
     var brMenu by androidx.compose.runtime.remember { mutableStateOf(false) }
     var fmtMenu by androidx.compose.runtime.remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        // Label on its own line, then the two controls left-aligned under it, so
-        // the "Original" / "raw" pills are no longer stranded at the far right.
-        Text(label, style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.height(VusicSpacing.ControlGap / 2))
+    val brLabel = if (br == 0) "Original" else "$br kbps"
+    // Both dropdowns share the right side, 8dp apart; only a genuinely cramped
+    // row stacks them to the next line, END-aligned.
+    val pairWidth = com.feishin.mobile.core.common.RowLayout.estimateButtonWidthDp(brLabel, hasIcon = true, 1f) +
+        com.feishin.mobile.core.common.RowLayout.CONTROL_GAP_DP +
+        com.feishin.mobile.core.common.RowLayout.estimateButtonWidthDp(fmt, hasIcon = true, 1f)
+    SettingControlRow(
+        label = label,
+        controlWidthDp = pairWidth,
+        // Uncapped: a two-button pair cannot squeeze (the 45% cap crushed the
+        // second button's text to zero width). Measured whole; if the pair
+        // plus label cannot share the row it stacks to the next line instead.
+        cappedControl = false,
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             androidx.compose.foundation.layout.Box {
                 SettingsActionButton(
-                    label = if (br == 0) "Original" else "$br kbps",
+                    label = brLabel,
                     onClick = { brMenu = true },
                     leadingIcon = {
                         Icon(
@@ -576,7 +590,7 @@ private fun BitrateChoiceRow(label: String, br: Int, fmt: String, onSet: (Int, S
                     }
                 }
             }
-            Spacer(Modifier.size(VusicSpacing.ControlGap / 2))
+            Spacer(Modifier.size(com.feishin.mobile.core.common.RowLayout.CONTROL_GAP_DP.dp))
             androidx.compose.foundation.layout.Box {
                 SettingsActionButton(
                     label = fmt,

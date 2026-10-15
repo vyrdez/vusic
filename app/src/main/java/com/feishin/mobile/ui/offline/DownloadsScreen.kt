@@ -33,6 +33,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -77,9 +79,55 @@ fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRep
                 StorageRow("Downloads (${done.size} songs)", ui.totalLabel)
                 StorageRow("Cached cover art", ui.coverLabel)
                 Spacer(Modifier.size(12.dp))
+                // Both remove data, so both are red with confirms — same style
+                // as every Settings action button.
+                var confirmDownloads by androidx.compose.runtime.remember { mutableStateOf(false) }
+                var confirmArt by androidx.compose.runtime.remember { mutableStateOf(false) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { vm.clearCompleted() }) { Text("Delete downloads") }
-                    OutlinedButton(onClick = { vm.clearCoverCache() }) { Text("Clear art cache") }
+                    com.feishin.mobile.ui.settings.SettingsActionButton(
+                        label = "Delete downloads", danger = true,
+                        onClick = { confirmDownloads = true },
+                    )
+                    com.feishin.mobile.ui.settings.SettingsActionButton(
+                        label = "Clear art cache", danger = true,
+                        onClick = { confirmArt = true },
+                    )
+                }
+                if (confirmDownloads) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { confirmDownloads = false },
+                        title = { Text("Delete all downloads?") },
+                        text = { Text("Removes every downloaded song and its files.") },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                confirmDownloads = false
+                                vm.clearCompleted()
+                            }) { Text("Delete") }
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.TextButton(onClick = { confirmDownloads = false }) {
+                                Text("Cancel")
+                            }
+                        },
+                    )
+                }
+                if (confirmArt) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { confirmArt = false },
+                        title = { Text("Clear cached cover art?") },
+                        text = { Text("Artwork is re-downloaded on demand.") },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                confirmArt = false
+                                vm.clearCoverCache()
+                            }) { Text("Clear") }
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.TextButton(onClick = { confirmArt = false }) {
+                                Text("Cancel")
+                            }
+                        },
+                    )
                 }
             }
         }

@@ -545,7 +545,7 @@ private fun DownloadsTab(
                             color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText,
                         )
                     }
-                    OutlinedButton(onClick = onManage) { Text("Manage") }
+                    com.feishin.mobile.ui.settings.SettingsActionButton(label = "Manage", onClick = onManage)
                 }
             }
             items(done, key = { it.songId }) { entity ->
@@ -573,7 +573,7 @@ private fun DownloadsTab(
                         color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText,
                     )
                 }
-                OutlinedButton(onClick = onManage) { Text("Manage") }
+                com.feishin.mobile.ui.settings.SettingsActionButton(label = "Manage", onClick = onManage)
             }
         }
         items(done, key = { it.songId }) { entity ->

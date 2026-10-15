@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -107,8 +108,11 @@ fun SettingsActionButton(
                 onClick = onClick,
             )
             .heightIn(min = 40.dp)
+            .widthIn(min = 96.dp)
             .padding(horizontal = 16.dp, vertical = 10.dp),
-        contentAlignment = Alignment.CenterStart,
+        // Centered: with the 96dp minimum, a short label would otherwise hug
+        // the left edge and leave dead space on the right.
+        contentAlignment = Alignment.Center,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             leadingIcon?.let {
@@ -127,45 +131,170 @@ fun SettingsActionButton(
 }
 
 /**
- * A single-choice pill (ReplayGain "Track", bitrate "Original"/"raw", ...).
+ * One shared row for every Settings row with a trailing control: label and
+ * description on the left, the control on the right, vertically centred, with
+ * at least 16dp between them. The text takes the rest and wraps to at most 3
+ * lines; it never runs under the control.
  *
- * Always left-aligned, directly under the row's title and description, and
- * several pills sit left to right with 8dp gaps, wrapping to the next line when
- * they do not fit.
+ * When the text column would drop below ~40% of the row (long labels, large
+ * font scale, small screens — see RowLayout), the control goes on the next
+ * line, aligned to the END (right), never left or centred.
+ *
+ * @param controlWidthDp the control's intrinsic width estimate, used only for
+ *        the beside/next-line decision (the control still sizes itself, capped
+ *        at 45% of the row when beside the text).
  */
 @Composable
-fun ChoicePills(
+fun SettingControlRow(
+    label: String,
+    description: String? = null,
+    warning: String? = null,
+    danger: Boolean = false,
+    controlWidthDp: Float,
+    showDivider: Boolean = false,
+    cappedControl: Boolean = true,
+    control: @Composable () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        androidx.compose.foundation.layout.BoxWithConstraints(
+            Modifier.fillMaxWidth()
+                .defaultMinSize(minHeight = VusicSpacing.RowMinHeight)
+                .padding(vertical = VusicSpacing.RowVertical),
+        ) {
+            val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+            // Hoisted: inside Row/Box scopes below, maxWidth would need an
+            // explicit receiver.
+            val rowWidth = maxWidth
+            val textEst = com.feishin.mobile.core.common.RowLayout.estimateTextWidthDp(
+                label, description ?: warning, fontScale,
+            )
+            when (val at = com.feishin.mobile.core.common.RowLayout.decide(
+                rowWidth.value, textEst, controlWidthDp * fontScale, capControl = cappedControl,
+            )) {
+                is com.feishin.mobile.core.common.RowLayout.Placement.Beside -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SettingRowText(
+                            label = label, description = description, warning = warning,
+                            danger = danger, modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(VusicSpacing.ControlGap))
+                        // Capped controls (buttons, dropdowns) never take more
+                        // than 45% beside the text; segmented controls keep
+                        // their intrinsic width instead of being squeezed.
+                        val cap = if (cappedControl) {
+                            Modifier.widthIn(
+                                max = rowWidth *
+                                    com.feishin.mobile.core.common.RowLayout.MAX_CONTROL_SHARE,
+                            )
+                        } else {
+                            Modifier
+                        }
+                        Box(cap, contentAlignment = Alignment.CenterEnd) {
+                            control()
+                        }
+                    }
+                }
+                com.feishin.mobile.core.common.RowLayout.Placement.NextLineEnd -> {
+                    Column {
+                        SettingRowText(
+                            label = label, description = description, warning = warning,
+                            danger = danger, modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(com.feishin.mobile.core.common.RowLayout.STACKED_GAP_DP.dp))
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                            control()
+                        }
+                    }
+                }
+            }
+        }
+        if (showDivider) {
+            com.feishin.mobile.ui.settings.SettingsDivider()
+        }
+    }
+}
+
+/** Label + description + warning column shared by every control row. */
+@Composable
+private fun SettingRowText(
+    label: String,
+    description: String?,
+    warning: String?,
+    danger: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (danger) DangerRed else Color.White,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (description != null) {
+            Spacer(Modifier.height(VusicSpacing.TitleToDescription))
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = VusicColors.SecondaryText,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (warning != null) {
+            Spacer(Modifier.height(VusicSpacing.TitleToDescription))
+            Text(
+                warning,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFFFFB74D),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
+ * Segmented single-row selector (Grid/List, Off/Track/Album, ...): equal-height
+ * cells in one outlined container, the selected cell filled white. Never wraps;
+ * if it cannot fit beside the text the whole row stacks via SettingControlRow.
+ */
+@Composable
+fun SegmentedControl(
     options: List<String>,
     selected: String,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Simple flow layout: pills that fit share a line, the rest wrap.
-    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-    androidx.compose.foundation.layout.FlowRow(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(VusicSpacing.ControlGap / 2),
-        verticalArrangement = Arrangement.spacedBy(VusicSpacing.ControlGap / 2),
+    // Intrinsic width: the row is exactly as wide as its widest cell makes it,
+// with every cell equal. Never stretched, never squeezed.
+    Row(
+        modifier
+            .width(androidx.compose.foundation.layout.IntrinsicSize.Max)
+            .clip(ControlShape)
+            .background(Color.Transparent)
+            .then(Modifier.border(androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6E6E6E)), ControlShape))
+            .heightIn(min = 40.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        options.forEach { option ->
+        options.forEachIndexed { i, option ->
             val isSelected = option == selected
             val bg by animateColorAsState(
-                targetValue = if (isSelected) Color.White else VusicControlColors.ChipOffFill,
+                targetValue = if (isSelected) Color.White else Color.Transparent,
                 animationSpec = Motion.color(Motion.Fast),
-                label = "pill-bg",
+                label = "seg-bg-$i",
             )
             val fg by animateColorAsState(
                 targetValue = if (isSelected) Color.Black else VusicControlColors.ChipOffText,
                 animationSpec = Motion.color(Motion.Fast),
-                label = "pill-fg",
+                label = "seg-fg-$i",
             )
             Box(
                 Modifier
-                    .clip(RoundedCornerShape(20.dp))
+                    .weight(1f)
                     .background(bg)
                     .clickable(role = Role.RadioButton) { onSelect(option) }
-                    .heightIn(min = 40.dp)
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(option, color = fg, style = MaterialTheme.typography.labelLarge, maxLines = 1)

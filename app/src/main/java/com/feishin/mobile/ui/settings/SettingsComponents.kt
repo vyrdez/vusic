@@ -142,26 +142,29 @@ fun SwitchRow(
     warning: String? = null,
     showDivider: Boolean = false,
 ) {
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth()
-                .defaultMinSize(minHeight = VusicSpacing.RowMinHeight)
-                .padding(vertical = VusicSpacing.RowVertical),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            RowText(label, description, Modifier.weight(1f), warning = warning)
-            Spacer(Modifier.width(VusicSpacing.ControlGap))
-            Switch(
-                checked = value,
-                onCheckedChange = onSet,
-                colors = VusicControlDefaults.switchColors(),
-                modifier = Modifier.widthIn(min = 52.dp),
-            )
-        }
-        if (showDivider) SettingsDivider()
+    SettingControlRow(
+        label = label,
+        description = description,
+        warning = warning,
+        controlWidthDp = com.feishin.mobile.core.common.RowLayout.SWITCH_WIDTH_DP,
+        showDivider = showDivider,
+    ) {
+        Switch(
+            checked = value,
+            onCheckedChange = onSet,
+            colors = VusicControlDefaults.switchColors(),
+            modifier = Modifier.widthIn(min = 52.dp),
+        )
     }
 }
 
+/**
+ * Choice between a few options. The control always sits on the right of the
+ * label's line: a segmented single-row selector when [segmented] (Grid/List,
+ * Off/Track/Album, Theme — equal-height cells, selected filled white), a
+ * dropdown button otherwise (sorts, timeouts, mix length). If the control
+ * cannot fit beside the text it stacks to the next line, END-aligned.
+ */
 @Composable
 fun ChoiceRow(
     label: String,
@@ -170,59 +173,57 @@ fun ChoiceRow(
     onSelect: (String) -> Unit,
     description: String? = null,
     showDivider: Boolean = false,
+    segmented: Boolean = false,
 ) {
     var open by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth()) {
-        Column(
-            Modifier.fillMaxWidth()
-                .defaultMinSize(minHeight = VusicSpacing.RowMinHeight)
-                .padding(vertical = VusicSpacing.RowVertical),
+    if (segmented) {
+        SettingControlRow(
+            label = label,
+            description = description,
+            controlWidthDp = com.feishin.mobile.core.common.RowLayout.estimateSegmentedWidthDp(options, 1f),
+            showDivider = showDivider,
+            cappedControl = false,
         ) {
-            // Left-aligned under the row text, never at the far right.
-            RowText(label, description)
-            Spacer(Modifier.height(VusicSpacing.ControlGap / 2))
-            // Two or three visible options render as pills side by side; a long
-            // list stays a dropdown so the row cannot grow unbounded.
-            if (options.size <= 3) {
-                ChoicePills(
-                    options = options,
-                    selected = value,
-                    onSelect = onSelect,
-                )
-            } else {
-                Box {
-                    SettingsActionButton(
-                        label = value,
-                        onClick = { open = true },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.ArrowDropDown, "Open options",
-                                tint = Color.White, modifier = Modifier.size(20.dp),
-                            )
-                        },
+            SegmentedControl(options = options, selected = value, onSelect = onSelect)
+        }
+        return
+    }
+    SettingControlRow(
+        label = label,
+        description = description,
+        controlWidthDp = com.feishin.mobile.core.common.RowLayout.estimateButtonWidthDp(value, hasIcon = true, 1f),
+        showDivider = showDivider,
+    ) {
+        Box {
+            SettingsActionButton(
+                label = value,
+                onClick = { open = true },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.ArrowDropDown, "Open options",
+                        tint = Color.White, modifier = Modifier.size(20.dp),
                     )
-                    DropdownMenu(open, onDismissRequest = { open = false }) {
-                        options.forEach { o ->
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(o, modifier = Modifier.weight(1f))
-                                        if (o == value) {
-                                            Icon(
-                                                Icons.Default.Check, "Selected",
-                                                tint = Color.White, modifier = Modifier.size(18.dp),
-                                            )
-                                        }
-                                    }
-                                },
-                                onClick = { onSelect(o); open = false },
-                            )
-                        }
-                    }
+                },
+            )
+            DropdownMenu(open, onDismissRequest = { open = false }) {
+                options.forEach { o ->
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(o, modifier = Modifier.weight(1f))
+                                if (o == value) {
+                                    Icon(
+                                        Icons.Default.Check, "Selected",
+                                        tint = Color.White, modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            }
+                        },
+                        onClick = { onSelect(o); open = false },
+                    )
                 }
             }
         }
-        if (showDivider) SettingsDivider()
     }
 }
 
@@ -309,11 +310,11 @@ fun InfoRow(label: String, value: String, showDivider: Boolean = false) {
 }
 
 /**
- * A row with an action button.
- *
- * The button is always left-aligned under the row's title and description,
- * never floating at the far right of the row, and it is always the same
- * outlined style (see [SettingsActionButton]).
+ * A row with an action button. The button sits on the right of the label's
+ * line (vertically centred), with at least 16dp between text and control; the
+ * text wraps to at most 3 lines and never runs under the button. Only when the
+ * text would be squeezed below ~40% of the row does the button go on the next
+ * line, aligned END. Destructive actions keep the red style plus a confirm.
  */@Composable
 fun ActionRow(
     label: String,
@@ -327,21 +328,16 @@ fun ActionRow(
     onClick: () -> Unit,
 ) {
     var confirm by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth()) {
-        Column(
-            Modifier.fillMaxWidth()
-                .defaultMinSize(minHeight = VusicSpacing.RowMinHeight)
-                .padding(vertical = VusicSpacing.RowVertical),
-        ) {
-            // Text first, button directly underneath and left-aligned: the eye
-            // reads label -> explanation -> control in one column.
-            RowText(label, description, labelColor = if (danger) DangerRed else Color.White)
-            Spacer(Modifier.height(VusicSpacing.ControlGap / 2))
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
-                ActionButton(danger, enabled, buttonLabel) { if (confirmTitle != null) confirm = true else onClick() }
-            }
-        }
-        if (showDivider) SettingsDivider()
+    SettingControlRow(
+        label = label,
+        description = description,
+        danger = danger,
+        controlWidthDp = com.feishin.mobile.core.common.RowLayout.estimateButtonWidthDp(
+            buttonLabel, hasIcon = false, 1f,
+        ),
+        showDivider = showDivider,
+    ) {
+        ActionButton(danger, enabled, buttonLabel) { if (confirmTitle != null) confirm = true else onClick() }
     }
     if (confirm) {
         AlertDialog(
@@ -384,9 +380,18 @@ fun UsageCard(
         )
     }
     val colors = listOf(Color(0xFF8AB4F8), Color(0xFF7DD8A8), Color(0xFFFFC66E))
-    val barColors = colors + VusicColors.SurfaceHigh
+    // Free space reuses the secondary-text token at low alpha: it must read as
+    // "empty" against both the bar track and the card, and SurfaceHigh (the
+    // card background) is invisible for that job. Revisited in the color pass.
+    val freeColor = VusicColors.SecondaryText.copy(alpha = 0.35f)
+    val barColors = colors + freeColor
 
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    // 16dp inner padding on all sides (the card already supplies horizontal 16
+    // and 4 vertical, so 12 more vertical lands exactly on 16).
+    Column(
+        modifier.fillMaxWidth().padding(vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         UsageBar(fractions = math.fractions, colors = barColors)
         Text(
             com.feishin.mobile.core.common.UsageBarMath.totalLabel(math.usedBytes, math.freeBytes, human),
@@ -397,7 +402,7 @@ fun UsageCard(
             UsageLegendRow("Images", human(imagesBytes), colors[0])
             UsageLegendRow("Music downloads", human(downloadsBytes), colors[1])
             UsageLegendRow("Song cache", human(songCacheBytes), colors[2])
-            UsageLegendRow("Free space", human(freeBytes), VusicColors.SurfaceHigh)
+            UsageLegendRow("Free space", human(freeBytes), freeColor)
         }
     }
 }

@@ -357,6 +357,28 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   End. Device animation scales verified first: window 1.0, transition 1.0,
   animator unset (=1.0), so animations are fully on. Proven by transition log:
   HOME->SERVER dir=Start, SERVER->HOME dir=End, plus settled screenshots.)
+- [x] M6.6c settings rows: controls on the right
+  (One shared SettingControlRow for every row with a trailing control: text on
+  the left in weight(1f), control on the right vertically centred, 16dp minimum
+  gap, text capped at 3 lines and never under the control. The beside/next-line
+  choice is the pure RowLayout.decide (12 unit tests): beside only when the
+  text column keeps ~35% of the row and the text wraps into at most 3 lines;
+  otherwise the control goes on the next line END-aligned. Single buttons and
+  dropdowns are capped at 45% (they ellipsize gracefully); segmented controls
+  and the bitrate pair are measured whole and stack as one piece — capping the
+  pair had crushed the format button's text to zero width, found on-device.
+  Segmented single-row selectors (Grid/List, Off/Track/Album, Theme) with equal
+  cells and the selected cell filled white; sorts, timeouts and mix length stay
+  dropdowns. A 4-cell Theme segmented stacks to the next line END with full
+  labels rather than squeezing to initials. Server Save&test/Cancel are now
+  outlined (no borderless buttons); Log out is a wrap-content red outlined
+  button with its confirm; Downloads management buttons are red with confirms
+  (they had none); Library Downloads-tab Manage buttons use the shared style.
+  The usage bar's free segment now reuses the secondary-text token at 35%: it
+  was SurfaceHigh on a SurfaceHigh card, i.e. invisible, so the bar read as 13%
+  long (revisited in the color pass). Verified on the emulator at font scales
+  1.0 and 1.3: every sub-screen, no overlaps, no under-runs; narrow widths are
+  covered by unit tests (down to 70dp rows), not on-device.)
 - [x] M6.5d forgotten favorites pager and animations
   (D1 Forgotten favorites was a flat five-row list while Quick picks had a pager,
   dots and a "Play all" pill. Both now render through one shared
