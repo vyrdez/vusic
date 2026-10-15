@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -78,8 +79,11 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
             Modifier
                 .fillMaxSize()
                 // Scrolls so the fields and both buttons stay reachable on a
-                // small screen with the keyboard open.
+                // small screen with the keyboard open; imePadding keeps the
+                // buttons above the keyboard (this screen is outside the
+                // scaffold, so nothing has consumed the IME inset here).
                 .verticalScroll(rememberScrollState())
+                .imePadding()
                 .padding(horizontal = VusicSpacing.ScreenHorizontal * 1.5f),
             verticalArrangement = Arrangement.Center,
         ) {

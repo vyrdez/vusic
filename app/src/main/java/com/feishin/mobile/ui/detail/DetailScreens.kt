@@ -52,6 +52,7 @@ import com.feishin.mobile.ui.ErrorBox
 import com.feishin.mobile.ui.LoadingBox
 import com.feishin.mobile.ui.LocalTopBarController
 import com.feishin.mobile.ui.components.ActionTarget
+import com.feishin.mobile.ui.components.LocalMiniClearance
 import com.feishin.mobile.ui.components.ClickableName
 import com.feishin.mobile.ui.components.CoverImage
 import com.feishin.mobile.ui.components.PlaylistCoverArt
@@ -111,7 +112,7 @@ fun AlbumDetailScreen(
                 LazyColumn(
                     Modifier.fillMaxSize(),
                     state = listState,
-                    contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom),
+                    contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
                 ) {
                     item {
                         AlbumHeader(
@@ -264,7 +265,7 @@ fun PlaylistDetailScreen(
                 LazyColumn(
                     Modifier.fillMaxSize(),
                     state = listState,
-                    contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom),
+                    contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
                 ) {
                     item {
                         AlbumHeader(

@@ -44,14 +44,33 @@ import kotlinx.coroutines.launch
 /** Pixels of downward travel that commit a queue clear on release. */
 private const val CLEAR_THRESHOLD_PX = 160f
 
-/** Height of the floating card: 8dp of vertical padding either side + 56dp row. */
+/**
+ * Exact height of the floating card: 8dp padding + 56dp circular cover + 8dp
+ * padding. Fixed (not wrap-content) so the scaffold can reserve precisely this
+ * much space for it and the card never pushes the layout around while its
+ * content loads.
+ */
 val MiniPlayerHeight = 72.dp
+
+/** Diameter of the circular cover: the card height minus 2 x 8dp padding. */
+val MiniPlayerCoverDiameter = 56.dp
+
+/** Padding inside the card, equal on the left, top and bottom. */
+val MiniPlayerInnerPadding = 8.dp
 
 /** Gap between the card and the nav bar. */
 val MiniPlayerNavGap = 8.dp
 
 /** Side margin, so the card reads as floating rather than full-bleed. */
 val MiniPlayerMargin = 12.dp
+
+/**
+ * Bottom clearance the scrollable content reserves for the floating card,
+ * provided by the scaffold and animated with the card's enter/exit. Lists read
+ * this in their own `contentPadding` so items scroll *behind* the card instead
+ * of stopping above a dead, painted spacer.
+ */
+val LocalMiniClearance = androidx.compose.runtime.compositionLocalOf { 0.dp }
 
 /**
  * Floating mini player: a rounded card that hovers above the nav bar with the
@@ -104,7 +123,7 @@ fun MiniPlayer(
     val dragY = remember { Animatable(0f) }
     val shape = RoundedCornerShape(28.dp)
 
-    Column(
+    Box(
         modifier
             .fillMaxWidth()
             .padding(horizontal = MiniPlayerMargin)
@@ -113,7 +132,9 @@ fun MiniPlayer(
                 translationY = (1f - enter.value) * 48f
                 alpha = enter.value * (1f - dragY.value / 600f).coerceIn(0f, 1f)
             }
-            // Soft elevation instead of the old solid black band.
+            // Soft elevation instead of the old solid black band. Nothing else
+            // here has a background: this container is fully transparent, so
+            // content shows on every side of the card itself.
             .shadow(12.dp, shape, clip = false, ambientColor = androidx.compose.ui.graphics.Color(0x60000000), spotColor = androidx.compose.ui.graphics.Color(0x80000000))
             .clip(shape)
             .background(VusicColors.SurfaceHigh)
@@ -156,16 +177,27 @@ fun MiniPlayer(
                         scope.launch { dragY.animateTo(0f, Motion.snapBackSpring()) }
                     },
                 )
-            },
+            }
+            .height(MiniPlayerHeight),
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            Modifier.fillMaxWidth().padding(
+                start = MiniPlayerInnerPadding,
+                end = 4.dp,
+                top = MiniPlayerInnerPadding,
+                bottom = MiniPlayerInnerPadding,
+            ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start,
         ) {
+            // Circular cover, concentric with the card's rounded end: its
+            // diameter is the card height minus twice the inner padding, with
+            // equal padding on the left, top and bottom, so no edge ever clips.
             CoverImage(
                 player.coverArtUrl(song.coverArt, 128), song.title,
-                modifier = Modifier.size(48.dp), roundedDp = 10.dp,
+                modifier = Modifier.size(MiniPlayerCoverDiameter),
+                roundedDp = MiniPlayerCoverDiameter / 2,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
             )
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                 Text(
@@ -203,11 +235,13 @@ fun MiniPlayer(
                 )
             }
         }
-        // Thin progress line along the bottom edge of the card, inset to the
-        // rounded corners so it never pokes out of the clip.
+        // Thin progress line along the bottom edge of the card, inset past the
+        // rounded corners so it never pokes out of the clip. It sits below the
+        // circle (the circle ends 8dp above the card bottom), so it never cuts it.
         Box(
-            Modifier.fillMaxWidth().height(2.dp).padding(horizontal = 20.dp)
-                .clip(RoundedCornerShape(1.dp)),
+            Modifier.fillMaxWidth().height(2.dp).padding(horizontal = 28.dp)
+                .clip(RoundedCornerShape(1.dp))
+                .align(Alignment.BottomCenter),
         ) {
             Box(
                 Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).height(2.dp)

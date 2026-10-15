@@ -58,6 +58,7 @@ import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.EmptyBox
 import com.feishin.mobile.ui.components.ActionTarget
+import com.feishin.mobile.ui.components.LocalMiniClearance
 import com.feishin.mobile.ui.components.AlbumCard
 import com.feishin.mobile.ui.components.ArtistCard
 import com.feishin.mobile.ui.components.CoverImage
@@ -171,7 +172,7 @@ fun LibraryScreen(
                                 val atEnd = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
                                     ?.let { it >= shown.size - 6 } == true
                                 LaunchedEffect(atEnd, shown.size) { if (atEnd) vm.loadAlbums() }
-                                LazyVerticalGrid(GridCells.Fixed(2), Modifier.fillMaxSize(), state = gridState, contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp)) {
+                                LazyVerticalGrid(GridCells.Fixed(2), Modifier.fillMaxSize(), state = gridState, contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, VusicSpacing.ContentBottom + LocalMiniClearance.current)) {
                                     items(shown, key = { it.id }) { a ->
                                         AlbumCard(a, repo.coverArtUrl(a.coverArt, 300), onClick = { onAlbum(a.id) })
                                     }
@@ -184,7 +185,7 @@ fun LibraryScreen(
                                 LazyColumn(
                                     Modifier.fillMaxSize(),
                                     state = listState,
-                                    contentPadding = PaddingValues(bottom = 160.dp),
+                                    contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
                                 ) {
                                     items(shown, key = { it.id }) { a ->
                                     Row(
@@ -229,7 +230,7 @@ fun LibraryScreen(
                                     GridCells.Fixed(2),
                                     Modifier.fillMaxSize(),
                                     state = rememberSavableGridState(),
-                                    contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp),
+                                    contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, VusicSpacing.ContentBottom + LocalMiniClearance.current),
                                 ) {
                                     items(shown, key = { it.id }) { a ->
                                         ArtistPhotoCard(a, photoUrl = vm.artistPhotoUrl(a), repo = repo, onClick = { onArtist(a.id) })
@@ -240,7 +241,7 @@ fun LibraryScreen(
                                 LazyColumn(
                                     Modifier.fillMaxSize(),
                                     state = rememberSavableListState(),
-                                    contentPadding = PaddingValues(bottom = 160.dp),
+                                    contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
                                 ) {
                                     items(shown, key = { it.id }) { a ->
                                         ArtistPhotoRow(a, photoUrl = vm.artistPhotoUrl(a), repo = repo, onClick = { onArtist(a.id) })
@@ -264,7 +265,7 @@ fun LibraryScreen(
                             } else if (grid) {
                                 LazyVerticalGrid(
                                     GridCells.Fixed(2), Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp),
+                                    contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, VusicSpacing.ContentBottom + LocalMiniClearance.current),
                                 ) {
                                     items(shown, key = { it.id }) { song ->
                                         Box(Modifier.animateItem()) {
@@ -280,7 +281,7 @@ fun LibraryScreen(
                                 LazyColumn(
                                     Modifier.fillMaxSize(),
                                     state = rememberSavableListState(),
-                                    contentPadding = PaddingValues(bottom = 160.dp),
+                                    contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
                                 ) {
                                     items(shown, key = { it.id }) { song ->
                                         TrackRow(
@@ -324,7 +325,7 @@ fun LibraryScreen(
                             if (grid) {
                                 LazyVerticalGrid(
                                     GridCells.Fixed(2), Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp),
+                                    contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, VusicSpacing.ContentBottom + LocalMiniClearance.current),
                                 ) {
                                     item(key = "favorites") {
                                         PlaylistGridCell(
@@ -355,7 +356,7 @@ fun LibraryScreen(
                             LazyColumn(
                                 Modifier.fillMaxSize(),
                                 state = rememberSavableListState(),
-                                contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom),
+                                contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
                             ) {
                                 // Built-in collections stay pinned above server playlists.
                                 item(key = "favorites") {
@@ -418,7 +419,7 @@ fun LibraryScreen(
                             if (grid) {
                                 LazyVerticalGrid(
                                     GridCells.Fixed(2), Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp),
+                                    contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, VusicSpacing.ContentBottom + LocalMiniClearance.current),
                                 ) {
                                     if (favs.tracks.isNotEmpty()) {
                                         item(span = { GridItemSpan(2) }) { SectionHeader(title = "Songs") }
@@ -445,7 +446,7 @@ fun LibraryScreen(
                                     }
                                 }
                             } else {
-                            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
+                            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current)) {
                                 if (favs.tracks.isNotEmpty()) {
                                     item(key = "fav-songs") {
                                         FavoriteSongsRow(
@@ -532,7 +533,7 @@ private fun DownloadsTab(
     if (grid) {
         LazyVerticalGrid(
             GridCells.Fixed(2), Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp),
+            contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, VusicSpacing.ContentBottom + LocalMiniClearance.current),
         ) {
             item(span = { GridItemSpan(2) }) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -560,7 +561,7 @@ private fun DownloadsTab(
     }
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom),
+        contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
     ) {
         item {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {

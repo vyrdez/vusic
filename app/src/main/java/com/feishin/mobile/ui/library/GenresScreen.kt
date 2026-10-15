@@ -23,6 +23,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.ui.LoadingBox
 import com.feishin.mobile.ui.components.EmptyState
+import com.feishin.mobile.ui.components.LocalMiniClearance
+import com.feishin.mobile.ui.theme.VusicSpacing
 import com.feishin.mobile.ui.components.ErrorState
 import com.feishin.mobile.ui.components.SectionHeader
 import com.feishin.mobile.ui.components.rememberSavableListState
@@ -49,7 +51,7 @@ fun GenresScreen(
             is UiState.Data -> LazyColumn(
                 Modifier.fillMaxSize(),
                 state = rememberSavableListState(),
-                contentPadding = PaddingValues(bottom = 160.dp),
+                contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
             ) {
                 items(s.value, key = { it.name }) { g ->
                     Row(

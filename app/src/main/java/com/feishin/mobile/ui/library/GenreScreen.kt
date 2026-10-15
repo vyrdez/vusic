@@ -24,6 +24,8 @@ import com.feishin.mobile.ui.EmptyBox
 import com.feishin.mobile.ui.ErrorBox
 import com.feishin.mobile.ui.LoadingBox
 import com.feishin.mobile.ui.components.AlbumCard
+import com.feishin.mobile.ui.components.LocalMiniClearance
+import com.feishin.mobile.ui.theme.VusicSpacing
 import com.feishin.mobile.ui.components.rememberSavableGridState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -85,7 +87,7 @@ fun GenreScreen(
                 GridCells.Fixed(2),
                 Modifier.fillMaxSize(),
                 state = rememberSavableGridState(),
-                contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp),
+                contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, VusicSpacing.ContentBottom + LocalMiniClearance.current),
             ) {
                 items(s.value, key = { it.id }) { a ->
                     AlbumCard(a, repo.coverArtUrl(a.coverArt, 300), onClick = { onAlbum(a.id) })

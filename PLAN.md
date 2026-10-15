@@ -300,6 +300,40 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   The island is rebuilt with 16dp padding, a 12dp rounded bar, a "X used by
   Vusic, Y free" total label, one legend row per item with an 8dp dot, and
   animated segment widths. 11 UsageBarMath unit tests.)
+- [x] M6.6a floating mini player fixes
+  (A1 the black band: the card had been hoisted out of the bottomBar, but every
+  list still carried a 160dp hardcoded bottom contentPadding — a leftover from
+  the docked-player era — AND the NavHost added ~80dp of padding below that, so
+  content stopped ~240dp above the nav bar while the card only covers 80dp. The
+  ~160dp dead zone showed the scaffold background and read as a solid black
+  block swallowing rows (e.g. Search's Albums). It was never a painted surface:
+  no container between the card and the content has a background. Fix: the
+  160dp literals are gone; every list takes its bottom contentPadding from a new
+  LocalMiniClearance (24dp breathing room + the animated card claim, 0 when the
+  queue is empty), provided by the scaffold — so items scroll behind the card
+  and the last item stays reachable. Verified: content visibly behind/around
+  the card on Home, Library, Search, Settings + Storage, playlist/album detail.
+  A2 the card rode above the keyboard for two stacked reasons: it was aligned
+  to the bottom of the IME-padded content box (whose bottom padding is
+  max(nav, IME)), and SearchScreen added its own navigationBarsPadding() plus
+  imePadding() on every list on top of that. Fix: the card is hoisted out of
+  the scaffold's content slot into the full-window box, anchored above the
+  measured nav bar height with no IME inset anywhere on it (same as the nav
+  bar), so the keyboard draws over both; only the content box keeps
+  max(ime, bar). SearchScreen's double insets are removed; Login (outside the
+  scaffold, nothing consumes IME there) gets imePadding() so its buttons stay
+  above the keyboard. Verified: with the keyboard open the card and nav bar are
+  covered, results scroll above the keyboard, no black bar. Note: only the
+  emulator was attached (no physical phone), so gesture/3-button-nav mode could
+  not be compared; the mechanism (ignoring IME insets) is mode-independent.
+  A3 the cover is now a true circle: the card has a fixed 72dp height and the
+  56dp cover (card minus 2x8dp padding, Crop, 28dp corner) sits with equal 8dp
+  padding left/top/bottom, concentric with the rounded end — no edge can clip.
+  The thin progress line moved to the card's bottom edge below the circle, so
+  it never cuts it. Gestures unchanged and re-verified: swipe-up opens Now
+  Playing, drag-down clears with the Undo snackbar (Undo restores the queue and
+  the card), swipe path untested-by-hand but code-identical to M6.5.
+  Playback never restarted during any of this; logcat clean, no FATAL.)
 - [x] M6.5d forgotten favorites pager and animations
   (D1 Forgotten favorites was a flat five-row list while Quick picks had a pager,
   dots and a "Play all" pill. Both now render through one shared

@@ -43,6 +43,8 @@ import com.feishin.mobile.core.common.CacheSizePolicy
 import com.feishin.mobile.data.db.DownloadStatus
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.ui.components.CoverImage
+import com.feishin.mobile.ui.components.LocalMiniClearance
+import com.feishin.mobile.ui.theme.VusicSpacing
 import com.feishin.mobile.ui.components.EmptyState
 import com.feishin.mobile.ui.theme.VusicColors
 
@@ -67,7 +69,7 @@ fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRep
     val done = ui.rows.filter { it.status == DownloadStatus.COMPLETED }
     val failed = ui.rows.filter { it.status == DownloadStatus.FAILED }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current)) {
         item {
             Column(Modifier.fillMaxWidth().padding(16.dp)) {
                 Text("Storage", style = MaterialTheme.typography.titleMedium)

@@ -59,6 +59,8 @@ import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.ErrorBox
 import com.feishin.mobile.ui.components.ActionTarget
+import com.feishin.mobile.ui.components.LocalMiniClearance
+import com.feishin.mobile.ui.theme.VusicSpacing
 import com.feishin.mobile.ui.components.AlbumCard
 import com.feishin.mobile.ui.components.CoverImage
 import com.feishin.mobile.ui.components.EmptyState
@@ -129,7 +131,7 @@ private fun HomeContent(
     LazyColumn(
         Modifier.fillMaxSize(),
         state = rememberSavableListState(),
-        contentPadding = PaddingValues(bottom = 160.dp),
+        contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
     ) {
         item { HomeTopBar(username, onSettings) }
         item {

@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -58,6 +56,8 @@ import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.components.ActionTarget
+import com.feishin.mobile.ui.components.LocalMiniClearance
+import com.feishin.mobile.ui.theme.VusicSpacing
 import com.feishin.mobile.ui.components.AlbumCard
 import com.feishin.mobile.ui.components.CoverImage
 import com.feishin.mobile.ui.components.EmptyState
@@ -133,7 +133,11 @@ fun SearchScreen(
         )
     }
 
-    Column(Modifier.fillMaxSize().navigationBarsPadding()) {
+    // No navigationBarsPadding and no imePadding() anywhere here: the scaffold's
+    // content box already pads max(nav bar, IME) exactly once, so adding either
+    // here double-counts the inset and pushes the content up over the keyboard
+    // or leaves a dead band above the nav bar.
+    Column(Modifier.fillMaxSize()) {
         // Rounded pill: back arrow, field, clear X. No voice button.
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
@@ -238,7 +242,7 @@ private fun RecentSearches(
         Text("Recent searches", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
         TextButton(onClick = onClearAll) { Text("Clear all") }
     }
-    LazyColumn(Modifier.fillMaxSize().imePadding(), contentPadding = PaddingValues(bottom = 160.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current)) {
         items(recent, key = { "rs$it" }) { r ->
             Row(
                 Modifier.fillMaxWidth()
@@ -280,9 +284,9 @@ private fun AllResults(
     val songs = if (songsExpanded) res.tracks else SearchGrouping.previewSongs(res)
     val moreSongs = !songsExpanded && SearchGrouping.remainingSongs(res).isNotEmpty()
     LazyColumn(
-        Modifier.fillMaxSize().imePadding(),
+        Modifier.fillMaxSize(),
         state = rememberSavableListState(),
-        contentPadding = PaddingValues(bottom = 160.dp),
+        contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
     ) {
         if (top != null) {
             item(key = "top") {
@@ -371,9 +375,9 @@ private fun SingleTypeResults(
     } == true
     LaunchedEffect(atEnd, visible) { if (atEnd) onShowMore() }
     LazyColumn(
-        Modifier.fillMaxSize().imePadding(),
+        Modifier.fillMaxSize(),
         state = listState,
-        contentPadding = PaddingValues(bottom = 160.dp),
+        contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
     ) {
         when (filter) {
             SearchFilter.SONGS -> {

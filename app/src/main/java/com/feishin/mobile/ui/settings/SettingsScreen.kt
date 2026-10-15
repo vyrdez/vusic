@@ -53,6 +53,7 @@ import com.feishin.mobile.ui.theme.VusicControlColors
 import com.feishin.mobile.ui.theme.VusicControlDefaults
 import com.feishin.mobile.ui.theme.VusicSpacing
 import com.feishin.mobile.data.settings.LayoutMode
+import com.feishin.mobile.ui.components.LocalMiniClearance
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.data.settings.ThemeMode
 
@@ -111,7 +112,11 @@ private fun SubScreen(title: String, onBack: () -> Unit, content: @Composable ()
             }
             Text(title, style = MaterialTheme.typography.headlineSmall)
         }
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = LocalMiniClearance.current),
+        ) {
             content()
             Spacer(Modifier.height(48.dp))
         }
@@ -127,7 +132,8 @@ private fun SettingsHome(
     val online by vm.network.isOnline.collectAsState()
     val s = settings
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(bottom = LocalMiniClearance.current),
     ) {
         // Same title row as Library: one shared component, identical spacing.
         com.feishin.mobile.ui.components.ScreenTitleRow(title = "Settings")
