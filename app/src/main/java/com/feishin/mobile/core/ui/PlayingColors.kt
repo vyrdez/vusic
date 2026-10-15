@@ -15,6 +15,10 @@ package com.feishin.mobile.core.ui
  *
  * [track] is the ring's faint track: blended 82% toward [container], so the
  * enforced primary-vs-container ratio carries over to it.
+ *
+ * [miniContainer] is the mini player's fill, which is deliberately much darker
+ * than [container] (the row highlight) — see [DarkToneSpec]. [miniOutline] is
+ * the 1dp hairline that keeps the pill distinct from the page background.
  */
 data class PlayingScheme(
     /** Null when this is the theme fallback rather than artwork. */
@@ -30,6 +34,10 @@ data class PlayingScheme(
     val surfaceText: Long,
     val surfaceSecondary: Long,
     val dark: Boolean,
+    /** Mini player fill: darker than [container] in Dark, same in Light. */
+    val miniContainer: Long = container,
+    /** Mini player hairline, so the pill reads as a shape on the background. */
+    val miniOutline: Long = primary,
 )
 
 /**
@@ -113,6 +121,9 @@ object PlayingColors {
         val top = if (dark) Contrast.fromHsl(0f, 0f, 0.10f) else Contrast.fromHsl(0f, 0f, 0.96f)
         val bottom = if (dark) Contrast.fromHsl(0f, 0f, 0.06f) else Contrast.fromHsl(0f, 0f, 0.91f)
         val surfaceText = if (dark) WHITE else NEAR_BLACK
+        // No usable hue (gray or missing art): the whole scheme is the app
+        // theme, untouched — exactly what the "Dynamic Now Playing color"
+        // setting off produces, so both neutral paths look identical.
         return PlayingScheme(
             seedArgb = null,
             container = container,
@@ -130,54 +141,79 @@ object PlayingColors {
     }
 
     // ---- dark theme ----------------------------------------------------------
+    //
+    // Every tone/chroma comes from DarkToneSpec so the dark look is tunable in
+    // one place. Nothing here uses the seed's own lightness: the seed only
+    // supplies the HUE, and the tone/chroma caps decide how dark and how
+    // saturated each surface is. That is what keeps a vivid cover from painting
+    // a neon highlight.
+
+    /** Tone/chroma with the seed's hue, chroma never above [cap]. */
+    private fun toned(hue: Double, tone: Float, cap: Float, seedChroma: Double): Long =
+        Contrast.fromToneChroma(hue, tone, minOf(cap.toDouble(), seedChroma).toFloat())
+
+    /** Lightens (or darkens) in 2-tone steps until [minRatio] vs [bg] passes. */
+    private fun enforce(
+        hue: Double,
+        startTone: Float,
+        chroma: Float,
+        bg: Long,
+        minRatio: Double,
+        lighter: Boolean,
+    ): Long {
+        var tone = startTone
+        repeat(30) {
+            val c = Contrast.fromToneChroma(hue, tone, chroma)
+            if (Contrast.ratio(c, bg) >= minRatio) return c
+            tone = if (lighter) (tone + 2f).coerceAtMost(100f) else (tone - 2f).coerceAtLeast(0f)
+        }
+        // Nothing at this tone/chroma works: black or white always does.
+        return Contrast.pickBest(BLACK, WHITE, bg)
+    }
 
     private fun darkScheme(seed: Long, h: Float, s: Float): PlayingScheme {
-        val sat = s.coerceAtLeast(0.40f)
-        // Container: rich seed tone. Adjusted below if onContainer fails.
-        var container = Contrast.fromHsl(h, sat, 0.30f)
-        // On-container: tinted near-white first (prettier than pure), pure
-        // white as the guaranteed backstop.
-        var onContainer = Contrast.fromHsl(h, 0.30f, 0.93f)
-        var guard = 0
-        while (Contrast.ratio(onContainer, container) < 4.5 && guard < 16) {
-            if (Contrast.ratio(WHITE, container) >= 4.5) {
-                onContainer = WHITE
-                break
-            }
-            // Even white fails: the container is too light, darken it.
-            container = Contrast.withLightness(container, Contrast.toHsl(container).l - 0.02f)
-            guard++
-        }
-        if (Contrast.ratio(onContainer, container) < 4.5) onContainer = WHITE
-        // Secondary: onContainer pulled 30% toward the container, verified.
-        val secondary = Contrast.blend(container, onContainer, 0.30f)
-            .let { if (Contrast.ratio(it, container) >= 4.5) it else onContainer }
-        // Primary: bright seed tone, lightened until it clears 3:1.
-        var primary = Contrast.fromHsl(h, sat.coerceAtLeast(0.55f), 0.80f)
-        guard = 0
-        while (Contrast.ratio(primary, container) < 3.0 && guard < 16) {
-            primary = Contrast.withLightness(primary, Contrast.toHsl(primary).l + 0.03f)
-            guard++
-        }
-        if (Contrast.ratio(primary, container) < 3.0) primary = onContainer
-        val track = ringTrack(container, primary)
-        // Gradient surfaces: dark seed tones, darkened until white clears 4.5.
-        var top = Contrast.fromHsl(h, sat.coerceAtLeast(0.30f), 0.16f)
-        guard = 0
-        while (Contrast.ratio(WHITE, top) < 4.5 && guard < 16) {
-            top = Contrast.withLightness(top, Contrast.toHsl(top).l - 0.02f)
-            guard++
-        }
-        var bottom = Contrast.fromHsl(h, sat.coerceAtLeast(0.30f), 0.09f)
-        guard = 0
-        while (Contrast.ratio(WHITE, bottom) < 4.5 && guard < 16) {
-            bottom = Contrast.withLightness(bottom, Contrast.toHsl(bottom).l - 0.02f)
-            guard++
-        }
-        val surfaceSecondary = Contrast.blend(top, WHITE, 0.30f)
-            .let {
-                if (Contrast.ratio(it, top) >= 4.5 && Contrast.ratio(it, bottom) >= 4.5) it else WHITE
-            }
+        val hue = Contrast.labHue(seed)
+        val seedChroma = Contrast.chromaOf(seed)
+
+        // Highlight row: a deep, softly tinted surface (tone 22, chroma <= 22).
+        val container = toned(hue, DarkToneSpec.HIGHLIGHT_TONE, DarkToneSpec.HIGHLIGHT_CHROMA, seedChroma)
+        // Text on it: light and near-neutral, contrast enforced not assumed.
+        val onContainer = enforce(
+            hue, DarkToneSpec.ON_HIGHLIGHT_TONE, DarkToneSpec.ON_HIGHLIGHT_CHROMA,
+            container, 4.5, lighter = true,
+        )
+        val secondary = enforce(
+            hue, DarkToneSpec.SECONDARY_TONE, DarkToneSpec.SECONDARY_CHROMA,
+            container, 4.5, lighter = true,
+        )
+        // Accent (ring, mini icons/title, queue toggles, Save pill): tone ~75
+        // with a capped chroma, so it reads without glowing.
+        val primary = enforce(
+            hue, DarkToneSpec.ACCENT_TONE, DarkToneSpec.ACCENT_CHROMA,
+            container, 3.0, lighter = true,
+        )
+        // Ring track: a faint groove; the ring must clear 3:1 on it.
+        val track = enforce(
+            hue, DarkToneSpec.RING_TRACK_TONE, DarkToneSpec.RING_TRACK_CHROMA,
+            primary, 3.0, lighter = false,
+        )
+        // Mini player: nearly black with a hint of the hue, plus a hairline so
+        // it stays a distinct shape against the page background and nav bar.
+        val miniContainer = toned(hue, DarkToneSpec.MINI_TONE, DarkToneSpec.MINI_CHROMA, seedChroma)
+        val miniOutline = toned(hue, DarkToneSpec.MINI_OUTLINE_TONE, DarkToneSpec.MINI_OUTLINE_CHROMA, seedChroma)
+        // Full-screen gradients: darker than the highlight, top slightly lighter
+        // than the bottom, same muted chroma.
+        val top = toned(hue, DarkToneSpec.SURFACE_TOP_TONE, DarkToneSpec.SURFACE_CHROMA, seedChroma)
+        val bottom = toned(hue, DarkToneSpec.SURFACE_BOTTOM_TONE, DarkToneSpec.SURFACE_CHROMA, seedChroma)
+        val surfaceText = enforce(
+            hue, DarkToneSpec.SURFACE_TEXT_TONE, DarkToneSpec.SURFACE_TEXT_CHROMA,
+            top, 4.5, lighter = true,
+        )
+        val surfaceSecondary = enforce(
+            hue, DarkToneSpec.SURFACE_SECONDARY_TONE, DarkToneSpec.SURFACE_SECONDARY_CHROMA,
+            bottom, 4.5, lighter = true,
+        ).let { if (Contrast.ratio(it, top) >= 4.5) it else surfaceText }
+
         return PlayingScheme(
             seedArgb = seed,
             container = container,
@@ -185,12 +221,14 @@ object PlayingColors {
             secondary = secondary,
             primary = primary,
             onPrimary = Contrast.pickBest(BLACK, WHITE, primary),
-            track = ringTrack(container, primary),
+            track = track,
             surfaceTop = top,
             surfaceBottom = bottom,
-            surfaceText = WHITE,
+            surfaceText = surfaceText,
             surfaceSecondary = surfaceSecondary,
             dark = true,
+            miniContainer = miniContainer,
+            miniOutline = miniOutline,
         )
     }
 

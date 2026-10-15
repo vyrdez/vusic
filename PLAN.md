@@ -457,6 +457,43 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   56dp list bottom padding so rows never ghost through. Verified in Dark on the
   emulator; Light verification folded into M6.7e (the Light theme itself was
   broken until then).)
+- [x] M6.7b dark mode color toning (narrow fix)
+  (Dark only; Light is unchanged and was checked for the same oversaturation —
+  it is not oversaturated, see the report.) The dark tint was vivid because it
+  reused the seed's own saturation: a purple cover produced a bright saturated
+  purple row and mini player (measured: row and mini identical, tone 26-42 with
+  chroma 5-49).
+  Root cause and fix: the scheme worked in HSL lightness with the seed's
+  saturation, which has no perceptual meaning across hues and no chroma cap. It
+  now works in CIELAB — tone = L*, chroma = C*ab — added to core/ui/Contrast
+  (srgb<->Lab, toneOf/chromaOf/labHue, and fromToneChroma which binary-searches
+  chroma down to the highest value inside the sRGB gamut, so the tone is exact
+  and the chroma never exceeds its cap). The seed now supplies ONLY the hue
+  (its Lab hue angle), and every surface sets its own tone and chroma.
+  All limits live in DarkToneSpec: highlight container tone 22 / chroma 22;
+  mini player tone 12 / chroma 13 plus a tone-26 hairline; accent (ring, mini
+  icons/title, queue toggles, Save pill) tone 75 / chroma 34; ring track tone
+  30 / chroma 16; queue + Now Playing gradient tone 11 -> 7 / chroma 14; text
+  tone 92 / chroma 10 and secondary tone 78 / chroma 12. The scheme gained
+  miniContainer and miniOutline, and the mini player now draws a 1dp hairline so
+  the near-black pill still reads as a shape against the page background.
+  Readability is still enforced by search, not assumed: enforce() walks the tone
+  until the ratio passes (4.5 for text, 3.0 for the ring) and falls back to
+  black/white, which always passes. Verified over the 8 seeds (white, black,
+  gray, yellow, red, blue, pastel pink, null) — measured tones/chromas:
+  chromatic seeds highlight 21.7 / 21.7-22.3, mini 11.6-11.8 / 12.7-13.4,
+  accent 74.7-74.9 / 33.7-34.2, gradient 10.5-10.9 -> 6.7-6.9 / 14.0-14.4;
+  ratios title 10.08-10.12, secondary 6.84-6.89, ring-on-track 4.75-4.77,
+  onPrimary 10.56-10.62, surfaces 15.93-16.05 and 17.26-17.31. Gray and missing
+  art take the neutral app theme (chroma <= 6) exactly as the setting-off path
+  does — one neutral, not two.
+  On-device (Dark, cover hues purple/orange/green/red/blue): current-row fill
+  #512922 tone 21.8 chroma 21.9; mini fill #301915 tone 11.8 chroma 13.4 vs a
+  tone-4.3 page background; ring/accent #F4A496 tone 74.8 chroma 34.0 with the
+  title at 8.31:1 and the ring 8.31:1 on the fill; queue gradient tone 10.8 ->
+  6.7 chroma ~13.8; Now Playing gradient tone 10.4 -> 6.7 chroma ~13.8 with
+  17.7:1 title contrast. Colour animation on track change still works and
+  playback never glitched.)
 - [x] M6.7e themes: remove amoled, fix light
   (AMOLED is gone: enum, Settings selector (now System / Dark / Light), the
   Theme.kt scheme, and docs. A stored AMOLED — or any unknown string — migrates

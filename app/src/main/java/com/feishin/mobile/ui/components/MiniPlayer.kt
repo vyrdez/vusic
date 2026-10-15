@@ -6,6 +6,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -142,18 +143,28 @@ fun MiniPlayer(
 
     // Artwork tinting (or the theme pair when dynamic color is off / no art).
     val scheme = LocalPlayingColors.current
+    // The card is the DARK, barely-tinted surface (much darker than the row
+    // highlight), so the pill reads as part of the background rather than a
+    // bright block. See DarkToneSpec.
     val cardBg = if (scheme != null) {
-        playingColor(scheme.container)
+        playingColor(scheme.miniContainer)
     } else {
         MaterialTheme.colorScheme.primaryContainer
     }
+    // 1dp hairline: keeps the pill a distinct shape against the page background
+    // and the nav bar without brightening the fill.
+    val outline = if (scheme != null) {
+        playingColor(scheme.miniOutline)
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
     val ink = if (scheme != null) {
-        playingColor(scheme.onContainer)
+        playingColor(scheme.primary)
     } else {
         MaterialTheme.colorScheme.onPrimaryContainer
     }
     val subInk = if (scheme != null) {
-        playingColor(scheme.secondary)
+        playingColor(scheme.primary)
     } else {
         MaterialTheme.colorScheme.onPrimaryContainer
     }
@@ -212,6 +223,9 @@ fun MiniPlayer(
             .shadow(12.dp, shape, clip = false, ambientColor = androidx.compose.ui.graphics.Color(0x60000000), spotColor = androidx.compose.ui.graphics.Color(0x80000000))
             .clip(shape)
             .background(cardBg)
+            // 1dp hairline (same clip, drawn inside) so the near-black pill is
+            // still clearly delineated from the page background and nav bar.
+            .border(1.dp, outline, shape)
             .clickable(onClick = onOpen)
             .pointerInput(queue.size) {
                 var totalX = 0f
