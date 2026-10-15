@@ -391,6 +391,23 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   a multi-page section keeps its trailing gap: HorizontalPager sizes every page
   uniformly, so only the last page could be widened with a custom pager — out
   of scope; the reservation is structural, not a bug.)
+- [x] M6.7b mini player ring
+  (Linear progress bar removed. Progress is a 3dp ring around the round cover,
+  starting at 12 o'clock: track faint (onSurface 22%), progress accent-colored.
+  Geometry is exact — 56dp ring box, stroke inset by half its width so nothing
+  clips, 46dp cover, even 2dp gap. Card is a full pill (36dp radius); ring and
+  cover concentric with equal 8dp padding top/bottom/left. Per review the
+  play/pause button stays where it was (prev | play | next on the right) and
+  the cover is clean. The ring samples position/duration at ~4Hz in a coroutine
+  (250ms linear tweens between samples) and is read in the draw phase, so
+  position ticks redraw the Canvas without recomposing the card (position and
+  duration are no longer collected as state). Snapped on track change and first
+  composition, so a restored queue shows the right progress immediately.
+  Verified: ring renders and advances, gestures intact (tap toggle, swipe-up
+  open, drag-clear + Undo restore), ring correct after process-kill restore.
+  One load-induced cold-start ANR seen on the emulator (4.7s cold start +
+  back-to-back commands; main thread in platform Media3 session init, unrelated
+  to the ring) — noted, not a regression.)
 - [x] M6.6d M6.5 leftover re-verification (fixes were needed)
   (D1 usage island verified: full-width bar with proportional segments (556 MB
   used renders ~13% against 3.63 GB free), "X used by Vusic, Y free" label,

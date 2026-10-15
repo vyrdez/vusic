@@ -1,7 +1,10 @@
 package com.feishin.mobile.ui.components
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -52,8 +55,22 @@ private const val CLEAR_THRESHOLD_PX = 160f
  */
 val MiniPlayerHeight = 72.dp
 
-/** Diameter of the circular cover: the card height minus 2 x 8dp padding. */
-val MiniPlayerCoverDiameter = 56.dp
+/**
+ * Diameter of the circular cover art. The progress ring lives in the 8dp card
+ * padding around it: ring outer edge 56dp (= card height minus 2 x 8dp), so
+ * cover + 2dp gap + 3dp stroke fit exactly with equal padding on top, bottom
+ * and left.
+ */
+val MiniPlayerCoverDiameter = 46.dp
+
+/** Outer diameter of the progress ring (stroke centered inside this). */
+val MiniPlayerRingDiameter = 56.dp
+
+/** Ring stroke width. */
+val MiniPlayerRingStroke = 3.dp
+
+/** Gap between the cover edge and the ring's inner edge. */
+val MiniPlayerRingGap = 2.dp
 
 /** Padding inside the card, equal on the left, top and bottom. */
 val MiniPlayerInnerPadding = 8.dp
@@ -94,8 +111,9 @@ fun MiniPlayer(
     val queue by player.queue.collectAsState()
     val current by player.current.collectAsState()
     val isPlaying by player.isPlaying.collectAsState()
-    val position by player.position.collectAsState()
-    val duration by player.duration.collectAsState()
+    // NOTE: position/duration are deliberately NOT collected as state. The
+    // ring below samples them at ~4Hz in a coroutine and draws in the draw
+    // phase, so position ticks never recompose the card.
     // Hidden when the queue is empty: zero height, so the content area gets its
     // bottom padding back. (NavRules.shouldShowMiniPlayer documents the same
     // rule for tests; the inline check here avoids a ui.components ->
@@ -116,12 +134,34 @@ fun MiniPlayer(
     val song = current
     if (song == null || enter.value <= 0.001f) return
 
-    val progress = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
+    // Ring progress: sampled from the player at ~4Hz and interpolated with a
+    // matching 250ms tween, so the ring glides instead of stepping. The Canvas
+    // below reads this Animatable in the DRAW phase, which schedules a redraw
+    // without recomposing the card. Snapped (not animated) on track change and
+    // on first composition, so a restored queue shows the right progress
+    // immediately instead of sweeping from zero.
+    fun sampledProgress(): Float {
+        val d = player.duration.value
+        return if (d > 0) (player.position.value.toFloat() / d).coerceIn(0f, 1f) else 0f
+    }
+    val ring = remember { Animatable(sampledProgress()) }
+    androidx.compose.runtime.LaunchedEffect(song.id) {
+        ring.snapTo(sampledProgress())
+        while (true) {
+            val target = sampledProgress()
+            if (kotlin.math.abs(target - ring.value) > 0.0005f) {
+                ring.animateTo(target, tween(250, easing = LinearEasing))
+            } else {
+                kotlinx.coroutines.delay(250)
+            }
+        }
+    }
     // Drag state lives in an Animatable: snapTo() per pointer event tracks the
     // finger with no recomposition (graphicsLayer reads don't recompose), and
     // animateTo() springs back on a short release.
     val dragY = remember { Animatable(0f) }
-    val shape = RoundedCornerShape(28.dp)
+    // Full pill: corner radius is half the card height.
+    val shape = RoundedCornerShape(MiniPlayerHeight / 2)
 
     Box(
         modifier
@@ -190,15 +230,22 @@ fun MiniPlayer(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start,
         ) {
-            // Circular cover, concentric with the card's rounded end: its
-            // diameter is the card height minus twice the inner padding, with
-            // equal padding on the left, top and bottom, so no edge ever clips.
-            CoverImage(
-                player.coverArtUrl(song.coverArt, 128), song.title,
-                modifier = Modifier.size(MiniPlayerCoverDiameter),
-                roundedDp = MiniPlayerCoverDiameter / 2,
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-            )
+            // Cover + progress ring, concentric with the card's rounded end.
+            // The ring's outer edge is the card height minus twice the inner
+            // padding (equal padding top/bottom/left); the cover sits inside
+            // it with an even gap and stays clean — no icon over the art.
+            Box(
+                modifier = Modifier.size(MiniPlayerRingDiameter),
+                contentAlignment = Alignment.Center,
+            ) {
+                MiniPlayerRing(progress = { ring.value })
+                CoverImage(
+                    player.coverArtUrl(song.coverArt, 128), song.title,
+                    modifier = Modifier.size(MiniPlayerCoverDiameter),
+                    roundedDp = MiniPlayerCoverDiameter / 2,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                )
+            }
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                 Text(
                     song.title,
@@ -235,17 +282,51 @@ fun MiniPlayer(
                 )
             }
         }
-        // Thin progress line along the bottom edge of the card, inset past the
-        // rounded corners so it never pokes out of the clip. It sits below the
-        // circle (the circle ends 8dp above the card bottom), so it never cuts it.
-        Box(
-            Modifier.fillMaxWidth().height(2.dp).padding(horizontal = 28.dp)
-                .clip(RoundedCornerShape(1.dp))
-                .align(Alignment.BottomCenter),
-        ) {
-            Box(
-                Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).height(2.dp)
-                    .background(MaterialTheme.colorScheme.onSurface),
+    }
+}
+
+/**
+ * Progress ring drawn around the mini-player cover. Reads [progress] in the
+ * draw phase, so position ticks redraw the ring without recomposing the card.
+ * Starts at 12 o'clock; concentric with the cover by construction (same
+ * center, fixed gap).
+ */
+@Composable
+private fun MiniPlayerRing(progress: () -> Float) {
+    val track = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)
+    val bar = MaterialTheme.colorScheme.primary
+    Canvas(Modifier.size(MiniPlayerRingDiameter)) {
+        val strokePx = MiniPlayerRingStroke.toPx()
+        // Inset by half the stroke so the outer edge lands exactly on the box
+        // (a full-size arc would clip half the stroke).
+        val inset = strokePx / 2f
+        val arcSize = androidx.compose.ui.geometry.Size(
+            size.width - strokePx,
+            size.height - strokePx,
+        )
+        val arcTopLeft = androidx.compose.ui.geometry.Offset(inset, inset)
+        drawArc(
+            color = track,
+            startAngle = -90f,
+            sweepAngle = 360f,
+            useCenter = false,
+            topLeft = arcTopLeft,
+            size = arcSize,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(strokePx),
+        )
+        val sweep = (progress().coerceIn(0f, 1f)) * 360f
+        if (sweep > 0.5f) {
+            drawArc(
+                color = bar,
+                startAngle = -90f,
+                sweepAngle = sweep,
+                useCenter = false,
+                topLeft = arcTopLeft,
+                size = arcSize,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    strokePx,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                ),
             )
         }
     }
