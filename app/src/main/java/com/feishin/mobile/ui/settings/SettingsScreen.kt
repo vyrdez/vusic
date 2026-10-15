@@ -1,6 +1,9 @@
 package com.feishin.mobile.ui.settings
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -69,33 +72,61 @@ fun SettingsScreen(
     onOpenLibraryDownloads: () -> Unit = onOpenDownloads,
 ) {
     var route by rememberSaveable { mutableStateOf(SettingsRoute.HOME) }
+    // Direction of the last navigation: into a sub-screen (forward) or back to
+    // HOME (back). Drives the AnimatedContent slide direction below, so the
+    // back arrow and the system back gesture reverse the enter animation.
+    var forward by rememberSaveable { mutableStateOf(true) }
+    fun go(target: SettingsRoute) {
+        forward = target != SettingsRoute.HOME
+        com.feishin.mobile.core.common.VLog.d("SettingsNav", "route=$route -> $target forward=$forward")
+        route = target
+    }
     val topBar = com.feishin.mobile.ui.LocalTopBarController.current
     LaunchedEffect(route) {
         topBar.title = if (route == SettingsRoute.HOME) "Settings" else null
         topBar.alwaysShowTitle = true
     }
     if (route != SettingsRoute.HOME) {
-        BackHandler { route = SettingsRoute.HOME }
+        BackHandler { go(SettingsRoute.HOME) }
     }
-    when (route) {
-        SettingsRoute.HOME -> SettingsHome(vm, onOpen = { route = it })
-        SettingsRoute.SERVER -> SubScreen("Server & Account", onBack = { route = SettingsRoute.HOME }) {
-            ServerAccountScreen(vm, onLogout)
-        }
-        SettingsRoute.APPEARANCE -> SubScreen("Appearance & Layout", onBack = { route = SettingsRoute.HOME }) {
-            AppearanceScreen(vm)
-        }
-        SettingsRoute.SOUND -> SubScreen("Sound & Playback", onBack = { route = SettingsRoute.HOME }) {
-            SoundScreen(vm)
-        }
-        SettingsRoute.CONNECTIVITY -> SubScreen("Connectivity", onBack = { route = SettingsRoute.HOME }) {
-            ConnectivityScreen(vm)
-        }
-        SettingsRoute.STORAGE -> SubScreen("Storage", onBack = { route = SettingsRoute.HOME }) {
-            StorageScreen(vm, onOpenDownloads, onOpenLibraryDownloads)
-        }
-        SettingsRoute.ABOUT -> SubScreen("About", onBack = { route = SettingsRoute.HOME }) {
-            AboutScreen()
+    // Sub-screens used to swap with a bare `when`, so the shared NavHost
+    // transitions never applied and screens popped with no animation at all.
+    androidx.compose.animation.AnimatedContent(
+        targetState = route,
+        transitionSpec = {
+            val dir = if (forward) {
+                androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection.Start
+            } else {
+                androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection.End
+            }
+            com.feishin.mobile.core.common.VLog.d("SettingsNav", "animating $initialState -> $targetState dir=$dir")
+            (slideIntoContainer(dir, com.feishin.mobile.ui.theme.Motion.navSlide()) +
+                fadeIn(com.feishin.mobile.ui.theme.Motion.fade(com.feishin.mobile.ui.theme.Motion.SubScreen))) togetherWith
+                (slideOutOfContainer(dir, com.feishin.mobile.ui.theme.Motion.navSlide()) +
+                    fadeOut(com.feishin.mobile.ui.theme.Motion.fade(com.feishin.mobile.ui.theme.Motion.SubScreen)))
+        },
+        label = "settings-route",
+    ) { r ->
+        when (r) {
+            SettingsRoute.HOME -> SettingsHome(vm, onOpen = { go(it) })
+            SettingsRoute.SERVER -> SubScreen("Server & Account", onBack = { go(SettingsRoute.HOME) }) {
+                ServerAccountScreen(vm, onLogout)
+            }
+            SettingsRoute.APPEARANCE -> SubScreen("Appearance & Layout", onBack = { go(SettingsRoute.HOME) }) {
+                AppearanceScreen(vm)
+            }
+            SettingsRoute.SOUND -> SubScreen("Sound & Playback", onBack = { go(SettingsRoute.HOME) }) {
+                SoundScreen(vm)
+            }
+            SettingsRoute.CONNECTIVITY -> SubScreen("Connectivity", onBack = { go(SettingsRoute.HOME) }) {
+                ConnectivityScreen(vm)
+            }
+            SettingsRoute.STORAGE -> SubScreen("Storage", onBack = { go(SettingsRoute.HOME) }) {
+                StorageScreen(vm, onOpenDownloads, onOpenLibraryDownloads)
+            }
+            SettingsRoute.ABOUT -> SubScreen("About", onBack = { go(SettingsRoute.HOME) }) {
+                AboutScreen()
+            }
         }
     }
 }
@@ -141,8 +172,8 @@ private fun SettingsHome(
             if (s != null && (s.offlineMode || (s.autoOffline && !online)) && s.showOfflineChip) {
                 Spacer(Modifier.height(4.dp))
                 OfflineChip()
+                Spacer(Modifier.height(4.dp))
             }
-            Spacer(Modifier.height(8.dp))
             SettingsHomeCard(
                 icon = Icons.Default.AccountCircle,
                 title = "Server & Account",

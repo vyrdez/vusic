@@ -1,6 +1,5 @@
 package com.feishin.mobile.ui.components
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
@@ -25,53 +24,58 @@ import com.feishin.mobile.ui.theme.VusicSpacing
  * The one title row used by every top-level screen (Library, Settings, and
  * anything else at the root of a tab).
  *
- * It exists because the titles had drifted apart by ~21px on the same device.
- * The row had no fixed height, so the title was only centred inside whatever
- * the tallest child happened to be: Library carries three 48dp icon buttons, so
- * its text floated (48-29)/2 = 9.5dp lower than Settings', which has nothing but
- * the text. Fixing the height, the status-bar inset handling, the start padding
- * and the typography in one place makes the baselines match by construction.
+ * Two alignment bugs lived here, both fixed:
+ *
+ * 1. The row had no fixed height, so the title was only centred inside whatever
+ *    the tallest child happened to be (Library's 48dp icon buttons vs
+ *    Settings' bare text: ~21px apart). The fixed 48dp height centres both
+ *    identically.
+ * 2. The status-bar inset was counted TWICE: the scaffold's content padding
+ *    already starts below the status bar (every inset-less screen — Search,
+ *    Home, the Settings sub-screens — relies on exactly that), and this row
+ *    added its own status inset on top, but as dead space BELOW the 64dp row
+ *    (the row sat at the top of a 64dp+inset box). That alone left ~28dp of
+ *    nothing under every title. The row now takes no inset of its own; the
+ *    status area comes from the scaffold exactly once.
  */
 object TopLevelTitleBar {
-    /** Fixed row height, excluding the status-bar inset. */
-    val RowHeight = 64.dp
+    /** Fixed row height. 48dp keeps the title's bottom edge 8dp above content. */
+    val RowHeight = 48.dp
 }
 
 @Composable
 fun TopLevelTitleBar(
     title: String,
     modifier: Modifier = Modifier,
-    applyStatusInset: Boolean = true,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    val topInset = if (applyStatusInset) {
-        WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    } else {
-        0.dp
-    }
-    Box(
+    Row(
         modifier
             .fillMaxWidth()
-            .height(TopLevelTitleBar.RowHeight + topInset),
+            .height(TopLevelTitleBar.RowHeight)
+            .padding(start = VusicSpacing.ScreenHorizontal, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(TopLevelTitleBar.RowHeight)
-                .padding(start = VusicSpacing.ScreenHorizontal, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.headlineSmall,
-                color = VusicColors.Accent,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .weight(1f)
-                    .semantics { heading() },
-            )
-            actions()
-        }
+        Text(
+            title,
+            style = MaterialTheme.typography.headlineSmall,
+            color = VusicColors.Accent,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .semantics { heading() },
+        )
+        actions()
     }
+}
+
+/** Status-bar spacer for screens that own their top edge (none do by default). */
+@Composable
+fun StatusBarSpacer(modifier: Modifier = Modifier) {
+    androidx.compose.foundation.layout.Spacer(
+        modifier
+            .fillMaxWidth()
+            .height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding()),
+    )
 }

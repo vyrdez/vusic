@@ -369,7 +369,7 @@ fun FilterChipRow(
 ) {
     LazyRow(
         modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(options, key = { it }) { option ->

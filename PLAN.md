@@ -334,6 +334,29 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   Playing, drag-down clears with the Undo snackbar (Undo restores the queue and
   the card), swipe path untested-by-hand but code-identical to M6.5.
   Playback never restarted during any of this; logcat clean, no FATAL.)
+- [x] M6.6b spacing and sub-menu animation
+  (B1 the title gap was the status inset counted twice, exactly as suspected:
+  the scaffold's content padding already starts below the status bar (every
+  inset-less screen relies on that), and TopLevelTitleBar added its own status
+  inset on top — worse, as dead space BELOW the 64dp row, because the row sat
+  at the top of a 64dp+inset box. Measured on-device: title bottom to chip-row
+  top was ~200px (~76dp). Fix: the row takes no inset of its own (status comes
+  from the scaffold once), the row is a fixed 48dp (Library's 48dp icon buttons
+  still fit exactly; both titles stay centred identically), the chip row's
+  vertical padding is 8->4dp and the post-title spacer on Settings home is
+  gone. Measured after: ~33px (~12.6dp) on Library, and Library/Settings title
+  tops are both at y=157 — pixel-identical baselines. Other top-level screens
+  (Home header, Search, sub-screen headers) were already tight and are
+  untouched.
+  B2 the sub-screens were never NavHost destinations: SettingsScreen swaps them
+  with a bare `when` on a state variable, so the shared NavHost transitions
+  could never apply and screens popped with zero animation. Fix: the swap is
+  wrapped in AnimatedContent with slide+fade both ways at the new shared
+  Motion.SubScreen (250ms), direction-aware — forward pushes Start, the back
+  arrow and the system back gesture both go through go(HOME) which reverses to
+  End. Device animation scales verified first: window 1.0, transition 1.0,
+  animator unset (=1.0), so animations are fully on. Proven by transition log:
+  HOME->SERVER dir=Start, SERVER->HOME dir=End, plus settled screenshots.)
 - [x] M6.5d forgotten favorites pager and animations
   (D1 Forgotten favorites was a flat five-row list while Quick picks had a pager,
   dots and a "Play all" pill. Both now render through one shared

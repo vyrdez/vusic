@@ -43,6 +43,9 @@ object Motion {
     /** Longest allowed: only for large surfaces, never for input feedback. */
     const val Slow = 300
 
+    /** Settings home <-> sub-screen push. Between Normal and Slow on purpose. */
+    const val SubScreen = 250
+
     /** Colour cross-fade, for borders, pill fills and warning text. */
     fun color(duration: Int = Normal) = tweenSpec<androidx.compose.ui.graphics.Color>(duration)
 
