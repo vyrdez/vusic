@@ -1,0 +1,260 @@
+package com.feishin.mobile.core.ui
+
+/**
+ * One artwork-derived tonal set. Every text/background pair in here is
+ * verified to its stated ratio at construction (see [schemeFor`), so
+ * composables can use these colors without re-checking:
+ *
+ * - [onContainer] vs [container]: >= 4.5 (titles)
+ * - [secondary] vs [container]: >= 4.5 (artist lines, durations)
+ * - [primary] vs [container] and vs [track]: >= 3.0 (ring, active icons)
+ * - [onPrimary] vs [primary]: >= 4.5 (text on the Save pill)
+ * - [surfaceText] vs [surfaceTop]/[surfaceBottom]: >= 4.5 (text straight on
+ *   the queue / Now Playing gradient)
+ * - [surfaceSecondary] vs [surfaceTop]/[surfaceBottom]: >= 4.5
+ *
+ * [track] is the ring's faint track: blended 82% toward [container], so the
+ * enforced primary-vs-container ratio carries over to it.
+ */
+data class PlayingScheme(
+    /** Null when this is the theme fallback rather than artwork. */
+    val seedArgb: Long?,
+    val container: Long,
+    val onContainer: Long,
+    val secondary: Long,
+    val primary: Long,
+    val onPrimary: Long,
+    val track: Long,
+    val surfaceTop: Long,
+    val surfaceBottom: Long,
+    val surfaceText: Long,
+    val surfaceSecondary: Long,
+    val dark: Boolean,
+)
+
+/**
+ * Builds a [PlayingScheme] from an artwork seed color.
+ *
+ * No material-kolor / material-color-utilities dependency is used on purpose:
+ * neither is in the version catalog, and the whole engine is ~120 lines of
+ * HSL plus WCAG enforcement — small enough to own, test and tune, with zero
+ * version-compatibility risk. The contrast loops below are what guarantee the
+ * hard readability requirement, not the hue source.
+ *
+ * @param seedArgb cover seed (vibrant preferred, else dominant); null or gray
+ *        (saturation < [GRAY_SATURATION]) falls back to [fallbackSeedArgb]
+ *        when that is usable, else to the theme pair.
+ * @param fallbackSeedArgb the app theme's primary: a gray cover still gets a
+ *        tinted scheme from the accent instead of going fully neutral.
+ * @param fallbackContainer / [fallbackOnContainer] the app theme's
+ *        primaryContainer / onPrimaryContainer, used when no seed is usable
+ *        (and the "Dynamic Now Playing color" setting is on but there is no
+ *        art, or the accent itself is gray).
+ */
+object PlayingColors {
+
+    /** Below this saturation a seed is "gray" and unusable. */
+    const val GRAY_SATURATION = 0.12f
+
+    /**
+     * Ring track: the container tinted 18% toward the primary. If that lands
+     * too close to the primary (ratio < 3.05), the tint is halved toward the
+     * container until it passes — at 0% the ratio equals primary-vs-container,
+     * which is enforced >= 3.0, so this always terminates passing.
+     */
+    fun ringTrack(container: Long, primary: Long): Long {
+        var share = 0.18f
+        var track = Contrast.blend(primary, container, share)
+        var guard = 0
+        while (Contrast.ratio(primary, track) < 3.05 && guard < 8) {
+            share /= 2f
+            track = Contrast.blend(primary, container, share)
+            guard++
+        }
+        return track
+    }
+
+    private const val WHITE = 0xFFFFFFFFL
+    private const val BLACK = 0xFF000000L
+    private const val NEAR_BLACK = 0xFF141414L
+
+    fun schemeFor(
+        seedArgb: Long?,
+        fallbackContainer: Long,
+        fallbackOnContainer: Long,
+        dark: Boolean,
+        fallbackSeedArgb: Long? = null,
+    ): PlayingScheme {
+        val usable = { c: Long -> Contrast.saturationOf(c) >= GRAY_SATURATION }
+        val seed = when {
+            seedArgb != null && usable(seedArgb) -> seedArgb
+            fallbackSeedArgb != null && usable(fallbackSeedArgb) -> fallbackSeedArgb
+            else -> null
+        }
+        if (seed == null) {
+            return fallbackScheme(fallbackContainer, fallbackOnContainer, dark)
+        }
+        val hsl = Contrast.toHsl(seed)
+        return if (dark) darkScheme(seed, hsl.h, hsl.s) else lightScheme(seed, hsl.h, hsl.s)
+    }
+
+    // ---- fallback (theme pair, still verified) ------------------------------
+
+    private fun fallbackScheme(container: Long, onContainer: Long, dark: Boolean): PlayingScheme {
+        // One of black/white always clears 4.5, so exactly one of the two
+        // branches below is live; the theme pair is preferred when it passes.
+        val fixedOn = if (Contrast.ratio(onContainer, container) >= 4.5) {
+            onContainer
+        } else {
+            Contrast.pickBest(BLACK, WHITE, container)
+        }
+        // onContainer at 4.5+ always clears 3.0, so primary is safe as-is.
+        val fixedPrimary = fixedOn
+        val top = if (dark) Contrast.fromHsl(0f, 0f, 0.10f) else Contrast.fromHsl(0f, 0f, 0.96f)
+        val bottom = if (dark) Contrast.fromHsl(0f, 0f, 0.06f) else Contrast.fromHsl(0f, 0f, 0.91f)
+        val surfaceText = if (dark) WHITE else NEAR_BLACK
+        return PlayingScheme(
+            seedArgb = null,
+            container = container,
+            onContainer = fixedOn,
+            secondary = fixedOn,
+            primary = fixedPrimary,
+            onPrimary = Contrast.pickBest(BLACK, WHITE, fixedPrimary),
+            track = ringTrack(container, fixedPrimary),
+            surfaceTop = top,
+            surfaceBottom = bottom,
+            surfaceText = surfaceText,
+            surfaceSecondary = surfaceText,
+            dark = dark,
+        )
+    }
+
+    // ---- dark theme ----------------------------------------------------------
+
+    private fun darkScheme(seed: Long, h: Float, s: Float): PlayingScheme {
+        val sat = s.coerceAtLeast(0.40f)
+        // Container: rich seed tone. Adjusted below if onContainer fails.
+        var container = Contrast.fromHsl(h, sat, 0.30f)
+        // On-container: tinted near-white first (prettier than pure), pure
+        // white as the guaranteed backstop.
+        var onContainer = Contrast.fromHsl(h, 0.30f, 0.93f)
+        var guard = 0
+        while (Contrast.ratio(onContainer, container) < 4.5 && guard < 16) {
+            if (Contrast.ratio(WHITE, container) >= 4.5) {
+                onContainer = WHITE
+                break
+            }
+            // Even white fails: the container is too light, darken it.
+            container = Contrast.withLightness(container, Contrast.toHsl(container).l - 0.02f)
+            guard++
+        }
+        if (Contrast.ratio(onContainer, container) < 4.5) onContainer = WHITE
+        // Secondary: onContainer pulled 30% toward the container, verified.
+        val secondary = Contrast.blend(container, onContainer, 0.30f)
+            .let { if (Contrast.ratio(it, container) >= 4.5) it else onContainer }
+        // Primary: bright seed tone, lightened until it clears 3:1.
+        var primary = Contrast.fromHsl(h, sat.coerceAtLeast(0.55f), 0.80f)
+        guard = 0
+        while (Contrast.ratio(primary, container) < 3.0 && guard < 16) {
+            primary = Contrast.withLightness(primary, Contrast.toHsl(primary).l + 0.03f)
+            guard++
+        }
+        if (Contrast.ratio(primary, container) < 3.0) primary = onContainer
+        val track = ringTrack(container, primary)
+        // Gradient surfaces: dark seed tones, darkened until white clears 4.5.
+        var top = Contrast.fromHsl(h, sat.coerceAtLeast(0.30f), 0.16f)
+        guard = 0
+        while (Contrast.ratio(WHITE, top) < 4.5 && guard < 16) {
+            top = Contrast.withLightness(top, Contrast.toHsl(top).l - 0.02f)
+            guard++
+        }
+        var bottom = Contrast.fromHsl(h, sat.coerceAtLeast(0.30f), 0.09f)
+        guard = 0
+        while (Contrast.ratio(WHITE, bottom) < 4.5 && guard < 16) {
+            bottom = Contrast.withLightness(bottom, Contrast.toHsl(bottom).l - 0.02f)
+            guard++
+        }
+        val surfaceSecondary = Contrast.blend(top, WHITE, 0.30f)
+            .let {
+                if (Contrast.ratio(it, top) >= 4.5 && Contrast.ratio(it, bottom) >= 4.5) it else WHITE
+            }
+        return PlayingScheme(
+            seedArgb = seed,
+            container = container,
+            onContainer = onContainer,
+            secondary = secondary,
+            primary = primary,
+            onPrimary = Contrast.pickBest(BLACK, WHITE, primary),
+            track = ringTrack(container, primary),
+            surfaceTop = top,
+            surfaceBottom = bottom,
+            surfaceText = WHITE,
+            surfaceSecondary = surfaceSecondary,
+            dark = true,
+        )
+    }
+
+    // ---- light theme ----------------------------------------------------------
+
+    private fun lightScheme(seed: Long, h: Float, s: Float): PlayingScheme {
+        val sat = s.coerceAtMost(0.55f)
+        // Container: pale seed tint. Adjusted below if the text fails.
+        var container = Contrast.fromHsl(h, sat, 0.88f)
+        // On-container: deep seed tone first, near-black as the backstop.
+        var onContainer = Contrast.fromHsl(h, 0.35f, 0.10f)
+        var guard = 0
+        while (Contrast.ratio(onContainer, container) < 4.5 && guard < 16) {
+            if (Contrast.ratio(NEAR_BLACK, container) >= 4.5) {
+                onContainer = NEAR_BLACK
+                break
+            }
+            // Even near-black fails: the container is too dark, lighten it.
+            container = Contrast.withLightness(container, Contrast.toHsl(container).l + 0.02f)
+            guard++
+        }
+        if (Contrast.ratio(onContainer, container) < 4.5) onContainer = NEAR_BLACK
+        val secondary = Contrast.blend(container, onContainer, 0.30f)
+            .let { if (Contrast.ratio(it, container) >= 4.5) it else onContainer }
+        // Primary: deep seed tone, darkened until it clears 3:1.
+        var primary = Contrast.fromHsl(h, sat.coerceAtLeast(0.50f), 0.35f)
+        guard = 0
+        while (Contrast.ratio(primary, container) < 3.0 && guard < 16) {
+            primary = Contrast.withLightness(primary, Contrast.toHsl(primary).l - 0.03f)
+            guard++
+        }
+        if (Contrast.ratio(primary, container) < 3.0) primary = onContainer
+        val track = ringTrack(container, primary)
+        // Gradient surfaces: light seed tones, lightened until near-black text
+        // clears 4.5 on both ends.
+        var top = Contrast.fromHsl(h, sat, 0.93f)
+        guard = 0
+        while (Contrast.ratio(NEAR_BLACK, top) < 4.5 && guard < 16) {
+            top = Contrast.withLightness(top, Contrast.toHsl(top).l + 0.01f)
+            guard++
+        }
+        var bottom = Contrast.fromHsl(h, sat, 0.86f)
+        guard = 0
+        while (Contrast.ratio(NEAR_BLACK, bottom) < 4.5 && guard < 16) {
+            bottom = Contrast.withLightness(bottom, Contrast.toHsl(bottom).l + 0.01f)
+            guard++
+        }
+        val surfaceSecondary = Contrast.blend(top, NEAR_BLACK, 0.30f)
+            .let {
+                if (Contrast.ratio(it, top) >= 4.5 && Contrast.ratio(it, bottom) >= 4.5) it else NEAR_BLACK
+            }
+        return PlayingScheme(
+            seedArgb = seed,
+            container = container,
+            onContainer = onContainer,
+            secondary = secondary,
+            primary = primary,
+            onPrimary = Contrast.pickBest(BLACK, WHITE, primary),
+            track = ringTrack(container, primary),
+            surfaceTop = top,
+            surfaceBottom = bottom,
+            surfaceText = NEAR_BLACK,
+            surfaceSecondary = surfaceSecondary,
+            dark = false,
+        )
+    }
+}

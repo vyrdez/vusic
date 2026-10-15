@@ -22,6 +22,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -156,7 +158,31 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
         }
     }
 
-    CompositionLocalProvider(LocalTopBarController provides topBar) {
+    // Artwork color scheme for the current track, shared by current-row
+    // highlights, the mini player, the queue and Now Playing. Null when the
+    // setting is off or nothing plays: consumers fall back to the theme pair.
+    val schemeSettings by main.settings.flow.collectAsState(initial = null)
+    val schemeDark = com.feishin.mobile.ui.theme.resolveDark(
+        schemeSettings?.theme,
+        androidx.compose.foundation.isSystemInDarkTheme(),
+    )
+    val schemeFallbackSeed = MaterialTheme.colorScheme.primary.toArgb().toLong().and(0xFFFFFFFFL)
+    val schemeFallbackContainer = MaterialTheme.colorScheme.primaryContainer.toArgb().toLong().and(0xFFFFFFFFL)
+    val schemeFallbackOn = MaterialTheme.colorScheme.onPrimaryContainer.toArgb().toLong().and(0xFFFFFFFFL)
+    val schemeRaw = com.feishin.mobile.ui.theme.rememberPlayingScheme(
+        coverUrl = currentTrack?.coverArt?.let { main.player.coverArtUrl(it, 128) },
+        enabled = schemeSettings?.dynamicNpColor != false,
+        dark = schemeDark,
+        fallbackSeedArgb = schemeFallbackSeed,
+        fallbackContainerArgb = schemeFallbackContainer,
+        fallbackOnContainerArgb = schemeFallbackOn,
+    )
+    val playingScheme = com.feishin.mobile.ui.theme.animatedPlayingScheme(schemeRaw)
+
+    CompositionLocalProvider(
+        LocalTopBarController provides topBar,
+        com.feishin.mobile.ui.theme.LocalPlayingColors provides playingScheme,
+    ) {
         Box(Modifier.fillMaxSize()) {
             // Measured nav bar height, so the floating card can sit exactly on
             // it from outside the scaffold's inset handling.

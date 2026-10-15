@@ -46,6 +46,9 @@ object Motion {
     /** Settings home <-> sub-screen push. Between Normal and Slow on purpose. */
     const val SubScreen = 250
 
+    /** Artwork scheme crossfade on track change. */
+    const val SchemeChange = 450
+
     /** Colour cross-fade, for borders, pill fills and warning text. */
     fun color(duration: Int = Normal) = tweenSpec<androidx.compose.ui.graphics.Color>(duration)
 

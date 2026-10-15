@@ -167,6 +167,37 @@ fun FeishinTheme(dark: Boolean, amoled: Boolean = false, content: @Composable ()
 }
 
 /**
+ * Maps a stored theme to dark/light. Pure so the System mapping and the
+ * AMOLED migration are unit-testable (see ThemeModeTest).
+ *
+ * @param stored the raw stored value; unknown strings and the removed AMOLED
+ *        both resolve to [com.feishin.mobile.data.settings.ThemeMode.DARK].
+ */
+fun resolveDark(
+    stored: com.feishin.mobile.data.settings.ThemeMode?,
+    systemDark: Boolean,
+): Boolean = when (stored ?: com.feishin.mobile.data.settings.ThemeMode.DARK) {
+    com.feishin.mobile.data.settings.ThemeMode.DARK -> true
+    com.feishin.mobile.data.settings.ThemeMode.AMOLED -> true
+    com.feishin.mobile.data.settings.ThemeMode.LIGHT -> false
+    com.feishin.mobile.data.settings.ThemeMode.SYSTEM -> systemDark
+}
+
+/**
+ * Normalizes a raw stored theme name: unknown strings fall back to DARK and
+ * the removed AMOLED migrates to DARK.
+ */
+fun migrateStoredTheme(raw: String?): com.feishin.mobile.data.settings.ThemeMode {
+    val parsed = runCatching { com.feishin.mobile.data.settings.ThemeMode.valueOf(raw ?: "DARK") }
+        .getOrDefault(com.feishin.mobile.data.settings.ThemeMode.DARK)
+    return if (parsed == com.feishin.mobile.data.settings.ThemeMode.AMOLED) {
+        com.feishin.mobile.data.settings.ThemeMode.DARK
+    } else {
+        parsed
+    }
+}
+
+/**
  * Shared Material3 control colors so every switch, checkbox, radio and slider in
  * the app has the same visible boundaries (WCAG non-text contrast on dark).
  */

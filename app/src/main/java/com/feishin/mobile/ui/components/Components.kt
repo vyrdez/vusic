@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -62,7 +63,9 @@ import com.feishin.mobile.domain.model.Artist
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.VusicControlColors
+import com.feishin.mobile.ui.theme.LocalPlayingColors
 import com.feishin.mobile.ui.theme.VusicSpacing
+import com.feishin.mobile.ui.theme.playingColor
 
 fun formatDuration(seconds: Int): String {
     val m = seconds / 60
@@ -114,7 +117,7 @@ fun CoverImage(
 @Composable
 fun EqualizerOverlay(modifier: Modifier = Modifier) {
     val t = rememberInfiniteTransition(label = "eq")
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.Bottom) {
         repeat(3) { i ->
             val h by t.animateFloat(
                 initialValue = 4f, targetValue = 12f + i * 2f,
@@ -274,24 +277,55 @@ fun TrackRow(
     downloadState: com.feishin.mobile.data.db.DownloadEntity? = null,
     modifier: Modifier = Modifier,
 ) {
+    // Current-track highlight comes from the artwork scheme when present
+    // (container + onContainer, both contrast-enforced), else the theme pair.
+    val scheme = LocalPlayingColors.current
+    val tinted = isCurrent && scheme != null
+    val container = when {
+        tinted -> com.feishin.mobile.ui.theme.playingColor(scheme.container)
+        isCurrent -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+        else -> Color.Transparent
+    }
+    val titleColor = if (tinted) {
+        com.feishin.mobile.ui.theme.playingColor(scheme.onContainer)
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val subColor = if (tinted) {
+        com.feishin.mobile.ui.theme.playingColor(scheme.secondary)
+    } else {
+        VusicColors.SecondaryText
+    }
     Row(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .combinedClickable(onClick = onClick, onLongClick = onActions)
-            .background(if (isCurrent) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f) else Color.Transparent)
+            .background(container)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(56.dp), contentAlignment = Alignment.BottomStart) {
             CoverImage(artUrl, track.title, modifier = Modifier.size(56.dp), roundedDp = 4.dp)
             if (isCurrent && isPlaying) {
-                EqualizerOverlay(Modifier.padding(6.dp))
+                // Dark scrim behind the animated bars: readable on any art
+                // (white bars clear 3:1 over a 55% black scrim even on white).
+                Box(
+                    Modifier.padding(6.dp).size(28.dp)
+                        .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                        .padding(6.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    EqualizerOverlay(Modifier.fillMaxSize())
+                }
             }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(track.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                track.title, style = MaterialTheme.typography.bodyMedium, color = titleColor,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
             // 2dp between the two lines, both starting at the same x.
             Spacer(Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -299,10 +333,11 @@ fun TrackRow(
                     name = track.artist,
                     enabled = onArtist != null && track.artistId?.isNotBlank() == true,
                     onClick = { track.artistId?.let { onArtist?.invoke(it) } },
+                    textColor = subColor,
                 )
                 Text(
                     " • ${formatDuration(track.durationSec)}",
-                    style = MaterialTheme.typography.bodySmall, color = VusicColors.SecondaryText,
+                    style = MaterialTheme.typography.bodySmall, color = subColor,
                     maxLines = 1,
                 )
             }
@@ -335,12 +370,13 @@ fun ClickableName(
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    textColor: Color = VusicColors.SecondaryText,
 ) {
     if (enabled) {
         Text(
             name,
             style = MaterialTheme.typography.bodySmall,
-            color = VusicColors.SecondaryText,
+            color = textColor,
             maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = modifier
                 .clip(RoundedCornerShape(4.dp))
@@ -353,7 +389,7 @@ fun ClickableName(
         Text(
             name,
             style = MaterialTheme.typography.bodySmall,
-            color = VusicColors.SecondaryText,
+            color = textColor,
             maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = modifier,
         )

@@ -35,13 +35,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.feishin.mobile.playback.PlayerManager
+import com.feishin.mobile.ui.theme.LocalPlayingColors
 import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.theme.VusicColors
+import com.feishin.mobile.ui.theme.playingColor
 import kotlinx.coroutines.launch
 
 /** Pixels of downward travel that commit a queue clear on release. */
@@ -72,8 +75,11 @@ val MiniPlayerRingStroke = 3.dp
 /** Gap between the cover edge and the ring's inner edge. */
 val MiniPlayerRingGap = 2.dp
 
-/** Padding inside the card, equal on the left, top and bottom. */
+/** Padding inside the card, top and bottom (fits the 56dp ring in 72dp). */
 val MiniPlayerInnerPadding = 8.dp
+
+/** Symmetric side insets: ring box and last button box sit equally far in. */
+val MiniPlayerSidePadding = 12.dp
 
 /** Gap between the card and the nav bar. */
 val MiniPlayerNavGap = 8.dp
@@ -134,6 +140,34 @@ fun MiniPlayer(
     val song = current
     if (song == null || enter.value <= 0.001f) return
 
+    // Artwork tinting (or the theme pair when dynamic color is off / no art).
+    val scheme = LocalPlayingColors.current
+    val cardBg = if (scheme != null) {
+        playingColor(scheme.container)
+    } else {
+        MaterialTheme.colorScheme.primaryContainer
+    }
+    val ink = if (scheme != null) {
+        playingColor(scheme.onContainer)
+    } else {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    }
+    val subInk = if (scheme != null) {
+        playingColor(scheme.secondary)
+    } else {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    }
+    val ringBar = if (scheme != null) {
+        playingColor(scheme.primary)
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+    val ringTrack = if (scheme != null) {
+        playingColor(scheme.track)
+    } else {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+    }
+
     // Ring progress: sampled from the player at ~4Hz and interpolated with a
     // matching 250ms tween, so the ring glides instead of stepping. The Canvas
     // below reads this Animatable in the DRAW phase, which schedules a redraw
@@ -177,7 +211,7 @@ fun MiniPlayer(
             // content shows on every side of the card itself.
             .shadow(12.dp, shape, clip = false, ambientColor = androidx.compose.ui.graphics.Color(0x60000000), spotColor = androidx.compose.ui.graphics.Color(0x80000000))
             .clip(shape)
-            .background(VusicColors.SurfaceHigh)
+            .background(cardBg)
             .clickable(onClick = onOpen)
             .pointerInput(queue.size) {
                 var totalX = 0f
@@ -221,9 +255,14 @@ fun MiniPlayer(
             .height(MiniPlayerHeight),
     ) {
         Row(
+            // Symmetric horizontal insets: the ring box and the last button
+            // box sit the same distance from the card edge on both sides, so
+            // the ring no longer hugs the left curve and the right icon no
+            // longer floats at a different gap. (Vertical stays 8dp: the 56dp
+            // ring fills the 72dp card exactly.)
             Modifier.fillMaxWidth().padding(
-                start = MiniPlayerInnerPadding,
-                end = 4.dp,
+                start = MiniPlayerSidePadding,
+                end = MiniPlayerSidePadding,
                 top = MiniPlayerInnerPadding,
                 bottom = MiniPlayerInnerPadding,
             ),
@@ -238,7 +277,7 @@ fun MiniPlayer(
                 modifier = Modifier.size(MiniPlayerRingDiameter),
                 contentAlignment = Alignment.Center,
             ) {
-                MiniPlayerRing(progress = { ring.value })
+                MiniPlayerRing(progress = { ring.value }, bar = ringBar, track = ringTrack)
                 CoverImage(
                     player.coverArtUrl(song.coverArt, 128), song.title,
                     modifier = Modifier.size(MiniPlayerCoverDiameter),
@@ -252,33 +291,33 @@ fun MiniPlayer(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = ink,
                 )
                 Text(
                     song.artist,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
-                    color = VusicColors.SecondaryText,
+                    color = subInk,
                 )
             }
             IconButton(onClick = player::skipToPrevious, modifier = Modifier.size(44.dp)) {
                 Icon(
                     Icons.Default.SkipPrevious, "Previous track",
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = ink,
                 )
             }
             IconButton(onClick = player::togglePlayPause, modifier = Modifier.size(44.dp)) {
                 Icon(
                     if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     "Play/Pause",
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = ink,
                 )
             }
             IconButton(onClick = player::skipToNext, modifier = Modifier.size(44.dp)) {
                 Icon(
                     Icons.Default.SkipNext, "Next track",
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = ink,
                 )
             }
         }
@@ -292,9 +331,7 @@ fun MiniPlayer(
  * center, fixed gap).
  */
 @Composable
-private fun MiniPlayerRing(progress: () -> Float) {
-    val track = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)
-    val bar = MaterialTheme.colorScheme.primary
+private fun MiniPlayerRing(progress: () -> Float, bar: Color, track: Color) {
     Canvas(Modifier.size(MiniPlayerRingDiameter)) {
         val strokePx = MiniPlayerRingStroke.toPx()
         // Inset by half the stroke so the outer edge lands exactly on the box

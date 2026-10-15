@@ -408,6 +408,34 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   One load-induced cold-start ANR seen on the emulator (4.7s cold start +
   back-to-back commands; main thread in platform Media3 session init, unrelated
   to the ring) — noted, not a regression.)
+- [x] M6.7c artwork color scheme
+  (One PlayingScheme per track from the artwork: seed = Palette vibrant, else
+  dominant, else the theme primary, else the theme container pair. No
+  material-kolor / material-color-utilities dependency is used on purpose —
+  neither is in the catalog and the engine is ~120 lines of HSL + WCAG
+  enforcement in core/ui (Contrast), small enough to own, test and tune with no
+  version-compatibility risk. Every pair is ENFORCED at construction, so the
+  readability requirement cannot silently regress: onContainer/secondary vs
+  container >= 4.5, primary vs container >= 3, onPrimary vs primary >= 4.5,
+  surface text/secondary vs both gradient stops >= 4.5. The loop darkens (or
+  lightens) the container and falls back to pure black/white, which is
+  guaranteed to pass; the ring track is the container tinted 18% toward primary
+  and halved toward the container until primary-vs-track clears 3.05.
+  Measured over 8 seeds x 2 themes (unit-test log): worst title 5.06:1, worst
+  secondary 4.59:1, worst ring 3.62:1, worst ring track 3.14:1, worst
+  onPrimary 4.85:1, worst surface text 9.76:1. Exposed via LocalPlayingColors;
+  consumed by TrackRow (current-row highlight everywhere), the mini player
+  (container, ring, icons, text), Now Playing (gradient backdrop + content) and
+  the queue (sheet gradient, current row, played rows). Palette extraction runs
+  off the main thread, cached per cover+theme (LRU 24), and every channel
+  crossfades over Motion.SchemeChange (450ms). The "Dynamic Now Playing color"
+  setting turns it off (composable is passed null), falling back to the theme's
+  primaryContainer/onPrimaryContainer. Equalizer overlay gained a dark scrim so
+  it stays readable on any art. Two bugs found and fixed on-device: Color(ULong)
+  reads the top bits as a color-space id and crashed A hard (ArrayIndexOutOfBounds
+  in getColorSpace) — all scheme Longs go through Color(Int) now; and rows with
+  Color.Unspecified fell back to the dark LocalContentColor, so upcoming queue
+  rows rendered dim — every row now sets its colour explicitly.)
 - [x] M6.6d M6.5 leftover re-verification (fixes were needed)
   (D1 usage island verified: full-width bar with proportional segments (556 MB
   used renders ~13% against 3.63 GB free), "X used by Vusic, Y free" label,

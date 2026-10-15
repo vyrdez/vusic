@@ -87,6 +87,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
@@ -121,7 +122,9 @@ import com.feishin.mobile.ui.components.SheetState
 import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.components.rememberSheetState
 import com.feishin.mobile.ui.components.scrimAlpha
+import com.feishin.mobile.ui.theme.LocalPlayingColors
 import com.feishin.mobile.ui.theme.Motion
+import com.feishin.mobile.ui.theme.playingColor
 import com.feishin.mobile.ui.components.formatDuration
 import com.feishin.mobile.ui.components.shareText
 import com.feishin.mobile.core.common.PlaybackProgress
@@ -166,12 +169,23 @@ fun NowPlayingScreen(
         return
     }
 
-    // Dynamic background from the cover art's dominant colour, clamped dark enough
+    // Artwork color scheme (shared with rows, mini player and queue). When it
+    // is present the background is its tinted gradient and the content its
+    // contrast-enforced surface text — in both themes. When it is null (the
+    // setting is off, or no art), the legacy path below runs instead.
+    val scheme = LocalPlayingColors.current
+    val schemeTop = scheme?.let { playingColor(it.surfaceTop) }
+    val schemeBottom = scheme?.let { playingColor(it.surfaceBottom) }
+
+    // Legacy background: cover art's dominant colour, clamped dark enough
     // that white text always has strong contrast (fixes washed-out light covers).
     var targetBg by remember { mutableStateOf(VusicColors.Background) }
     val ctx = LocalContext.current
     val artUrl = player.coverArtUrl(current.coverArt, 512)
-    LaunchedEffect(artUrl) {
+    LaunchedEffect(artUrl, scheme) {
+        // The shared scheme already sampled this art: decoding twice would
+        // double the IO for the same pixels.
+        if (scheme != null) return@LaunchedEffect
         if (artUrl == null) {
             targetBg = VusicColors.Background
             return@LaunchedEffect
@@ -194,9 +208,17 @@ fun NowPlayingScreen(
     // Mid gradient stop: the same tint, darkened (opaque, so nothing bleeds through).
     val bgMid = VusicColorMath.scale(bg.red, bg.green, bg.blue, 0.55f)
         .let { (r, g, b) -> Color(r, g, b) }
-    // The backdrop is clamped dark, so the content is always white.
-    val content = Color.White
-    val dim = Color.White.copy(alpha = 0.72f)
+    // Backdrop: scheme gradient when tinting, legacy dark gradient otherwise.
+    // Every stop is OPAQUE so nothing bleeds through.
+    val backdrop = if (scheme != null && schemeTop != null && schemeBottom != null) {
+        Brush.verticalGradient(listOf(schemeTop, schemeBottom))
+    } else {
+        Brush.verticalGradient(listOf(bg, bgMid, VusicColors.Background))
+    }
+    // Content follows the backdrop: enforced surface text on a scheme
+    // gradient, white on the legacy dark gradient.
+    val content = scheme?.let { playingColor(it.surfaceText) } ?: Color.White
+    val dim = scheme?.let { playingColor(it.surfaceSecondary) } ?: Color.White.copy(alpha = 0.72f)
 
     var lyricsMode by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
@@ -230,11 +252,7 @@ fun NowPlayingScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .background(
-                // Every stop is OPAQUE: a translucent mid-stop let the screen
-                // behind bleed through. The tint fades to near-black instead.
-                Brush.verticalGradient(listOf(bg, bgMid, VusicColors.Background)),
-            )
+            .background(backdrop)
             .statusBarsPadding()
             .navigationBarsPadding(),
     ) {
@@ -839,15 +857,37 @@ private fun QueueList(
                     backgroundContent = {},
                 ) {
                     val isCurrent = idx == currentIndex
+                    // Played rows (before the current index) dim but stay
+                    // legible: secondary text clears 4.5:1, above the 3:1 bar.
+                    val played = idx in 0 until currentIndex
+                    val scheme = LocalPlayingColors.current
+                    val rowBg = if (isCurrent) {
+                        scheme?.let { playingColor(it.container) }
+                            ?: MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        Color.Transparent
+                    }
+                    // Every row gets an EXPLICIT colour: Color.Unspecified
+                    // falls back to LocalContentColor, which is dark here
+                    // (the sheet is an overlay with no Surface), so upcoming
+                    // rows rendered dim instead of full strength.
+                    val rowTitle = when {
+                        isCurrent && scheme != null -> playingColor(scheme.onContainer)
+                        played && scheme != null -> playingColor(scheme.surfaceSecondary)
+                        scheme != null -> playingColor(scheme.surfaceText)
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
+                    val rowSub = when {
+                        isCurrent && scheme != null -> playingColor(scheme.secondary)
+                        played && scheme != null -> playingColor(scheme.surfaceSecondary)
+                        scheme != null -> playingColor(scheme.surfaceSecondary)
+                        else -> VusicColors.SecondaryText
+                    }
                     Row(
                         placement
                             .fillMaxWidth()
                             .shadow(if (isDragging) 8.dp else 0.dp, RoundedCornerShape(8.dp))
-                            .background(
-                                if (isCurrent) MaterialTheme.colorScheme.primaryContainer
-                                else Color.Transparent,
-                                RoundedCornerShape(8.dp),
-                            )
+                            .background(rowBg, RoundedCornerShape(8.dp))
                             .combinedClickable(
                                 enabled = idx >= 0,
                                 onClick = { if (idx >= 0) onPlayAt(idx) },
@@ -865,7 +905,16 @@ private fun QueueList(
                         Box(Modifier.size(56.dp), contentAlignment = Alignment.BottomStart) {
                             CoverImage(artUrl, item.song.title, modifier = Modifier.size(56.dp), roundedDp = 4.dp)
                             if (isCurrent && isPlaying) {
-                                EqualizerOverlay(Modifier.padding(6.dp))
+                                // Dark scrim behind the bars: readable on any
+                                // art (see TrackRow).
+                                Box(
+                                    Modifier.padding(6.dp).size(28.dp)
+                                        .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                                        .padding(6.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    EqualizerOverlay(Modifier.fillMaxSize())
+                                }
                             } else if (isCurrent) {
                                 Icon(
                                     Icons.Default.PlayArrow, "Current track",
@@ -881,12 +930,13 @@ private fun QueueList(
                             Text(
                                 item.song.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 fontWeight = if (isCurrent) FontWeight.Bold else null,
+                                color = rowTitle,
                             )
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 "${item.song.artist} • ${formatDuration(item.song.durationSec)}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = VusicColors.SecondaryText,
+                                color = rowSub,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
                         }
@@ -1038,6 +1088,15 @@ private fun QueueSheet(
         }
     }
 
+    // Tinted gradient when the artwork scheme is present, flat surface when
+    // the setting is off. Brush either way so the background() overload is
+    // unambiguous.
+    val sheetBrush: Brush = LocalPlayingColors.current?.let { s ->
+        Brush.verticalGradient(
+            listOf(playingColor(s.surfaceTop), playingColor(s.surfaceBottom)),
+        )
+    } ?: SolidColor(VusicColors.Surface)
+
     Box(Modifier.fillMaxSize()) {
         // Scrim: alpha follows the drag, tap-outside closes through the one path.
         Box(
@@ -1062,7 +1121,7 @@ private fun QueueSheet(
                     clip = p < 1f
                 }
                 .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-                .background(VusicColors.Surface)
+                .background(sheetBrush)
                 .nestedScroll(nestedScroll)
                 .draggable(
                     orientation = Orientation.Vertical,
