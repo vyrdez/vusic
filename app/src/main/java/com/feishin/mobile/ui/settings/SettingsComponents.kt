@@ -95,7 +95,7 @@ fun SettingsDivider() {
     HorizontalDivider(
         modifier = Modifier.padding(start = 0.dp),
         thickness = 1.dp,
-        color = Color.White.copy(alpha = 0.07f),
+        color = MaterialTheme.colorScheme.outlineVariant,
     )
 }
 
@@ -104,7 +104,7 @@ private fun RowText(
     label: String,
     description: String?,
     modifier: Modifier = Modifier,
-    labelColor: Color = Color.White,
+    labelColor: Color = MaterialTheme.colorScheme.onSurface,
     warning: String? = null,
 ) {
     Column(modifier) {
@@ -201,7 +201,7 @@ fun ChoiceRow(
                 leadingIcon = {
                     Icon(
                         Icons.Default.ArrowDropDown, "Open options",
-                        tint = Color.White, modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp),
                     )
                 },
             )
@@ -214,7 +214,7 @@ fun ChoiceRow(
                                 if (o == value) {
                                     Icon(
                                         Icons.Default.Check, "Selected",
-                                        tint = Color.White, modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(18.dp),
                                     )
                                 }
                             }
@@ -256,7 +256,7 @@ fun SliderRow(
                 Text(
                     valueLabel,
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                 )
             }
@@ -396,7 +396,7 @@ fun UsageCard(
         Text(
             com.feishin.mobile.core.common.UsageBarMath.totalLabel(math.usedBytes, math.freeBytes, human),
             style = MaterialTheme.typography.bodyMedium,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             UsageLegendRow("Images", human(imagesBytes), colors[0])
@@ -505,7 +505,7 @@ fun SettingsHomeCard(
             .padding(VusicSpacing.CardPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, tint = Color.White, modifier = Modifier.size(24.dp))
+        Icon(icon, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
         Spacer(Modifier.size(16.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)

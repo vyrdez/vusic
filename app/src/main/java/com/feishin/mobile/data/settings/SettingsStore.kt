@@ -18,7 +18,9 @@ import kotlinx.coroutines.flow.map
 
 private val Context.settingsDataStore by preferencesDataStore(name = "feishin_settings")
 
-enum class ThemeMode { SYSTEM, DARK, AMOLED, LIGHT }
+// AMOLED was removed in M6.7e: dark is the default dark theme now. A stored"
+// AMOLED value migrates to DARK (see migrateStoredTheme in ui.theme).
+enum class ThemeMode { SYSTEM, DARK, LIGHT }
 
 /** Grid or list layout for album/artist collections. */
 enum class LayoutMode { GRID, LIST }
@@ -132,7 +134,7 @@ class SettingsStore internal constructor(
 
     val flow: Flow<Settings> = store.data.map { p ->
         Settings(
-            theme = runCatching { ThemeMode.valueOf(p[K.theme] ?: "DARK") }.getOrDefault(ThemeMode.DARK),
+            theme = com.feishin.mobile.ui.theme.migrateStoredTheme(p[K.theme]),
             wifiBitrate = p[K.wifiBitrate] ?: 0,
             mobileBitrate = p[K.mobileBitrate] ?: 128,
             wifiFormat = p[K.wifiFormat] ?: "raw",

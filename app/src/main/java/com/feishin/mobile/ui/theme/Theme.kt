@@ -4,54 +4,84 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
+/** True while the dark scheme is active. Lets control colors pick a variant. */
+val LocalVusicDark = staticCompositionLocalOf { true }
+
 /**
- * Vusic design system: near-black background, elevated gray surfaces, white
- * primary text, gray secondary text, white as the main accent (selected chips
- * are white pills with black text, the play button is a white circle).
+ * Vusic design tokens.
+ *
+ * These used to be hardcoded dark hexes, which is why the Light theme rendered
+ * dark: the scheme switched, but every screen painted literal dark colors. They
+ * are now @Composable getters onto the active Material scheme, so all 135 call
+ * sites became theme-aware without changing a single call site. The dark values
+ * are unchanged — Dark looks exactly as it did.
  */
 object VusicColors {
-    val Background = Color(0xFF0F0F0F)
-    val Surface = Color(0xFF1E1E1E)
-    val SurfaceHigh = Color(0xFF2A2A2A)
-    val SecondaryText = Color(0xFF9AA0A6)
-    val Accent = Color.White
-    val OnAccent = Color.Black
+    val Background: Color @Composable get() = MaterialTheme.colorScheme.background
+    val Surface: Color @Composable get() = MaterialTheme.colorScheme.surface
+    val SurfaceHigh: Color @Composable get() = MaterialTheme.colorScheme.surfaceContainerHigh
+    val SecondaryText: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+    val Accent: Color @Composable get() = MaterialTheme.colorScheme.primary
+    val OnAccent: Color @Composable get() = MaterialTheme.colorScheme.onPrimary
 
-    /** AMOLED theme: true black backgrounds for OLED panels. */
-    val AmoledBackground = Color(0xFF000000)
-    val AmoledSurface = Color(0xFF101010)
-    val AmoledSurfaceHigh = Color(0xFF1C1C1C)
+    /** Dark-only literal, kept for the dark scheme declaration below. */
+    internal val DarkBackground = Color(0xFF0F0F0F)
+    internal val DarkSurface = Color(0xFF1E1E1E)
+    internal val DarkSurfaceHigh = Color(0xFF2A2A2A)
+    internal val DarkSecondaryText = Color(0xFF9AA0A6)
 }
 
 /**
  * Control colors in one place, so every switch / checkbox / radio / slider /
- * chip in the app draws its boundaries identically. Off states are visible
- * (>= 3:1 against the card) instead of nearly invisible.
+ * chip draws its boundaries identically and visibly (>= 3:1 against its card)
+ * in BOTH themes.
  */
 object VusicControlColors {
-    /** Track behind an off switch: #3A3A3A with a lighter outline. */
-    val SwitchOffTrack = Color(0xFF3A3A3A)
-    val SwitchOffOutline = Color(0xFF8A8A8A)
-    val SwitchOffThumb = Color(0xFFB8B8B8)
-    /** On: white track with a dark thumb (matches the accent play button). */
-    val SwitchOnTrack = Color.White
-    val SwitchOnThumb = Color(0xFF141414)
-    /** Disabled states must read clearly dimmer than off. */
-    val DisabledTrack = Color(0xFF232323)
-    val DisabledOutline = Color(0xFF4A4A4A)
-    val DisabledThumb = Color(0xFF5A5A5A)
+    // ---- dark (unchanged) ----
+    private val DarkSwitchOffTrack = Color(0xFF3A3A3A)
+    private val DarkSwitchOffOutline = Color(0xFF8A8A8A)
+    private val DarkSwitchOffThumb = Color(0xFFB8B8B8)
+    private val DarkDisabledTrack = Color(0xFF232323)
+    private val DarkDisabledOutline = Color(0xFF4A4A4A)
+    private val DarkDisabledThumb = Color(0xFF5A5A5A)
+    private val DarkSliderInactive = Color(0xFF6E6E6E)
+    private val DarkChipOffFill = Color(0xFF2A2A2A)
+    private val DarkChipOffText = Color(0xFFEDEDED)
 
-    val CheckboxOffOutline = Color(0xFF8A8A8A)
-    val RadioOffOutline = Color(0xFF8A8A8A)
-    /** Inactive slider track: visible against a #2A2A2A card. */
-    val SliderInactiveTrack = Color(0xFF6E6E6E)
-    val SliderThumb = Color.White
-    /** Unselected chip fill / text. */
-    val ChipOffFill = Color(0xFF2A2A2A)
-    val ChipOffText = Color(0xFFEDEDED)
+    // ---- light: same contrast rules on a pale card ----
+    private val LightSwitchOffTrack = Color(0xFFD3D6DA)
+    private val LightSwitchOffOutline = Color(0xFF5F6368)
+    private val LightSwitchOffThumb = Color(0xFF5F6368)
+    private val LightDisabledTrack = Color(0xFFE8EAED)
+    private val LightDisabledOutline = Color(0xFFBDC1C6)
+    private val LightDisabledThumb = Color(0xFFBDC1C6)
+    private val LightSliderInactive = Color(0xFF8A9096)
+    private val LightChipOffFill = Color(0xFFE7EDF3)
+    private val LightChipOffText = Color(0xFF10141A)
+
+    private val dark: Boolean @Composable get() = LocalVusicDark.current
+
+    val SwitchOffTrack: Color @Composable get() = if (dark) DarkSwitchOffTrack else LightSwitchOffTrack
+    val SwitchOffOutline: Color @Composable get() = if (dark) DarkSwitchOffOutline else LightSwitchOffOutline
+    val SwitchOffThumb: Color @Composable get() = if (dark) DarkSwitchOffThumb else LightSwitchOffThumb
+    val DisabledTrack: Color @Composable get() = if (dark) DarkDisabledTrack else LightDisabledTrack
+    val DisabledOutline: Color @Composable get() = if (dark) DarkDisabledOutline else LightDisabledOutline
+    val DisabledThumb: Color @Composable get() = if (dark) DarkDisabledThumb else LightDisabledThumb
+    val SliderInactiveTrack: Color @Composable get() = if (dark) DarkSliderInactive else LightSliderInactive
+    val ChipOffFill: Color @Composable get() = if (dark) DarkChipOffFill else LightChipOffFill
+    val ChipOffText: Color @Composable get() = if (dark) DarkChipOffText else LightChipOffText
+    val CheckboxOffOutline: Color @Composable get() = if (dark) DarkSwitchOffOutline else LightSwitchOffOutline
+    val RadioOffOutline: Color @Composable get() = if (dark) DarkSwitchOffOutline else LightSwitchOffOutline
+
+    /** On: the accent (white in dark, deep blue in light) with a contrasting thumb. */
+    val SwitchOnTrack: Color @Composable get() = MaterialTheme.colorScheme.primary
+    val SwitchOnThumb: Color @Composable get() = MaterialTheme.colorScheme.onPrimary
+    val SliderThumb: Color @Composable get() = MaterialTheme.colorScheme.primary
 }
 
 /**
@@ -108,67 +138,69 @@ object VusicSpacing {
     val SubHeaderBottom = 10.dp
 }
 
+/** Dark: near-black background, elevated gray surfaces, white accent. Unchanged. */
 private val Dark = darkColorScheme(
-    primary = VusicColors.Accent,
-    onPrimary = VusicColors.OnAccent,
-    secondary = VusicColors.SecondaryText,
+    primary = Color.White,
+    onPrimary = Color.Black,
+    primaryContainer = Color(0xFF3A3F46),
+    onPrimaryContainer = Color(0xFFEAF0F7),
+    secondary = VusicColors.DarkSecondaryText,
     onSecondary = Color.White,
-    background = VusicColors.Background,
+    background = VusicColors.DarkBackground,
     onBackground = Color.White,
-    surface = VusicColors.Surface,
+    surface = VusicColors.DarkSurface,
     onSurface = Color.White,
-    surfaceVariant = VusicColors.SurfaceHigh,
-    onSurfaceVariant = VusicColors.SecondaryText,
+    surfaceVariant = VusicColors.DarkSurfaceHigh,
+    onSurfaceVariant = VusicColors.DarkSecondaryText,
     surfaceContainerLowest = Color.Black,
-    surfaceContainerLow = VusicColors.Background,
-    surfaceContainer = VusicColors.Surface,
-    surfaceContainerHigh = VusicColors.SurfaceHigh,
+    surfaceContainerLow = VusicColors.DarkBackground,
+    surfaceContainer = VusicColors.DarkSurface,
+    surfaceContainerHigh = VusicColors.DarkSurfaceHigh,
     outline = Color(0xFF3A3A3A),
     outlineVariant = Color(0xFF2A2A2A),
 )
 
+/**
+ * Light: pale surfaces, the same blue accent used for emphasis, and every token
+ * the app reads (the old light scheme was missing most of them, so screens fell
+ * back to defaults and looked washed out).
+ */
 private val Light = lightColorScheme(
-    primary = Color(0xFF0369A1),
+    primary = Color(0xFF0B6BA8),
     onPrimary = Color.White,
-    secondary = Color(0xFF0284C7),
-    background = Color(0xFFF6F8FA),
-    surface = Color.White,
-    onBackground = Color(0xFF0B0F14),
-    onSurface = Color(0xFF0B0F14),
-)
-
-private val Amoled = darkColorScheme(
-    primary = VusicColors.Accent,
-    onPrimary = VusicColors.OnAccent,
-    secondary = VusicColors.SecondaryText,
+    primaryContainer = Color(0xFFCFE8FF),
+    onPrimaryContainer = Color(0xFF001D33),
+    secondary = Color(0xFF48626F),
     onSecondary = Color.White,
-    background = VusicColors.AmoledBackground,
-    onBackground = Color.White,
-    surface = VusicColors.AmoledSurface,
-    onSurface = Color.White,
-    surfaceVariant = VusicColors.AmoledSurfaceHigh,
-    onSurfaceVariant = VusicColors.SecondaryText,
-    surfaceContainerLowest = Color.Black,
-    surfaceContainerLow = VusicColors.AmoledBackground,
-    surfaceContainer = VusicColors.AmoledSurface,
-    surfaceContainerHigh = VusicColors.AmoledSurfaceHigh,
-    outline = Color(0xFF2A2A2A),
-    outlineVariant = Color(0xFF1C1C1C),
+    secondaryContainer = Color(0xFFCFE8FF),
+    onSecondaryContainer = Color(0xFF001D33),
+    background = Color(0xFFF7F9FB),
+    onBackground = Color(0xFF0B0F14),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF0B0F14),
+    surfaceVariant = Color(0xFFE7EDF3),
+    onSurfaceVariant = Color(0xFF3F4A52),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF2F5F9),
+    surfaceContainer = Color(0xFFECEFF4),
+    surfaceContainerHigh = Color(0xFFE4E8EE),
+    outline = Color(0xFF6E7A85),
+    outlineVariant = Color(0xFFC3CCD5),
+    error = Color(0xFFB3261E),
+    onError = Color.White,
 )
 
 @Composable
-fun FeishinTheme(dark: Boolean, amoled: Boolean = false, content: @Composable () -> Unit) {
-    val scheme = when {
-        amoled -> Amoled
-        dark -> Dark
-        else -> Light
+fun FeishinTheme(dark: Boolean, content: @Composable () -> Unit) {
+    val scheme = if (dark) Dark else Light
+    CompositionLocalProvider(LocalVusicDark provides dark) {
+        MaterialTheme(colorScheme = scheme, content = content)
     }
-    MaterialTheme(colorScheme = scheme, content = content)
 }
 
 /**
- * Maps a stored theme to dark/light. Pure so the System mapping and the
- * AMOLED migration are unit-testable (see ThemeModeTest).
+ * Maps a stored theme to dark/light. Pure so the System mapping and the AMOLED
+ * migration are unit-testable (see ThemeModeTest).
  *
  * @param stored the raw stored value; unknown strings and the removed AMOLED
  *        both resolve to [com.feishin.mobile.data.settings.ThemeMode.DARK].
@@ -178,7 +210,6 @@ fun resolveDark(
     systemDark: Boolean,
 ): Boolean = when (stored ?: com.feishin.mobile.data.settings.ThemeMode.DARK) {
     com.feishin.mobile.data.settings.ThemeMode.DARK -> true
-    com.feishin.mobile.data.settings.ThemeMode.AMOLED -> true
     com.feishin.mobile.data.settings.ThemeMode.LIGHT -> false
     com.feishin.mobile.data.settings.ThemeMode.SYSTEM -> systemDark
 }
@@ -188,18 +219,16 @@ fun resolveDark(
  * the removed AMOLED migrates to DARK.
  */
 fun migrateStoredTheme(raw: String?): com.feishin.mobile.data.settings.ThemeMode {
-    val parsed = runCatching { com.feishin.mobile.data.settings.ThemeMode.valueOf(raw ?: "DARK") }
+    // Compared as a string, not an enum value: AMOLED no longer exists in the
+    // enum, so reading it must land on DARK rather than throwing.
+    if (raw?.uppercase() == "AMOLED") return com.feishin.mobile.data.settings.ThemeMode.DARK
+    return runCatching { com.feishin.mobile.data.settings.ThemeMode.valueOf(raw ?: "DARK") }
         .getOrDefault(com.feishin.mobile.data.settings.ThemeMode.DARK)
-    return if (parsed == com.feishin.mobile.data.settings.ThemeMode.AMOLED) {
-        com.feishin.mobile.data.settings.ThemeMode.DARK
-    } else {
-        parsed
-    }
 }
 
 /**
  * Shared Material3 control colors so every switch, checkbox, radio and slider in
- * the app has the same visible boundaries (WCAG non-text contrast on dark).
+ * the app has the same visible boundaries in both themes.
  */
 object VusicControlDefaults {
     @Composable

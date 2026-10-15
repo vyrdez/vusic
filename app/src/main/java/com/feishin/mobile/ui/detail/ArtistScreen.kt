@@ -205,7 +205,7 @@ fun ArtistScreen(
                                     item {
                                         Text(
                                             "Show more",
-                                            style = MaterialTheme.typography.labelLarge, color = Color.White,
+                                            style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface,
                                             modifier = Modifier
                                                 .padding(horizontal = 20.dp, vertical = 4.dp)
                                                 .clip(RoundedCornerShape(16.dp))
@@ -282,7 +282,7 @@ fun ArtistScreen(
                                 )
                                 Text(
                                     if (expanded) "Show less" else "Read more",
-                                    style = MaterialTheme.typography.labelLarge, color = Color.White,
+                                    style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier
                                         .padding(top = 6.dp)
                                         .clip(RoundedCornerShape(14.dp))
@@ -414,6 +414,7 @@ private fun ArtistHero(
             Modifier.align(Alignment.BottomStart)
                 .padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
         ) {
+            // Over the hero image: keep white, it is a scrim backdrop.
             Text(name, style = MaterialTheme.typography.headlineMedium, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(meta, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.85f))
         }
@@ -455,13 +456,13 @@ private fun BoxScope.ArtistCollapsedTopBar(
             Icon(
                 Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Back",
-                tint = Color.White,
+                tint = MaterialTheme.colorScheme.onSurface,
             )
         }
         Text(
             name,
             style = MaterialTheme.typography.titleMedium,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f).padding(end = 12.dp),
@@ -516,9 +517,9 @@ private fun ArtistControls(
         IconButton(
             onClick = { withTracks(false) },
             enabled = !gathering,
-            modifier = Modifier.size(64.dp).clip(CircleShape).background(Color.White),
+            modifier = Modifier.size(64.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
         ) {
-            Icon(Icons.Default.PlayArrow, "Play", tint = Color.Black, modifier = Modifier.size(36.dp))
+            Icon(Icons.Default.PlayArrow, "Play", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(36.dp))
         }
         CircleIconButtonShim(onClick = { withTracks(true) }, enabled = !gathering, icon = Icons.Default.Shuffle, description = "Shuffle")
         CircleIconButtonShim(
@@ -540,7 +541,7 @@ private fun CircleIconButtonShim(onClick: () -> Unit, icon: ImageVector, descrip
         enabled = enabled,
         modifier = Modifier.size(52.dp).clip(CircleShape).background(VusicColors.SurfaceHigh),
     ) {
-        Icon(icon, description, tint = Color.White)
+        Icon(icon, description, tint = MaterialTheme.colorScheme.onSurface)
     }
 }
 

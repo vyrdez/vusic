@@ -145,7 +145,7 @@ fun SearchScreen(
         ) {
             if (onBack != null) {
                 IconButton(onClick = { keyboard?.hide(); onBack() }, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onSurface)
                 }
             }
             Box(
@@ -161,14 +161,14 @@ fun SearchScreen(
                     value = q,
                     onValueChange = vm::onQuery,
                     singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
-                    cursorBrush = SolidColor(Color.White),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
                 )
             }
             if (q.isNotEmpty()) {
                 IconButton(onClick = { vm.onQuery("") }, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Default.Close, "Clear", tint = Color.White)
+                    Icon(Icons.Default.Close, "Clear", tint = MaterialTheme.colorScheme.onSurface)
                 }
             } else {
                 Spacer(Modifier.size(40.dp))

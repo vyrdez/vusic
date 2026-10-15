@@ -73,7 +73,7 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
     Surface(
         Modifier.fillMaxSize(),
         color = VusicColors.Background,
-        contentColor = Color.White,
+        contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
         Column(
             Modifier

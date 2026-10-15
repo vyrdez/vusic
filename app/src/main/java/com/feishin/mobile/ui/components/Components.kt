@@ -191,10 +191,10 @@ fun SectionHeader(
             Text(
                 "Play all",
                 style = MaterialTheme.typography.labelLarge,
-                color = Color.Black,
+                color = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color.White)
+                    .background(MaterialTheme.colorScheme.primary)
                     .clickable(onClick = onPlayAll)
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             )
@@ -202,7 +202,7 @@ fun SectionHeader(
         }
         if (onOpen != null) {
             IconButton(onClick = onOpen, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Default.ChevronRight, "Open", tint = Color.White)
+                Icon(Icons.Default.ChevronRight, "Open", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -414,8 +414,9 @@ fun FilterChipRow(
                 onClick = { onSelect(option) },
                 label = { Text(option, maxLines = 1) },
                 colors = AssistChipDefaults.assistChipColors(
-                    containerColor = if (isSel) Color.White else VusicControlColors.ChipOffFill,
-                    labelColor = if (isSel) Color.Black else VusicControlColors.ChipOffText,
+                    // Selected chip uses the accent pair, so it reads in both themes.
+                    containerColor = if (isSel) MaterialTheme.colorScheme.primary else VusicControlColors.ChipOffFill,
+                    labelColor = if (isSel) MaterialTheme.colorScheme.onPrimary else VusicControlColors.ChipOffText,
                 ),
                 border = if (isSel) null else androidx.compose.foundation.BorderStroke(1.dp, VusicControlColors.CheckboxOffOutline),
             )
@@ -442,9 +443,9 @@ fun ErrorState(message: String, onRetry: () -> Unit, modifier: Modifier = Modifi
             Spacer(Modifier.height(8.dp))
             Text(
                 "Retry",
-                style = MaterialTheme.typography.labelLarge, color = Color.Black,
+                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(16.dp)).background(Color.White)
+                    .clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primary)
                     .clickable(onClick = onRetry).padding(horizontal = 20.dp, vertical = 10.dp),
             )
         }

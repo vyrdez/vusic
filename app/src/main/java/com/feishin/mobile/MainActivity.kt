@@ -5,6 +5,10 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import android.app.Activity
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +21,7 @@ import com.feishin.mobile.data.settings.ThemeMode
 import com.feishin.mobile.ui.navigation.AppNav
 import com.feishin.mobile.ui.MainViewModel
 import com.feishin.mobile.ui.theme.FeishinTheme
+import com.feishin.mobile.ui.theme.resolveDark
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -35,13 +40,21 @@ class MainActivity : ComponentActivity() {
         setContent {
             val main: MainViewModel = hiltViewModel()
             val settings by main.settings.flow.collectAsState(initial = null)
-            val dark = when (settings?.theme ?: ThemeMode.DARK) {
-                ThemeMode.DARK, ThemeMode.AMOLED -> true
-                ThemeMode.LIGHT -> false
-                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            // System follows the OS live: isSystemInDarkTheme() is a
+            // configuration read, so the activity recomposes (and re-themes)
+            // the moment the OS switches, with no restart.
+            val dark = resolveDark(settings?.theme, isSystemInDarkTheme())
+            // Status/navigation bar icons must flip with the theme (dark icons
+            // on light backgrounds), including while Now Playing and the queue
+            // paint a tinted background.
+            val view = LocalView.current
+            SideEffect {
+                val window = (view.context as Activity).window
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.isAppearanceLightStatusBars = !dark
+                controller.isAppearanceLightNavigationBars = !dark
             }
-            val amoled = (settings?.theme ?: ThemeMode.DARK) == ThemeMode.AMOLED
-            FeishinTheme(dark = dark, amoled = amoled) {
+            FeishinTheme(dark = dark) {
                 AppNav(main = main)
             }
         }

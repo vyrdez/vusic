@@ -457,6 +457,39 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   56dp list bottom padding so rows never ghost through. Verified in Dark on the
   emulator; Light verification folded into M6.7e (the Light theme itself was
   broken until then).)
+- [x] M6.7e themes: remove amoled, fix light
+  (AMOLED is gone: enum, Settings selector (now System / Dark / Light), the
+  Theme.kt scheme, and docs. A stored AMOLED — or any unknown string — migrates
+  to DARK through the pure migrateStoredTheme(), matched by STRING because the
+  enum value no longer exists; resolveDark() maps SYSTEM to the OS live
+  (isSystemInDarkTheme is a configuration read, so the activity re-themes with
+  no restart). Dark is byte-identical to what it was.
+  The Light theme RENDERED DARK, and the cause was not the scheme: all 135
+  colour references were hardcoded dark literals in VusicColors, so switching
+  the scheme changed nothing on screen. VusicColors' members are now
+  @Composable getters onto the active Material scheme and VusicControlColors
+  gained a full Light variant, so every call site became theme-aware without
+  being edited. The Light scheme itself was also missing most roles (no
+  primaryContainer, no outlineVariant, ...) and is now complete.
+  Also swept the ~45 remaining hardcoded Color.White/Black/hex literals across
+  Nav (top bar, bottom nav container and selected pill), Components (selected
+  chip, Play-all pill, Retry pill, pager dots), the Settings buttons and
+  segmented control, Library/Artist/Home/Search play buttons and avatars,
+  the search fields and cursors, and the actions-sheet icons — all now theme
+  tokens. Allowed exceptions, commented in place: scrims over artwork
+  (TrackRow and queue equalizer circles, hero gradients, the queue's black
+  modal scrim, the Now Playing play circle).
+  Status and navigation bar icons now flip with the theme via
+  WindowCompat.setDecorFitsSystemWindows-style insets controllers, re-applied
+  whenever the theme changes.
+  Verified on the emulator in both themes: Home, Library (all tabs), Search
+  (keyboard up), Settings + Appearance/Sound/Connectivity/Storage, Now
+  Playing, queue, mini player, dialogs — all legible with visible controls;
+  switches/segmented/outlined buttons/dividers/nav pill all visible in Light.
+  Now Playing and the queue correctly use the LIGHT artwork scheme (pale tinted
+  gradient, dark text) rather than a dark gradient with white text. System mode
+  verified live in both directions by toggling `adb shell cmd uimode night`.
+  7 ThemeModeTest cases cover the migration and the System mapping.)
 - [x] M6.6d M6.5 leftover re-verification (fixes were needed)
   (D1 usage island verified: full-width bar with proportional segments (556 MB
   used renders ~13% against 3.63 GB free), "X used by Vusic, Y free" label,

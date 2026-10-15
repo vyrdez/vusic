@@ -61,7 +61,7 @@ fun LibrarySearchField(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close search", tint = Color.White)
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Close search", tint = MaterialTheme.colorScheme.onSurface)
         }
         Box(
             Modifier.weight(1f)
@@ -80,13 +80,13 @@ fun LibrarySearchField(
                 value = query,
                 onValueChange = onQuery,
                 singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
         if (query.isNotEmpty()) {
             IconButton(onClick = { onQuery("") }, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.Default.Close, "Clear", tint = Color.White)
+                Icon(Icons.Default.Close, "Clear", tint = MaterialTheme.colorScheme.onSurface)
             }
         }
     }
@@ -258,11 +258,11 @@ fun SortBottomSheet(
                     Text(
                         option.label,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = if (selected) Color.White else VusicColors.SecondaryText,
+                        color = if (selected) MaterialTheme.colorScheme.onSurface else VusicColors.SecondaryText,
                         modifier = Modifier.weight(1f),
                     )
                     if (selected) {
-                        Icon(Icons.Default.Check, "Selected", tint = Color.White)
+                        Icon(Icons.Default.Check, "Selected", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             }
@@ -278,13 +278,13 @@ fun SortBottomSheet(
                 Text(
                     if (draft.ascending) "Ascending" else "Descending",
                     style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
                 )
                 Icon(
                     if (draft.ascending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
                     if (draft.ascending) "Ascending" else "Descending",
-                    tint = Color.White,
+                    tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(20.dp),
                 )
             }

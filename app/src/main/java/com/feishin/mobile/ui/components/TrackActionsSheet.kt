@@ -145,11 +145,11 @@ private fun SheetHeader(
             }
             if (starEnabled) {
                 IconButton(onClick = onStar, modifier = Modifier.size(48.dp)) {
-                    Icon(if (starred) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite", tint = Color.White)
+                    Icon(if (starred) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite", tint = MaterialTheme.colorScheme.onSurface)
                 }
             }
             IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Default.Close, "Close", tint = Color.White)
+                Icon(Icons.Default.Close, "Close", tint = MaterialTheme.colorScheme.onSurface)
             }
         }
     }
@@ -180,7 +180,7 @@ private fun ActionTile(label: String, icon: ImageVector, modifier: Modifier = Mo
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(icon, label, tint = Color.White, modifier = Modifier.size(32.dp))
+            Icon(icon, label, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(32.dp))
         }
         Spacer(Modifier.height(6.dp))
         Text(label, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -203,11 +203,11 @@ private fun SheetRow(
             .height(48.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, label, tint = if (enabled) Color.White else VusicColors.SecondaryText, modifier = Modifier.size(24.dp))
+        Icon(icon, label, tint = if (enabled) MaterialTheme.colorScheme.onSurface else VusicColors.SecondaryText, modifier = Modifier.size(24.dp))
         Spacer(Modifier.width(20.dp))
         Text(
             label, style = MaterialTheme.typography.bodyLarge,
-            color = if (enabled) Color.White else VusicColors.SecondaryText,
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else VusicColors.SecondaryText,
             modifier = Modifier.weight(1f),
         )
         if (trailing != null) {

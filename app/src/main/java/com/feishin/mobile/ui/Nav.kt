@@ -515,8 +515,9 @@ private fun AppTopBar(controller: TopBarController, onBack: () -> Unit) {
         },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = VusicColors.Background,
-            titleContentColor = Color.White,
-            navigationIconContentColor = Color.White,
+            // Theme-aware: white-on-dark in Dark, dark-on-light in Light.
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
         ),
     )
 }
@@ -539,7 +540,7 @@ private fun AppNavigationBar(
             },
         )
     }
-    NavigationBar(modifier = modifier, containerColor = Color.Black) {
+    NavigationBar(modifier = modifier, containerColor = VusicColors.Background) {
         items.forEach { (target, label, icon) ->
             val selected = NavRules.selectedLabel(currentRoute) == label
             NavigationBarItem(
@@ -548,8 +549,8 @@ private fun AppNavigationBar(
                 icon = { Icon(icon, label) },
                 label = { Text(label) },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Color.White,
-                    selectedTextColor = Color.White,
+                    selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
                     unselectedIconColor = VusicColors.SecondaryText,
                     unselectedTextColor = VusicColors.SecondaryText,
                     indicatorColor = VusicColors.SurfaceHigh,

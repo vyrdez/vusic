@@ -300,18 +300,18 @@ private fun HomeTopBar(username: String, onSettings: () -> Unit) {
         Modifier.fillMaxWidth().padding(16.dp, 12.dp, 16.dp, 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Default.MusicNote, "Vusic", tint = Color.White, modifier = Modifier.size(26.dp))
+        Icon(Icons.Default.MusicNote, "Vusic", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(26.dp))
         Spacer(Modifier.width(6.dp))
         Text("Vusic", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold), modifier = Modifier.weight(1f))
         Box(
             Modifier.size(40.dp).clip(androidx.compose.foundation.shape.CircleShape)
-                .background(Color.White).clickable(onClick = onSettings),
+                .background(MaterialTheme.colorScheme.primary).clickable(onClick = onSettings),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 username.take(1).uppercase().ifBlank { "?" },
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = Color.Black,
+                color = MaterialTheme.colorScheme.onPrimary,
             )
         }
     }
@@ -366,7 +366,10 @@ private fun SpeedDialPager(
                             .padding(horizontal = 3.dp)
                             .size(size)
                             .clip(CircleShape)
-                            .background(if (selected) Color.White else Color.White.copy(alpha = 0.35f)),
+                            .background(
+                                if (selected) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                            ),
                     )
                 }
             }
@@ -460,7 +463,10 @@ private fun QuickPicksPager(
                     Box(
                         Modifier.padding(3.dp).size(if (i == pager.currentPage) 8.dp else 6.dp)
                             .clip(CircleShape)
-                            .background(if (i == pager.currentPage) Color.White else Color.White.copy(alpha = 0.35f)),
+                            .background(
+                                if (i == pager.currentPage) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                            ),
                     )
                 }
             }
@@ -525,13 +531,13 @@ private fun DiscoverCard(album: Album, repo: MusicDataRepository, onClick: () ->
                 Text(album.artist, style = MaterialTheme.typography.bodyMedium, color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(8.dp))
                 Row(
-                    Modifier.clip(RoundedCornerShape(20.dp)).background(Color.White)
+                    Modifier.clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.primary)
                         .clickable(onClick = onPlay).padding(horizontal = 20.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.PlayArrow, "Play", tint = Color.Black, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.PlayArrow, "Play", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Play", color = Color.Black, style = MaterialTheme.typography.labelLarge)
+                    Text("Play", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelLarge)
                 }
             }
         }

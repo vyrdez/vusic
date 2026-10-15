@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -108,7 +109,7 @@ fun SongPagerSection(
                             .padding(3.dp)
                             .size(size)
                             .clip(CircleShape)
-                            .background(Color.White.copy(alpha = alpha.coerceIn(0f, 1f))),
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = alpha.coerceIn(0f, 1f))),
                     )
                 }
             }

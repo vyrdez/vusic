@@ -79,7 +79,7 @@ fun SettingsActionButton(
         targetValue = when {
             !enabled -> VusicControlColors.DisabledOutline
             danger -> DangerRed.copy(alpha = 0.78f)
-            else -> Color(0xFF6E6E6E)
+            else -> MaterialTheme.colorScheme.outline
         },
         animationSpec = Motion.color(Motion.Fast),
         label = "btn-border",
@@ -87,7 +87,7 @@ fun SettingsActionButton(
     val contentColor = when {
         !enabled -> VusicControlColors.DisabledThumb
         danger -> DangerRed
-        else -> Color.White
+        else -> MaterialTheme.colorScheme.onSurface
     }
     Box(
         modifier
@@ -227,7 +227,7 @@ private fun SettingRowText(
         Text(
             label,
             style = MaterialTheme.typography.bodyMedium,
-            color = if (danger) DangerRed else Color.White,
+            color = if (danger) DangerRed else MaterialTheme.colorScheme.onSurface,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -273,25 +273,29 @@ fun SegmentedControl(
             .width(androidx.compose.foundation.layout.IntrinsicSize.Max)
             .clip(ControlShape)
             .background(Color.Transparent)
-            .then(Modifier.border(androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6E6E6E)), ControlShape))
+            .then(Modifier.border(androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline), ControlShape))
             .heightIn(min = 40.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         options.forEachIndexed { i, option ->
             val isSelected = option == selected
             val bg by animateColorAsState(
-                targetValue = if (isSelected) Color.White else Color.Transparent,
+                targetValue = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
                 animationSpec = Motion.color(Motion.Fast),
                 label = "seg-bg-$i",
             )
             val fg by animateColorAsState(
-                targetValue = if (isSelected) Color.Black else VusicControlColors.ChipOffText,
+                targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimary else VusicControlColors.ChipOffText,
                 animationSpec = Motion.color(Motion.Fast),
                 label = "seg-fg-$i",
             )
+            // IntrinsicSize.Max per cell makes every cell equal to the widest
+            // label. `weight(1f)` here made each cell claim the full available
+            // width, which stretched the whole control across the row (most
+            // visible on the 4-option Theme selector).
             Box(
                 Modifier
-                    .weight(1f)
+                    .width(androidx.compose.foundation.layout.IntrinsicSize.Max)
                     .background(bg)
                     .clickable(role = Role.RadioButton) { onSelect(option) }
                     .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -315,7 +319,7 @@ fun UsageLegendRow(label: String, value: String, color: Color) {
         Text(
             label,
             style = MaterialTheme.typography.bodyMedium,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),

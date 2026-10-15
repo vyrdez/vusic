@@ -181,7 +181,10 @@ fun NowPlayingScreen(
 
     // Legacy background: cover art's dominant colour, clamped dark enough
     // that white text always has strong contrast (fixes washed-out light covers).
-    var targetBg by remember { mutableStateOf(VusicColors.Background) }
+    // Captured outside the remember/LaunchedEffect lambdas, which are not
+    // composable and therefore cannot read VusicColors.
+    val themeBackground = VusicColors.Background
+    var targetBg by remember { mutableStateOf(themeBackground) }
     val ctx = LocalContext.current
     val artUrl = player.coverArtUrl(current.coverArt, 512)
     LaunchedEffect(artUrl, scheme) {
@@ -189,7 +192,7 @@ fun NowPlayingScreen(
         // double the IO for the same pixels.
         if (scheme != null) return@LaunchedEffect
         if (artUrl == null) {
-            targetBg = VusicColors.Background
+            targetBg = themeBackground
             return@LaunchedEffect
         }
         val sampled = withContext(Dispatchers.IO) {
@@ -480,10 +483,13 @@ private fun SongLyricsToggle(lyricsMode: Boolean, onSelect: (Boolean) -> Unit, d
             Text(
                 label,
                 style = MaterialTheme.typography.labelLarge,
-                color = if (selected) Color.Black else dim,
+                color = if (selected) MaterialTheme.colorScheme.onPrimary else dim,
                 modifier = Modifier
                     .clip(RoundedCornerShape(17.dp))
-                    .background(if (selected) Color.White else Color.Transparent)
+                    .background(
+                        if (selected) MaterialTheme.colorScheme.primary
+                        else Color.Transparent,
+                    )
                     .clickable { onSelect(value) }
                     .padding(horizontal = 16.dp, vertical = 7.dp),
             )
@@ -714,12 +720,16 @@ private fun ControlsRow(player: PlayerManager, content: Color) {
         }
         IconButton(onClick = { player.togglePlayPause() }, modifier = Modifier.size(76.dp)) {
             Box(
-                Modifier.size(72.dp).clip(CircleShape).background(Color.White),
+                Modifier.size(72.dp).clip(CircleShape).background(
+                    // Accent pair, not a white circle: on the Light theme's pale
+                    // backdrop a white button nearly vanishes.
+                    MaterialTheme.colorScheme.primary,
+                ),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play",
-                    tint = Color.Black, modifier = Modifier.size(40.dp),
+                    tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(40.dp),
                 )
             }
         }

@@ -140,7 +140,7 @@ private fun SubScreen(title: String, onBack: () -> Unit, content: @Composable ()
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onSurface)
             }
             Text(title, style = MaterialTheme.typography.headlineSmall)
         }
@@ -577,7 +577,7 @@ private fun BitrateChoiceRow(label: String, br: Int, fmt: String, onSet: (Int, S
                     leadingIcon = {
                         Icon(
                             Icons.Default.ArrowDropDown,
-                            "Open bitrates", tint = Color.White, modifier = Modifier.size(20.dp),
+                            "Open bitrates", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp),
                         )
                     },
                 )
@@ -598,7 +598,7 @@ private fun BitrateChoiceRow(label: String, br: Int, fmt: String, onSet: (Int, S
                     leadingIcon = {
                         Icon(
                             Icons.Default.ArrowDropDown,
-                            "Open formats", tint = Color.White, modifier = Modifier.size(20.dp),
+                            "Open formats", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp),
                         )
                     },
                 )

@@ -68,7 +68,7 @@ fun CircleIconButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String,
     container: Color = VusicColors.SurfaceHigh,
-    tint: Color = Color.White,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
     size: Int = 52,
 ) {
     IconButton(
@@ -200,9 +200,9 @@ fun AlbumHeader(
             CircleIconButton(onClick = onShuffle, icon = Icons.Default.Shuffle, description = "Shuffle")
             IconButton(
                 onClick = onPlay,
-                modifier = Modifier.size(72.dp).clip(CircleShape).background(Color.White),
+                modifier = Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
             ) {
-                Icon(Icons.Default.PlayArrow, "Play", tint = Color.Black, modifier = Modifier.size(40.dp))
+                Icon(Icons.Default.PlayArrow, "Play", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(40.dp))
             }
             CircleIconButton(
                 onClick = onFavorite,
