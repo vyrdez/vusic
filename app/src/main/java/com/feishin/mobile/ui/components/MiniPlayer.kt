@@ -5,15 +5,20 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -26,26 +31,39 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import com.feishin.mobile.playback.PlayerManager
+import com.feishin.mobile.ui.theme.Motion
+import com.feishin.mobile.ui.theme.VusicColors
 import kotlinx.coroutines.launch
 
 /** Pixels of downward travel that commit a queue clear on release. */
 private const val CLEAR_THRESHOLD_PX = 160f
 
+/** Height of the floating card: 8dp of vertical padding either side + 56dp row. */
+val MiniPlayerHeight = 72.dp
+
+/** Gap between the card and the nav bar. */
+val MiniPlayerNavGap = 8.dp
+
+/** Side margin, so the card reads as floating rather than full-bleed. */
+val MiniPlayerMargin = 12.dp
+
 /**
- * Docked directly above the nav bar. Tap or swipe up opens Now Playing,
- * swipe left/right skips tracks, drag down clears the queue (with Undo).
- * Hidden when the queue is empty.
+ * Floating mini player: a rounded card that hovers above the nav bar with the
+ * screen's content scrolling visibly behind and around it.
  *
- * The downward drag follows the finger 1:1 (offset + fade read in
- * graphicsLayer, so no recomposition per frame). Releasing past the threshold
- * stops playback and clears everything; releasing early springs back.
+ * Gestures (all unchanged): tap or swipe up opens Now Playing, swipe
+ * left/right skips, drag down clears the queue with Undo.
+ *
+ * The downward drag follows the finger 1:1 (offset + fade read in graphicsLayer,
+ * so no recomposition per frame). Releasing past the threshold clears; releasing
+ * early springs back. Enter and exit are animated by [enterProgress] so the card
+ * slides in and out instead of popping.
  */
 @Composable
 fun MiniPlayer(
@@ -63,26 +81,42 @@ fun MiniPlayer(
     // bottom padding back. (NavRules.shouldShowMiniPlayer documents the same
     // rule for tests; the inline check here avoids a ui.components ->
     // ui.navigation edge, since navigation already depends on components.)
-    if (queue.isEmpty()) return
-    val song = current ?: return
+    val visible = queue.isNotEmpty() && current != null
+    // 1 = fully present, 0 = gone. Animated so the card slides and the list's
+    // bottom padding shrinks with it instead of popping.
+    val enter = remember { Animatable(if (visible) 1f else 0f) }
+    val scope = rememberCoroutineScope()
+
+    androidx.compose.runtime.LaunchedEffect(visible) {
+        enter.animateTo(
+            targetValue = if (visible) 1f else 0f,
+            animationSpec = if (visible) Motion.layoutSpring() else Motion.sheetSpring(),
+        )
+    }
+
+    val song = current
+    if (song == null || enter.value <= 0.001f) return
 
     val progress = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
-    val scope = rememberCoroutineScope()
     // Drag state lives in an Animatable: snapTo() per pointer event tracks the
     // finger with no recomposition (graphicsLayer reads don't recompose), and
     // animateTo() springs back on a short release.
     val dragY = remember { Animatable(0f) }
+    val shape = RoundedCornerShape(28.dp)
 
     Column(
         modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp)
+            .padding(horizontal = MiniPlayerMargin)
             .graphicsLayer {
-                translationY = dragY.value
-                alpha = (1f - dragY.value / 600f).coerceIn(0f, 1f)
+                // Enter/exit: rise + fade, driven by the same value the padding uses.
+                translationY = (1f - enter.value) * 48f
+                alpha = enter.value * (1f - dragY.value / 600f).coerceIn(0f, 1f)
             }
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            // Soft elevation instead of the old solid black band.
+            .shadow(12.dp, shape, clip = false, ambientColor = androidx.compose.ui.graphics.Color(0x60000000), spotColor = androidx.compose.ui.graphics.Color(0x80000000))
+            .clip(shape)
+            .background(VusicColors.SurfaceHigh)
             .clickable(onClick = onOpen)
             .pointerInput(queue.size) {
                 var totalX = 0f
@@ -112,59 +146,72 @@ fun MiniPlayer(
                             totalX > 120f -> player.skipToPrevious()
                         }
                         if (totalY <= CLEAR_THRESHOLD_PX) {
-                            scope.launch { dragY.animateTo(0f, spring()) }
+                            scope.launch { dragY.animateTo(0f, Motion.snapBackSpring()) }
                         } else {
                             // Card is gone with the queue; reset for next time.
                             scope.launch { dragY.snapTo(0f) }
                         }
                     },
                     onDragCancel = {
-                        scope.launch { dragY.animateTo(0f, spring()) }
+                        scope.launch { dragY.animateTo(0f, Motion.snapBackSpring()) }
                     },
                 )
             },
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(8.dp),
+            Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Start,
         ) {
             CoverImage(
                 player.coverArtUrl(song.coverArt, 128), song.title,
-                modifier = Modifier.size(48.dp), roundedDp = 8.dp,
+                modifier = Modifier.size(48.dp), roundedDp = 10.dp,
             )
-            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                 Text(
                     song.title,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     song.artist,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
+                    color = VusicColors.SecondaryText,
                 )
             }
-            IconButton(onClick = player::togglePlayPause) {
-                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play/Pause")
+            IconButton(onClick = player::skipToPrevious, modifier = Modifier.size(44.dp)) {
+                Icon(
+                    Icons.Default.SkipPrevious, "Previous track",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
             }
-            IconButton(onClick = player::skipToNext) {
-                Icon(Icons.Default.SkipNext, "Next track")
+            IconButton(onClick = player::togglePlayPause, modifier = Modifier.size(44.dp)) {
+                Icon(
+                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    "Play/Pause",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            IconButton(onClick = player::skipToNext, modifier = Modifier.size(44.dp)) {
+                Icon(
+                    Icons.Default.SkipNext, "Next track",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
             }
         }
-        Row(Modifier.fillMaxWidth().height(2.dp)) {
-            androidx.compose.foundation.layout.Box(
-                Modifier
-                    .weight(progress.coerceAtLeast(0.001f))
-                    .height(2.dp)
-                    .background(MaterialTheme.colorScheme.primary),
-            )
-            androidx.compose.foundation.layout.Box(
-                Modifier
-                    .weight((1f - progress).coerceAtLeast(0.001f))
-                    .height(2.dp)
-                    .background(MaterialTheme.colorScheme.surface),
+        // Thin progress line along the bottom edge of the card, inset to the
+        // rounded corners so it never pokes out of the clip.
+        Box(
+            Modifier.fillMaxWidth().height(2.dp).padding(horizontal = 20.dp)
+                .clip(RoundedCornerShape(1.dp)),
+        ) {
+            Box(
+                Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).height(2.dp)
+                    .background(MaterialTheme.colorScheme.onSurface),
             )
         }
     }

@@ -68,8 +68,14 @@ object VusicSpacing {
     /** Standard screen side padding. */
     val ScreenHorizontal = 16.dp
 
-    /** Bottom padding so content clears the mini player + nav bar. */
-    val ContentBottom = 160.dp
+    /**
+     * Extra bottom padding inside a scrollable screen.
+     *
+     * The scaffold already reserves the nav bar, plus the floating mini player
+     * and its gap while it is visible, so this is only breathing room — the last
+     * item clears the card without floating a whole bar above it.
+     */
+    val ContentBottom = 24.dp
 
     // ---- Settings/card rhythm (used by every settings surface) ----
 

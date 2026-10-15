@@ -91,6 +91,12 @@ object Motion {
         stiffness = Spring.StiffnessLow,
     )
 
+    /** Dp variant of [layoutSpring], for paddings and sizes. */
+    fun layoutDp(): FiniteAnimationSpec<androidx.compose.ui.unit.Dp> = spring(
+        dampingRatio = 1f,
+        stiffness = Spring.StiffnessLow,
+    )
+
     // ---- Navigation --------------------------------------------------------
 
     /** Horizontal push for forward detail navigation. */

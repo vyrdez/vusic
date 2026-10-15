@@ -64,6 +64,8 @@ import androidx.navigation.navArgument
 import com.feishin.mobile.ui.components.ActionTarget
 import com.feishin.mobile.ui.components.EntityActionsSheet
 import com.feishin.mobile.ui.components.MiniPlayer
+import com.feishin.mobile.ui.components.MiniPlayerHeight
+import com.feishin.mobile.ui.components.MiniPlayerNavGap
 import com.feishin.mobile.ui.detail.AlbumDetailScreen
 import com.feishin.mobile.ui.detail.ArtistDetailScreen
 import com.feishin.mobile.ui.detail.PlaylistDetailScreen
@@ -157,39 +159,14 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     }
                 },
                 bottomBar = {
-                    // Always visible: the nav bar and the mini player directly above it.
-                    Column {
-                        MiniPlayer(
-                            main.player,
-                            onOpen = { showNowPlaying = true },
-                            onQueueCleared = { snap ->
-                                // Undo lives ~5s: restoring brings back the queue,
-                                // current item and position, paused.
-                                navScope.launch {
-                                    val autoDismiss = launch {
-                                        kotlinx.coroutines.delay(5_000)
-                                        snackbar.currentSnackbarData?.dismiss()
-                                    }
-                                    try {
-                                        val result = snackbar.showSnackbar(
-                                            message = "Queue cleared",
-                                            actionLabel = "Undo",
-                                            duration = androidx.compose.material3.SnackbarDuration.Indefinite,
-                                        )
-                                        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
-                                            main.player.restoreCleared(snap)
-                                        }
-                                    } finally {
-                                        autoDismiss.cancel()
-                                    }
-                                }
-                            },
-                        )
-                        AppNavigationBar(
-                            currentRoute = route,
-                            onSelect = { target -> nav.goToTab(target) },
-                        )
-                    }
+                    // Only the nav bar lives in the bottom slot, so it keeps its
+                    // own surface. The mini player is an overlay inside the
+                    // content area instead, which is what lets the content scroll
+                    // visibly behind and around the floating card.
+                    AppNavigationBar(
+                        currentRoute = route,
+                        onSelect = { target -> nav.goToTab(target) },
+                    )
                 },
             ) { padding ->
                 // The keyboard black bar: the bottom bar (mini player + nav)
@@ -200,8 +177,28 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 val density = LocalDensity.current
                 val layoutDirection = LocalLayoutDirection.current
                 val imeBottomPx = WindowInsets.ime.getBottom(density)
+                // Scaffold already lays the content out ABOVE the bottom bar, so
+                // the bar's height is not added again here (doing so double-counted
+                // it and pushed the floating card ~90dp off the nav bar).
                 val barBottomPx = with(density) { padding.calculateBottomPadding().roundToPx() }
+                // Keyboard fix: when the IME opens it covers the nav bar, so the
+                // content has to give up the difference. max(ime, bar), never the
+                // sum, and the IME inset is consumed once below.
+                //
+                // The nav bar height MUST stay in here: Scaffold's content slot
+                // fills the whole window (it hands out innerPadding instead of
+                // pre-shrinking), so without it the floating card is aligned to
+                // the screen bottom and hides behind the nav bar.
                 val bottomPx = maxOf(barBottomPx, imeBottomPx)
+                // The floating card only claims content space while it is up,
+                // and the claim is animated so clearing the queue shrinks the
+                // padding with the card instead of jumping.
+                val queueItems by main.player.queue.collectAsState(initial = emptyList())
+                val miniSpace by androidx.compose.animation.core.animateDpAsState(
+                    targetValue = if (queueItems.isEmpty()) 0.dp else MiniPlayerHeight + MiniPlayerNavGap,
+                    animationSpec = com.feishin.mobile.ui.theme.Motion.layoutDp(),
+                    label = "mini-space",
+                )
                 Box(
                     Modifier.fillMaxSize()
                         .padding(
@@ -223,7 +220,14 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                             modifier = Modifier.align(androidx.compose.ui.Alignment.TopCenter),
                         )
                     }
-                    NavHost(nav, startDestination = Routes.HOME) {
+                    NavHost(
+                        nav,
+                        startDestination = Routes.HOME,
+                        // Only the CONTENT gives up space for the floating card;
+                        // the card itself is aligned to the bottom of this Box, so
+                        // it always sits just above the nav bar with its own gap.
+                        modifier = Modifier.padding(bottom = miniSpace),
+                    ) {
                         composable(Routes.HOME) {
                             HomeScreen(
                                 player = main.player, repo = main.repo, messenger = main.messenger,
@@ -311,6 +315,39 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                             GenresScreen(onGenre = { nav.navigate(Routes.genre(it)) })
                         }
                     }
+
+                    // Floating mini player, pinned to the bottom of the content
+                    // area (which already ends where the nav bar starts), so the
+                    // content scrolls visibly behind and around the card.
+                    MiniPlayer(
+                        player = main.player,
+                        onOpen = { showNowPlaying = true },
+                        onQueueCleared = { snap ->
+                            // Undo lives ~5s: restoring brings back the queue,
+                            // current item and position, paused.
+                            navScope.launch {
+                                val autoDismiss = launch {
+                                    kotlinx.coroutines.delay(5_000)
+                                    snackbar.currentSnackbarData?.dismiss()
+                                }
+                                try {
+                                    val result = snackbar.showSnackbar(
+                                        message = "Queue cleared",
+                                        actionLabel = "Undo",
+                                        duration = androidx.compose.material3.SnackbarDuration.Indefinite,
+                                    )
+                                    if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                        main.player.restoreCleared(snap)
+                                    }
+                                } finally {
+                                    autoDismiss.cancel()
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .align(androidx.compose.ui.Alignment.BottomCenter)
+                            .padding(bottom = MiniPlayerNavGap),
+                    )
                 }
             }
 

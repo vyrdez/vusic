@@ -231,6 +231,39 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   cancelled drag, probing Now Playing's responsiveness after each — 0 freezes,
   no ANR, no app FATAL; a3 up/down scrolling re-tested from the hero, the
   button row and the album grid.)
+- [x] M6.5b floating mini player
+  (The card was a full-width slab sharing one black block with the nav bar,
+  because both lived in Scaffold's bottomBar slot: the bottomBar is an opaque
+  bar that reserves the full width, so no content could ever appear beside or
+  behind the player. Now only AppNavigationBar stays in that slot (so the nav
+  bar keeps its own surface) and MiniPlayer is an overlay inside the content
+  area, aligned bottom-centre with a 12dp side margin, 28dp corners, an 8dp gap
+  to the nav bar and a 12dp soft shadow. Content scrolls visibly behind and
+  around it. Kept: cover, title, artist, previous, play/pause, next and a thin
+  progress line, plus the swipe-up-to-open, left/right-to-skip and
+  drag-down-to-clear-with-Undo gestures.
+  Two inset subtleties, both found on device: (a) Scaffold's content slot fills
+  the whole window and hands out innerPadding instead of pre-shrinking for the
+  bottom bar, so the nav bar height must stay in the max(ime, bar) bottom
+  padding — without it the card aligned to the screen bottom and hid behind the
+  nav bar; the max(ime, bar) keyboard rule is unchanged. (b) The clearance for
+  the card belongs on the CONTENT (the NavHost), not on the Box, or the Box
+  shrinks too and the card floats 90dp above the nav bar. VusicSpacing
+  .ContentBottom dropped 160dp -> 24dp now that the scaffold owns the insets.
+  Enter/exit and the matching bottom padding are animated together, so clearing
+  the queue shrinks both with no jump.
+  Also fixed two real playback bugs found while verifying: PlayerManager
+  adopted a queue restored by MediaSession.Callback.onPlaybackResumption (a
+  widget or media-button press on an empty player filled the service but left
+  the UI queue empty, so the mini player and queue sheet stayed blank while
+  audio played); and connect() now retries with backoff instead of binding the
+  MediaController exactly once — a failed first bind right after a force-stop or
+  reinstall left the controller null for the whole process and every UI playback
+  command silently no-oped. playAll/skip/seek now await the controller for up to
+  3s instead of dropping a cold-start tap. Verified on the emulator: the card
+  floats over Home/Library/Search/Settings and detail screens, content scrolls
+  behind it, the keyboard still does not leave a black bar, and the clear/Undo
+  path is unchanged.)
 - [x] M6.0 UI fixes + queue freeze/root-cause + queue redesign + mini-player clear
   (1. Library grid/list toggle: root cause was that only the Albums and Artists
   branches read the `grid` flag — Songs/Playlists/Favorites/Downloads rendered

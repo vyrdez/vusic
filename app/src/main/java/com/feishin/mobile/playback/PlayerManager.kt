@@ -36,6 +36,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,6 +45,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlin.random.Random
 
 data class QueueItem(val song: Track, val queueId: Long)
@@ -102,6 +107,7 @@ class PlayerManager @Inject constructor(
     private var shuffleOrder: List<Long>? = null
 
     @Volatile private var controller: MediaController? = null
+    @Volatile private var connectJob: kotlinx.coroutines.Job? = null
 
     private val _queue = MutableStateFlow<List<QueueItem>>(emptyList())
     val queue: StateFlow<List<QueueItem>> = _queue.asStateFlow()
@@ -184,10 +190,40 @@ class PlayerManager @Inject constructor(
 
     @androidx.media3.common.util.UnstableApi
     private fun connect() {
+        if (connectJob?.isActive == true) return
         val token = SessionToken(context, ComponentName(context, PlayerService::class.java))
         val future = MediaController.Builder(context, token).buildAsync()
-        future.addListener({
-            val c = runCatching { future.get() }.getOrNull() ?: return@addListener
+        connectJob = scope.launch {
+            // The first bind races the service: right after a force-stop or a
+            // reinstall the session is still being torn down and buildAsync()
+            // fails. Without this the controller stayed null for the rest of the
+            // process and every playAll/skip from the UI silently did nothing.
+            val controller0 = withTimeoutOrNull(10_000) {
+                future.awaitCompat()
+            }
+            if (controller0 == null) {
+                runCatching { future.cancel(true) }
+                connectJob = null
+                // Back off and try again; give up after ~30s of failures.
+                var attempt = 0
+                while (controller == null && attempt < 6) {
+                    delay(500L * (1L shl attempt))
+                    connectJob = null
+                    connect()
+                    delay(1_000)
+                    attempt++
+                }
+                return@launch
+            }
+            connectJob = null
+            val c = controller0
+            onControllerReady(c)
+        }
+    }
+
+    @androidx.media3.common.util.UnstableApi
+    private fun onControllerReady(c: MediaController) {
+        run {
             controller = c
             c.addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -196,6 +232,16 @@ class PlayerManager @Inject constructor(
                 }
 
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    // Playback can start in the service without going through
+                    // playAll(): a widget / media-button press on an empty player
+                    // goes through MediaSession.Callback.onPlaybackResumption,
+                    // which rebuilds the persisted queue in the service. Adopt it
+                    // here, or the mini player and queue sheet stay empty while
+                    // audio plays.
+                    if (_queue.value.isEmpty() && c.mediaItemCount > 0) {
+                        syncQueueFromController(c)
+                        restored = true
+                    }
                     // Match on the per-entry queue key first: the same song can be
                     // queued twice, and song ids would resolve to the wrong entry.
                     val qid = mediaItem?.let { TrackMediaItems.queueIdOf(it) }
@@ -233,8 +279,35 @@ class PlayerManager @Inject constructor(
             } else {
                 scope.launch { restoreFromSnapshot(c) }
             }
-        }, ContextCompat.getMainExecutor(context))
+        }
     }
+
+    /**
+     * The controller for the current command, waiting briefly for the first
+     * bind. A tap during the first seconds after a cold start used to be dropped
+     * on the floor (`controller ?: return@launch`).
+     */
+    private suspend fun awaitController(): MediaController? {
+        controller?.let { return it }
+        repeat(24) {
+            delay(125)
+            controller?.let { return it }
+        }
+        return controller
+    }
+
+    /** Guava ListenableFuture -> coroutine, without pulling in coroutines-guava. */
+    private suspend fun <T> ListenableFuture<T>.awaitCompat(): T? =
+        suspendCancellableCoroutine { cont ->
+            addListener({
+                try {
+                    cont.resume(get())
+                } catch (e: Exception) {
+                    if (!cont.isCancelled) cont.resumeWithException(e)
+                }
+            }, ContextCompat.getMainExecutor(context))
+            cont.invokeOnCancellation { runCatching { cancel(true) } }
+        }
 
     /** Rebuilds the domain queue mirror from the controller's media items. */
     private fun syncQueueFromController(c: MediaController) {
@@ -442,7 +515,7 @@ class PlayerManager @Inject constructor(
     fun playAll(tracks: List<Track>, startIndex: Int = 0, shuffle: Boolean = false, source: String? = null) {
         cancelRadio()
         scope.launch {
-            val c = controller ?: return@launch
+            val c = awaitController() ?: return@launch
             if (tracks.isEmpty()) return@launch
             // Keys are minted before shuffling so the original (unshuffled) order
             // is recorded by key in the snapshot.
@@ -670,7 +743,7 @@ class PlayerManager @Inject constructor(
 
     fun playNext(track: Track) {
         scope.launch {
-            val c = controller ?: return@launch
+            val c = awaitController() ?: return@launch
             val qi = QueueItem(track, queueSeq++)
             val item = toMediaItem(track, qi.queueId) ?: return@launch
             val at = (_currentIndex.value + 1).coerceIn(0, _queue.value.size)
@@ -686,7 +759,7 @@ class PlayerManager @Inject constructor(
     /** Inserts a whole list directly after the current item, atomically. */
     fun playNextAll(tracks: List<Track>) {
         scope.launch {
-            val c = controller ?: return@launch
+            val c = awaitController() ?: return@launch
             if (tracks.isEmpty()) return@launch
             val qis = tracks.map { QueueItem(it, queueSeq++) }
             val built = qis.mapNotNull { qi -> toMediaItem(qi.song, qi.queueId)?.let { qi to it } }
@@ -704,7 +777,7 @@ class PlayerManager @Inject constructor(
 
     fun addToEnd(track: Track) {
         scope.launch {
-            val c = controller ?: return@launch
+            val c = awaitController() ?: return@launch
             val qi = QueueItem(track, queueSeq++)
             val item = toMediaItem(track, qi.queueId) ?: return@launch
             c.addMediaItem(item)
@@ -716,7 +789,7 @@ class PlayerManager @Inject constructor(
 
     fun addAllToEnd(tracks: List<Track>) {
         scope.launch {
-            val c = controller ?: return@launch
+            val c = awaitController() ?: return@launch
             val qis = tracks.map { QueueItem(it, queueSeq++) }
             val built = qis.mapNotNull { qi -> toMediaItem(qi.song, qi.queueId)?.let { qi to it } }
             if (built.isEmpty()) return@launch
