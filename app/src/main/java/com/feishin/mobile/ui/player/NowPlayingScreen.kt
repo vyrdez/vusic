@@ -92,6 +92,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -116,7 +117,11 @@ import com.feishin.mobile.ui.components.CoverImage
 import com.feishin.mobile.ui.components.EqualizerOverlay
 import com.feishin.mobile.ui.components.MarqueeTitle
 import com.feishin.mobile.ui.components.PlaylistPickerSheet
+import com.feishin.mobile.ui.components.SheetState
 import com.feishin.mobile.ui.components.UiMessenger
+import com.feishin.mobile.ui.components.rememberSheetState
+import com.feishin.mobile.ui.components.scrimAlpha
+import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.components.formatDuration
 import com.feishin.mobile.ui.components.shareText
 import com.feishin.mobile.core.common.PlaybackProgress
@@ -202,36 +207,22 @@ fun NowPlayingScreen(
     val queue by player.queue.collectAsState()
     var hadEmptyQueue by remember { mutableStateOf(queue.isEmpty()) }
 
-    // ---- Queue sheet: 0f = closed, 1f = open. Read only inside graphicsLayer /
-    // draw lambdas so dragging never recomposes per frame, and the sheet is
-    // always composed so the first drag frame is already there.
-    val sheetProgress = remember { mutableFloatStateOf(0f) }
-    var sheetSettleJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-    // Actual sheet height in px, measured once composed; drives the drag
-    // distance so the sheet tracks the finger 1:1 on any screen size.
-    val sheetHeightPx = remember { mutableFloatStateOf(560f) }
-    fun settleSheet(target: Float, velocityPxPerSec: Float = 0f) {
-        sheetSettleJob?.cancel()
-        sheetSettleJob = scope.launch {
-            androidx.compose.animation.core.animate(
-                initialValue = sheetProgress.floatValue,
-                targetValue = target,
-                initialVelocity = velocityPxPerSec,
-                animationSpec = androidx.compose.animation.core.spring(
-                    dampingRatio = 0.9f,
-                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
-                ),
-            ) { value, _ -> sheetProgress.floatValue = value }
-        }
-    }
-
+    // ---- Queue sheet --------------------------------------------------------
+    // A single SheetState owns the position AND whether the sheet is open, so
+    // the touch-blocking scrim is composed only while the sheet is genuinely up.
+    // See SheetState for the freeze this replaced.
+    val sheet = rememberSheetState()
+    // Rotation / inset changes must never leave the sheet parked half-open.
+    val configuration = LocalConfiguration.current
+    LaunchedEffect(configuration) { sheet.settle(0f) }
+    // Queue emptied under the sheet: close through the one close path.
     LaunchedEffect(queue.isEmpty()) {
         if (queue.isEmpty()) {
             hadEmptyQueue = true
-            sheetProgress.floatValue = 0f
+            sheet.close()
         } else if (hadEmptyQueue) {
             hadEmptyQueue = false
-            sheetProgress.floatValue = 0f
+            sheet.close()
             showPicker = false
         }
     }
@@ -264,7 +255,9 @@ fun NowPlayingScreen(
                 }
             }
             // Swipe-down-to-close area: art, titles, chips, seek, controls.
-            var dragOffset by remember { mutableFloatStateOf(0f) }
+            // An Animatable, so a release/cancel always springs back to a
+            // settled offset instead of stranding the layout mid-drag.
+            val dragOffset = remember { androidx.compose.animation.core.Animatable(0f) }
             if (!lyricsMode) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 // Nearly full-width art (16dp gutters) that still leaves room
@@ -282,15 +275,24 @@ fun NowPlayingScreen(
                 Column(
                     Modifier
                         .fillMaxSize()
-                        .offset { IntOffset(0, dragOffset.roundToInt()) }
+                        .offset { IntOffset(0, dragOffset.value.roundToInt()) }
+                        .graphicsLayer { alpha = (1f - dragOffset.value / 700f).coerceIn(0.35f, 1f) }
                         .pointerInput(Unit) {
                             detectVerticalDragGestures(
                                 onDragEnd = {
-                                    if (dragOffset > 260f) onClose()
-                                    dragOffset = 0f
+                                    if (dragOffset.value > 260f) onClose()
+                                    scope.launch { dragOffset.animateTo(0f, Motion.snapBackSpring()) }
                                 },
-                                onVerticalDrag = { _, amount ->
-                                    if (amount > 0) dragOffset = (dragOffset + amount).coerceAtMost(700f)
+                                onDragCancel = {
+                                    // Cancelled drags must also settle.
+                                    scope.launch { dragOffset.animateTo(0f, Motion.snapBackSpring()) }
+                                },
+                                onVerticalDrag = { change, amount ->
+                                    if (amount > 0) {
+                                        change.consume()
+                                        val next = (dragOffset.value + amount).coerceAtMost(700f)
+                                        scope.launch { dragOffset.snapTo(next) }
+                                    }
                                 },
                             )
                         }
@@ -410,17 +412,9 @@ fun NowPlayingScreen(
                     Spacer(Modifier.weight(1f))
                     PlayingFromBottom(
                         player = player, dim = dim,
-                        onClick = { settleSheet(1f) },
-                        onDrag = { delta ->
-                            sheetSettleJob?.cancel()
-                            sheetProgress.floatValue =
-                                (sheetProgress.floatValue - delta / sheetHeightPx.floatValue).coerceIn(0f, 1f)
-                        },
-                        onDragEnd = { velocity ->
-                            val open = sheetProgress.floatValue > 0.35f ||
-                                velocity < -600f
-                            settleSheet(if (open) 1f else 0f, velocity)
-                        },
+                        onClick = { sheet.openSheet() },
+                        onDrag = { delta -> sheet.dragByPixels(delta) },
+                        onDragEnd = { velocity -> sheet.onDragEnd(velocity) },
                     )
                     Spacer(Modifier.height(8.dp))
                 }
@@ -431,21 +425,20 @@ fun NowPlayingScreen(
         }
     }
 
-    if (sheetProgress.floatValue > 0.001f || sheetSettleJob?.isActive == true) {
+    // Composed ONLY while the sheet is open. When it is closed there is nothing at
+    // all over Now Playing, so no invisible layer can swallow a tap.
+    if (sheet.open) {
         QueueSheet(
-            progress = { sheetProgress.floatValue },
-            onProgress = { sheetProgress.floatValue = it },
-            onSettle = { target, velocity -> settleSheet(target, velocity) },
-            onHeightPx = { sheetHeightPx.floatValue = it.coerceAtLeast(1f) },
+            state = sheet,
             player = player, repo = repo, messenger = messenger,
             content = content, playlistEvents = playlistEvents,
             onActions = { onActions(ActionTarget.Track(it)) },
-            onDismiss = { settleSheet(0f) },
+            onDismiss = { sheet.close() },
         )
     }
-    // The bottom area's tap/drag handler is wired after the sheet exists.
-    androidx.activity.compose.BackHandler(enabled = sheetProgress.floatValue > 0.001f) {
-        settleSheet(0f)
+    // One close path for back press, tap-outside and the chevron.
+    androidx.activity.compose.BackHandler(enabled = sheet.open) {
+        sheet.close()
     }
     if (showPicker) {
         PlaylistPickerSheet(
@@ -980,10 +973,7 @@ private fun QueueBottomBar(
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun QueueSheet(
-    progress: () -> Float,
-    onProgress: (Float) -> Unit,
-    onSettle: (Float, Float) -> Unit,
-    onHeightPx: (Float) -> Unit,
+    state: SheetState,
     player: PlayerManager,
     repo: MusicDataRepository,
     messenger: UiMessenger,
@@ -1006,7 +996,7 @@ private fun QueueSheet(
     val listState = rememberLazyListState()
 
     if (queue.isEmpty()) {
-        // The last item is gone: close the sheet.
+        // The last item is gone: close through the one close path.
         LaunchedEffect(Unit) { onDismiss() }
         return
     }
@@ -1026,10 +1016,10 @@ private fun QueueSheet(
         // displayOrder re-syncs from remember(queue) once the player emits.
     }
 
-    // Direct-manipulation sheet: always composed, translated by the finger
-    // through graphicsLayer (no recomposition per frame). A nested-scroll
-    // handoff lets the list scroll normally and only takes over when the list
-    // is already at the top and the finger drags down.
+    // Direct-manipulation sheet. The nested-scroll handoff lets the list scroll
+    // normally and only takes over when the list is already at the top and the
+    // finger drags down. Progress is read only inside graphicsLayer lambdas, so
+    // dragging never recomposes a frame.
     val nestedScroll = remember {
         object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
             override fun onPostScroll(
@@ -1040,7 +1030,8 @@ private fun QueueSheet(
                 val atTop = listState.firstVisibleItemIndex == 0 &&
                     listState.firstVisibleItemScrollOffset == 0
                 if (available.y > 0 && atTop) {
-                    onProgress((progress() - available.y / 560f).coerceIn(0f, 1f))
+                    val h = state.sheetHeightPx
+                    if (h > 0f) state.dragBy(-available.y / h)
                 }
                 return androidx.compose.ui.geometry.Offset.Zero
             }
@@ -1048,38 +1039,38 @@ private fun QueueSheet(
     }
 
     Box(Modifier.fillMaxSize()) {
-        // Scrim fades in proportionally with the drag.
+        // Scrim: alpha follows the drag, tap-outside closes through the one path.
         Box(
             Modifier.fillMaxSize()
-                .graphicsLayer { alpha = progress() * 0.62f }
+                .graphicsLayer { alpha = scrimAlpha(state.progress) }
                 .background(Color.Black)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = { onSettle(0f, 0f) },
+                    onClick = { state.close() },
                 ),
         )
         Column(
             Modifier.fillMaxWidth()
                 .fillMaxHeight(0.78f)
                 .align(Alignment.BottomCenter)
-                .onSizeChanged { onHeightPx(it.height.toFloat()) }
+                .onSizeChanged { state.sheetHeightPx = it.height.toFloat().coerceAtLeast(1f) }
                 .graphicsLayer {
-                    translationY = (1f - progress()) * size.height
+                    val p = state.progress
+                    translationY = (1f - p) * size.height
                     // Keep the header grab area solid while sliding.
-                    clip = progress() < 1f
+                    clip = p < 1f
                 }
                 .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
                 .background(VusicColors.Surface)
                 .nestedScroll(nestedScroll)
                 .draggable(
                     orientation = Orientation.Vertical,
-                    state = rememberDraggableState { delta ->
-                        onProgress((progress() - delta / 560f).coerceIn(0f, 1f))
-                    },
+                    state = rememberDraggableState { delta -> state.dragByPixels(delta) },
+                    // Fling velocity is normalized to progress units so the
+                    // decision lives in SheetPhysics, not here.
                     onDragStopped = { velocity ->
-                        val open = progress() > 0.35f || velocity < -600f
-                        onSettle(if (open) 1f else 0f, velocity)
+                        state.onDragEnd(velocity)
                     },
                 )
                 .padding(horizontal = 16.dp),

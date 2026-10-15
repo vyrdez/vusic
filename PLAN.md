@@ -189,6 +189,48 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   tests; signed release APK installed on the emulator, full flow exercised
   (login, Home with real art, Library tabs incl. grid/list, playback, queue,
   widget, settings) with zero FATALs and no credential strings in logcat.
+- [x] M6.5a gesture fixes
+  (Root causes, all found by reading the code and reproduced on the emulator:
+  A1 the freeze was an invisible touch-eater. "Is the queue sheet up?" was
+  derived from a float (`progress > 0.001f || settleJob?.isActive`) that drags
+  wrote directly, while the scrim above Now Playing was `fillMaxSize()` +
+  `clickable` with `alpha = progress * 0.62f`. Any gesture that ended without
+  reaching the settle callback (cancel, interruption, the queue mutating under
+  the sheet, the `isActive` read not being snapshot state so it never re-fired)
+  left progress at a tiny non-zero value: the scrim was composed, so it ate
+  every tap, while its alpha was ~0 so nothing looked wrong. System back "fixed"
+  it because BackHandler drove the one thing that could move progress.
+  Fix: a SheetState owns the Animatable AND a boolean `open`; `open` only ever
+  clears after the animation has landed exactly on 0, so a closed sheet has
+  nothing composed over the screen at all. Every exit (tap-outside, chevron,
+  back press, cancelled drag, queue emptied, configuration change) goes through
+  settle()/close(). Release and cancel are separate callbacks that both settle,
+  so an interrupted drag cannot strand anything.
+  A2 half-open sheets: the settle decision now lives in the pure SheetPhysics
+  (exactly two anchors, fling velocity + 0.35 position threshold, velocity
+  deadzone), and a new drag cancels the running settle instead of racing it.
+  A3 the artist page fought the user's own scroll. The hero item's height was
+  computed from the scroll offset (`320 * (1 - scrollPx/520) + 96`), so every
+  1px of upward scroll simultaneously grew the content above it by 0.615px:
+  scrolling up lost ~62% of the gesture, and below 520px of scroll the sheet had
+  to "un-collapse" the hero before the hero itself could move. Measured on the
+  device: a 1100px up-drag moved the content ~135px. Compounding it,
+  `topBar.hideBar = true` hid the shared bar for the whole screen, so once the
+  hero was gone there was no back button and no title at all — exactly the
+  screenshot. Fix: one scroll container; the hero keeps a fixed height and
+  collapses by parallax (translation + fade) on the same scroll offset, so the
+  offset maps 1:1 to movement in both directions, and a real collapsed top bar
+  (back arrow + artist name, same status-bar inset handling) fades in over the
+  list, so nothing is ever clipped and the way back always exists.
+  Also fixed here: PlayerManager's scope had been moved to Dispatchers.IO in
+  M6.3, so every MediaController call threw "called from a wrong thread" and
+  CrashGuard swallowed it — playback silently never started. Back to
+  Dispatchers.Main with a comment explaining why it must stay there.
+  16 SheetPhysics unit tests. Verified on the emulator: 34 consecutive
+  open/close cycles alternating tap-outside, chevron, partial drag release and
+  cancelled drag, probing Now Playing's responsiveness after each — 0 freezes,
+  no ANR, no app FATAL; a3 up/down scrolling re-tested from the hero, the
+  button row and the album grid.)
 - [x] M6.0 UI fixes + queue freeze/root-cause + queue redesign + mini-player clear
   (1. Library grid/list toggle: root cause was that only the Albums and Artists
   branches read the `grid` flag — Songs/Playlists/Favorites/Downloads rendered

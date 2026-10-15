@@ -1,9 +1,11 @@
 package com.feishin.mobile.ui.detail
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -133,12 +135,23 @@ fun ArtistScreen(
                     topBar.scrolled = listState.firstVisibleItemIndex > 0 ||
                         listState.firstVisibleItemScrollOffset > 200
                 }
-                // Collapsing hero: image height shrinks as the list scrolls.
+                // Collapsing hero.
+                //
+                // The hero item keeps a FIXED height and collapses by parallax
+                // (translation + fade), never by resizing. The old code shrank
+                // the item height with the scroll offset (320dp / 520px), which
+                // made every 1px of upward scroll grow the content above it by
+                // 0.615px at the same time: scrolling up was ~62% eaten, which
+                // is exactly the "hard to scroll up" report. With a fixed height
+                // the list offset maps 1:1 to content movement in both
+                // directions.
                 val scrollPx = listState.firstVisibleItemScrollOffset.toFloat()
-                val heroFraction = (1f - (scrollPx / 520f).coerceIn(0f, 1f))
-                val heroHeight = (320 * heroFraction + 96).dp
                 val topInset = androidx.compose.foundation.layout.WindowInsets.statusBars
                     .asPaddingValues().calculateTopPadding()
+                val heroHeight = 340.dp + topInset
+                // 1 while the hero is still showing its identity, 0 once it is
+                // fully collapsed behind the top bar.
+                val heroVisible = (1f - scrollPx / 420f).coerceIn(0f, 1f)
                 Box(Modifier.fillMaxSize()) {
                     LazyColumn(
                         Modifier.fillMaxSize(),
@@ -153,6 +166,7 @@ fun ArtistScreen(
                                 heroHeight = heroHeight,
                                 topInset = topInset,
                                 artUrl = repo.coverArtUrl(a.coverArt, 600),
+                                scrollPx = scrollPx,
                                 onBack = onBack,
                             )
                         }
@@ -272,6 +286,18 @@ fun ArtistScreen(
                         }
                     }
                     }
+                    // Collapsed top bar, drawn OVER the list once the hero has
+                    // scrolled away. Owns its own back arrow, so the action row
+                    // and every list item can scroll all the way to the top edge
+                    // without anything being clipped and without losing the way
+                    // back. Fades in on the same scroll offset as the hero.
+                    val barAlpha = ((scrollPx / 420f) - 0.55f).coerceIn(0f, 1f) / 0.45f
+                    ArtistCollapsedTopBar(
+                        name = a.name,
+                        alpha = barAlpha,
+                        topInset = topInset,
+                        onBack = onBack,
+                    )
                 }
             }
         }
@@ -286,13 +312,23 @@ private fun ArtistHero(
     heroHeight: Dp,
     topInset: Dp,
     artUrl: String?,
+    scrollPx: Float,
     onBack: () -> Unit = {},
 ) {
     // The image reaches under the status bar and fills the full width. When the
     // provider image is missing or low-res, a blurred, scaled copy sits behind
     // it so no empty area shows; with no art at all, a gradient from the cover
     // colour carries a large initial.
-    Box(Modifier.fillMaxWidth().height(heroHeight)) {
+    // Parallax: the artwork drifts up slower than the list and fades out, so the
+    // hero reads as collapsing without the item ever changing height.
+    Box(
+        Modifier.fillMaxWidth().height(heroHeight)
+            .graphicsLayer {
+                val t = (scrollPx / 420f).coerceIn(0f, 1f)
+                translationY = -scrollPx * 0.5f
+                alpha = 1f - t
+            },
+    ) {
         val resolved = imageUrl
         val backdrop = artUrl
         if (resolved != null) {
@@ -365,6 +401,55 @@ private fun ArtistHero(
             Text(name, style = MaterialTheme.typography.headlineMedium, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(meta, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.85f))
         }
+    }
+}
+
+/**
+ * Collapsed header for the artist screen: a fixed-height bar with a back arrow
+ * and the artist name, fading in as the hero scrolls away. It sits above the
+ * list in the same Box, so it never scrolls with the content and never clips a
+ * control underneath it.
+ */
+@Composable
+private fun BoxScope.ArtistCollapsedTopBar(
+    name: String,
+    alpha: Float,
+    topInset: Dp,
+    onBack: () -> Unit,
+) {
+    if (alpha <= 0.001f) return
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .align(Alignment.TopCenter)
+            .graphicsLayer { this.alpha = alpha }
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        VusicColors.Background.copy(alpha = 0.97f),
+                        VusicColors.Background.copy(alpha = 0.92f),
+                    ),
+                ),
+            )
+            .padding(top = topInset, bottom = 8.dp)
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = Color.White,
+            )
+        }
+        Text(
+            name,
+            style = MaterialTheme.typography.titleMedium,
+            color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(end = 12.dp),
+        )
     }
 }
 

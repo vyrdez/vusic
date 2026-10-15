@@ -71,7 +71,12 @@ class PlayerManager @Inject constructor(
     private val cachedTracks: com.feishin.mobile.data.cache.CachedTrackStore,
     private val streamCache: androidx.media3.datasource.cache.SimpleCache,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + com.feishin.mobile.core.common.CrashGuard.handler)
+    // MUST stay on Dispatchers.Main: every command here (setMediaItems, seekTo,
+    // play, currentPosition, ...) touches the MediaController, which throws
+    // "MediaController method is called from a wrong thread" off the main
+    // thread. CrashGuard would swallow that and playback would silently never
+    // start, so keep the dispatcher explicit and the handler beside it.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main + com.feishin.mobile.core.common.CrashGuard.handler)
     private var queueSeq = 0L
     private var restored = false
 
