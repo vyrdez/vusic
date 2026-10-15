@@ -280,8 +280,14 @@ private fun AllResults(
     onExpandSongs: () -> Unit,
     onSongsFilter: () -> Unit,
 ) {
+    // Server hits can repeat an id; duplicate lazy keys crash the list, so each
+    // section plays and renders from its own deduped list.
+    val tracks = remember(res.tracks) { res.tracks.distinctBy { it.id } }
+    val albums = remember(res.albums) { res.albums.distinctBy { it.id } }
+    val artists = remember(res.artists) { res.artists.distinctBy { it.id } }
+    val playlists = remember(res.playlists) { res.playlists.distinctBy { it.id } }
     val top = SearchGrouping.topResult(res)
-    val songs = if (songsExpanded) res.tracks else SearchGrouping.previewSongs(res)
+    val songs = if (songsExpanded) tracks else SearchGrouping.previewSongs(res).distinctBy { it.id }
     val moreSongs = !songsExpanded && SearchGrouping.remainingSongs(res).isNotEmpty()
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -316,7 +322,7 @@ private fun AllResults(
             items(songs, key = { "s${it.id}" }) { song ->
                 TrackRow(
                     track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),
-                    onClick = { player.playAll(res.tracks, res.tracks.indexOf(song), source = "Search") },
+                    onClick = { player.playAll(tracks, tracks.indexOf(song), source = "Search") },
                     onActions = { onActions(ActionTarget.Track(song)) },
                     onArtist = { id -> onArtist(id) },
                     isCurrent = song.id == nowPlayingId, isPlaying = isPlaying,
@@ -330,21 +336,21 @@ private fun AllResults(
                 }
             }
         }
-        if (res.albums.isNotEmpty()) {
+        if (albums.isNotEmpty()) {
             item(key = "albums-h") { SubSectionHeader("Albums") }
-            items(res.albums, key = { "b${it.id}" }) { a ->
+            items(albums, key = { "b${it.id}" }) { a ->
                 AlbumRow(a, repo, onAlbum, onActions)
             }
         }
-        if (res.artists.isNotEmpty()) {
+        if (artists.isNotEmpty()) {
             item(key = "artists-h") { SubSectionHeader("Artists") }
-            items(res.artists, key = { "a${it.id}" }) { a ->
+            items(artists, key = { "a${it.id}" }) { a ->
                 ArtistSearchRow(a, repo, vm, onArtist, onActions)
             }
         }
-        if (res.playlists.isNotEmpty()) {
+        if (playlists.isNotEmpty()) {
             item(key = "playlists-h") { SubSectionHeader("Playlists") }
-            items(res.playlists, key = { "p${it.id}" }) { p ->
+            items(playlists, key = { "p${it.id}" }) { p ->
                 PlaylistSearchRow(p, repo, onPlaylist, onActions)
             }
         }
@@ -374,6 +380,12 @@ private fun SingleTypeResults(
         total > 0 && info.index >= total - 4
     } == true
     LaunchedEffect(atEnd, visible) { if (atEnd) onShowMore() }
+    // Same duplicate-id guard as AllResults above: render and play from the
+    // deduped lists so keys stay unique and indices match.
+    val tracks = remember(res.tracks) { res.tracks.distinctBy { it.id } }
+    val albums = remember(res.albums) { res.albums.distinctBy { it.id } }
+    val artists = remember(res.artists) { res.artists.distinctBy { it.id } }
+    val playlists = remember(res.playlists) { res.playlists.distinctBy { it.id } }
     LazyColumn(
         Modifier.fillMaxSize(),
         state = listState,
@@ -381,11 +393,11 @@ private fun SingleTypeResults(
     ) {
         when (filter) {
             SearchFilter.SONGS -> {
-                val shown = res.tracks.take(visible)
+                val shown = tracks.take(visible)
                 items(shown, key = { "s${it.id}" }) { song ->
                     TrackRow(
                         track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),
-                        onClick = { player.playAll(res.tracks, res.tracks.indexOf(song), source = "Search") },
+                        onClick = { player.playAll(tracks, tracks.indexOf(song), source = "Search") },
                         onActions = { onActions(ActionTarget.Track(song)) },
                         onArtist = { id -> onArtist(id) },
                         isCurrent = song.id == nowPlayingId, isPlaying = isPlaying,
@@ -393,17 +405,17 @@ private fun SingleTypeResults(
                 }
             }
             SearchFilter.ALBUMS -> {
-                items(res.albums.take(visible), key = { "b${it.id}" }) { a ->
+                items(albums.take(visible), key = { "b${it.id}" }) { a ->
                     AlbumRow(a, repo, onAlbum, onActions)
                 }
             }
             SearchFilter.ARTISTS -> {
-                items(res.artists.take(visible), key = { "a${it.id}" }) { a ->
+                items(artists.take(visible), key = { "a${it.id}" }) { a ->
                     ArtistSearchRow(a, repo, vm, onArtist, onActions)
                 }
             }
             SearchFilter.PLAYLISTS -> {
-                items(res.playlists.take(visible), key = { "p${it.id}" }) { p ->
+                items(playlists.take(visible), key = { "p${it.id}" }) { p ->
                     PlaylistSearchRow(p, repo, onPlaylist, onActions)
                 }
             }

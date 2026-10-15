@@ -379,6 +379,36 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   long (revisited in the color pass). Verified on the emulator at font scales
   1.0 and 1.3: every sub-screen, no overlaps, no under-runs; narrow widths are
   covered by unit tests (down to 70dp rows), not on-device.)
+- [x] M6.6d M6.5 leftover re-verification (fixes were needed)
+  (D1 usage island verified: full-width bar with proportional segments (556 MB
+  used renders ~13% against 3.63 GB free), "X used by Vusic, Y free" label,
+  legend rows, 16dp padding.
+  D2 login verified end to end (logged out and back in on-device): white
+  title/subtitle on black, labeled 56dp switch row with description and
+  animated warning, consistent filled+outlined buttons, keyboard-open and 1.3
+  scale both keep every field and button reachable. Self-signed survived logout
+  (same store as Settings > Connectivity, as required); a stray tap had
+  flipped it off mid-test and it was restored ON, as was an accidentally
+  changed mobile bitrate (320 back to 128).
+  D3 artist page: (a) the 1100px up-drag now moves content 1079px (was ~135px
+  before M6.5a); (b) the collapsed bar (back + name) had a follow-up bug — it
+  faded on scroll offset alone, but once the hero scrolls off,
+  firstVisibleItemScrollOffset resets and the bar vanished mid-page. Now stays
+  at alpha 1 while firstVisibleItemIndex > 0; verified in screenshot.
+  (c) scrolling the artist page CRASHED the app: duplicate lazy keys
+  (`IllegalArgumentException: Key ... was already used`) — Navidrome repeats
+  ids in similar artists (and can in tracks/albums). Fixed by distinctBy id on
+  the artist screen's top songs (render and play from the same deduped list so
+  indices match), albums and similar artists, plus the same guard on Search
+  (all four sections, both layouts) and Home carousels. Library repo-backed
+  lists were left alone (no evidence of dupes there).
+  D4 gfxinfo, emulator only (SwiftShader; GPU percentiles peg at 4950ms, an
+  emulator artifact): Home fling 88.6% janky, Library 69.6%, Settings 83% —
+  dominated by image decode during flings (60/413 slow draw commands) on
+  software rendering. No M6.5 baseline was ever measured and no physical phone
+  was attached, so before/after cannot be compared; nothing in 6.6 runs
+  per-frame during scroll (animations are enter/exit and value changes), so no
+  animation-caused regression is indicated. Playback never glitched throughout.)
 - [x] M6.5d forgotten favorites pager and animations
   (D1 Forgotten favorites was a flat five-row list while Quick picks had a pager,
   dots and a "Play all" pill. Both now render through one shared

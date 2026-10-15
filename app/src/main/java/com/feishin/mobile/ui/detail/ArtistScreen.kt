@@ -183,18 +183,24 @@ fun ArtistScreen(
                             )
                         }
                     // Top songs.
+                    // Server lists can repeat an id (Navidrome does for similar
+                    // artists and occasionally tracks); duplicate lazy keys
+                    // crash the whole screen, so every list here is deduped by
+                    // id first. The deduped list is also what plays, so the
+                    // tapped index always matches.
                     when (val ts = topSongsUi) {
                         is UiState.Data -> if (ts.value.isNotEmpty()) {
+                            val topSongs = ts.value.distinctBy { it.id }
                             item { SectionHeader(title = "Top songs") }
-                            items(ts.value.take(5), key = { "top${it.id}" }) { t ->
+                            items(topSongs.take(5), key = { "top${it.id}" }) { t ->
                                 TrackRow(
                                     track = t, artUrl = repo.coverArtUrl(t.coverArt, 128),
-                                    onClick = { player.playAll(ts.value, ts.value.indexOf(t), source = a.name) },
+                                    onClick = { player.playAll(topSongs, topSongs.indexOf(t), source = a.name) },
                                     onActions = { onActions(ActionTarget.Track(t)) },
                                     isCurrent = t.id == nowPlaying?.id, isPlaying = isPlaying,
                                 )
                             }
-                            if (ts.value.size > 5) {
+                            if (topSongs.size > 5) {
                                 if (!topExpanded) {
                                     item {
                                         Text(
@@ -209,10 +215,10 @@ fun ArtistScreen(
                                         )
                                     }
                                 } else {
-                                    items(ts.value.drop(5), key = { "topx${it.id}" }) { t ->
+                                    items(topSongs.drop(5), key = { "topx${it.id}" }) { t ->
                                         TrackRow(
                                             track = t, artUrl = repo.coverArtUrl(t.coverArt, 128),
-                                            onClick = { player.playAll(ts.value, ts.value.indexOf(t), source = a.name) },
+                                            onClick = { player.playAll(topSongs, topSongs.indexOf(t), source = a.name) },
                                             onActions = { onActions(ActionTarget.Track(t)) },
                                             isCurrent = t.id == nowPlaying?.id, isPlaying = isPlaying,
                                         )
@@ -226,7 +232,7 @@ fun ArtistScreen(
                     // Albums grid, newest year first.
                     if (a.albums.isNotEmpty()) {
                         item { SectionHeader(title = "Albums") }
-                        val sorted = a.albums.sortedByDescending { it.year ?: 0 }
+                        val sorted = a.albums.distinctBy { it.id }.sortedByDescending { it.year ?: 0 }
                         val rows = sorted.chunked(2)
                         items(rows, key = { r -> r.joinToString("+") { it.id } }) { row ->
                             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
@@ -238,7 +244,7 @@ fun ArtistScreen(
                         }
                     }
                     // Similar artists.
-                    val similar = info?.similarArtists.orEmpty()
+                    val similar = info?.similarArtists.orEmpty().distinctBy { it.id }
                     if (similar.isNotEmpty()) {
                         item { SectionHeader(title = "Fans might also like") }
                         item {
@@ -291,8 +297,17 @@ fun ArtistScreen(
                     // scrolled away. Owns its own back arrow, so the action row
                     // and every list item can scroll all the way to the top edge
                     // without anything being clipped and without losing the way
-                    // back. Fades in on the same scroll offset as the hero.
-                    val barAlpha = ((scrollPx / 420f) - 0.55f).coerceIn(0f, 1f) / 0.45f
+                    // back. Fades in on the same scroll offset as the hero —
+                    // and stays fully on once the hero has scrolled off
+                    // entirely (past that point firstVisibleItemScrollOffset
+                    // resets to the next item, so the offset alone would read
+                    // as "back at the top" and the bar would vanish).
+                    val heroGone = listState.firstVisibleItemIndex > 0
+                    val barAlpha = if (heroGone) {
+                        1f
+                    } else {
+                        ((scrollPx / 420f) - 0.55f).coerceIn(0f, 1f) / 0.45f
+                    }
                     ArtistCollapsedTopBar(
                         name = a.name,
                         alpha = barAlpha,

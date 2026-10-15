@@ -416,7 +416,8 @@ private fun AlbumCarousel(
     onPlay: (Album) -> Unit = {},
 ) {
     LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
-        items(albums, key = { it.id }) { a ->
+        // Server lists can repeat an id; duplicate lazy keys crash the list.
+        items(albums.distinctBy { it.id }, key = { it.id }) { a ->
             AlbumCard(a, repo.coverArtUrl(a.coverArt, 300), onClick = { onAlbum(a.id) }, modifier = Modifier.width(140.dp))
         }
     }
