@@ -53,6 +53,10 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -66,6 +70,7 @@ import com.feishin.mobile.ui.components.EntityActionsSheet
 import com.feishin.mobile.ui.components.MiniPlayer
 import com.feishin.mobile.ui.components.MiniPlayerHeight
 import com.feishin.mobile.ui.components.MiniPlayerNavGap
+import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.detail.AlbumDetailScreen
 import com.feishin.mobile.ui.detail.ArtistDetailScreen
 import com.feishin.mobile.ui.detail.PlaylistDetailScreen
@@ -227,6 +232,24 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                         // the card itself is aligned to the bottom of this Box, so
                         // it always sits just above the nav bar with its own gap.
                         modifier = Modifier.padding(bottom = miniSpace),
+                        // One shared transition set for every screen, instead of
+                        // per-screen animation blocks that drift apart.
+                        enterTransition = {
+                            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, Motion.navSlide()) +
+                                fadeIn(Motion.fade(Motion.Normal))
+                        },
+                        exitTransition = {
+                            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, Motion.navSlide()) +
+                                fadeOut(Motion.fade(Motion.Normal))
+                        },
+                        popEnterTransition = {
+                            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.End, Motion.navSlide()) +
+                                fadeIn(Motion.fade(Motion.Normal))
+                        },
+                        popExitTransition = {
+                            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, Motion.navSlide()) +
+                                fadeOut(Motion.fade(Motion.Normal))
+                        },
                     ) {
                         composable(Routes.HOME) {
                             HomeScreen(

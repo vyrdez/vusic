@@ -32,6 +32,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -448,19 +451,51 @@ fun UsageLegend(entries: List<Triple<String, String, Color>>) {
     }
 }
 
-/** Home card: icon, title, one-line state summary, chevron. */
+/**
+ * Home card: icon, title, one-line state summary, chevron.
+ *
+ * [index] drives a short stagger on first appearance only (a remember-ed flag,
+ * so re-composition never replays it) plus press feedback, which is what makes
+ * the Settings home feel like it has motion without delaying anything.
+ */
 @Composable
 fun SettingsHomeCard(
     icon: ImageVector,
     title: String,
     summary: String,
     onClick: () -> Unit,
+    index: Int = 0,
 ) {
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val progress by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(
+            durationMillis = if (appeared) Motion.Normal else 0,
+            delayMillis = (index * Motion.Stagger).coerceAtMost(Motion.Slow),
+            easing = androidx.compose.animation.core.FastOutSlowInEasing,
+        ),
+        label = "card-enter",
+    )
+    val pressScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (pressed) 0.985f else 1f,
+        animationSpec = Motion.scale(Motion.Fast),
+        label = "card-press",
+    )
     Row(
-        Modifier.fillMaxWidth().padding(vertical = VusicSpacing.CardGap / 4)
+        Modifier.fillMaxWidth()
+            .padding(vertical = VusicSpacing.CardGap / 4)
+            .graphicsLayer {
+                alpha = progress
+                translationY = (1f - progress) * 16.dp.toPx()
+                scaleX = pressScale
+                scaleY = pressScale
+            }
             .clip(RoundedCornerShape(12.dp))
             .background(VusicColors.SurfaceHigh)
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .defaultMinSize(minHeight = VusicSpacing.RowMinHeight)
             .padding(VusicSpacing.CardPadding),
         verticalAlignment = Alignment.CenterVertically,

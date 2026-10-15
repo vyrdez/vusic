@@ -106,6 +106,12 @@ object Motion {
         stiffness = Spring.StiffnessLow,
     )
 
+    /** IntOffset variant, for navigation slides. */
+    fun navSlide(): FiniteAnimationSpec<androidx.compose.ui.unit.IntOffset> = spring(
+        dampingRatio = 1f,
+        stiffness = Spring.StiffnessMediumLow,
+    )
+
     // ---- Navigation --------------------------------------------------------
 
     /** Horizontal push for forward detail navigation. */

@@ -300,6 +300,25 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   The island is rebuilt with 16dp padding, a 12dp rounded bar, a "X used by
   Vusic, Y free" total label, one legend row per item with an 8dp dot, and
   animated segment widths. 11 UsageBarMath unit tests.)
+- [x] M6.5d forgotten favorites pager and animations
+  (D1 Forgotten favorites was a flat five-row list while Quick picks had a pager,
+  dots and a "Play all" pill. Both now render through one shared
+  SongPagerSection (4 rows per page, dot row that appears only with more than
+  one page, source name passed through for playback history), and the section
+  header gained the same "Play all" pill. The dots animate their size and alpha
+  rather than popping. Empty state still renders nothing, so the section
+  disappears when there is no data. Verified on the device: Forgotten favorites
+  shows the pager, the "Play all" pill and a hidden dot row (single page).
+  D2 all motion now comes from one Motion object (Fast 150 / Normal 220 /
+  Slow 300, a 28ms stagger step, spring variants for anything the finger is
+  holding and tween variants for everything else, and a durationScale hook so
+  the system animation setting can zero every duration). Added: shared NavHost
+  slide+fade transitions in both directions instead of per-screen blocks; the
+  Settings home cards fade and slide in with a one-time stagger plus press
+  feedback; animated usage-bar segment widths and animated colour on every
+  button border, pill fill and switch state; the login warning and helper text
+  animate in and out; animateItem() on the Library songs grid so entries fade
+  rather than pop. Nothing animates on first frame and nothing gates input.)
 - [x] M6.0 UI fixes + queue freeze/root-cause + queue redesign + mini-player clear
   (1. Library grid/list toggle: root cause was that only the Albums and Artists
   branches read the `grid` flag — Songs/Playlists/Favorites/Downloads rendered

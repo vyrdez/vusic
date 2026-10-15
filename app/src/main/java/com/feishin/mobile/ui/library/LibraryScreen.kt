@@ -3,6 +3,7 @@ package com.feishin.mobile.ui.library
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -266,11 +267,13 @@ fun LibraryScreen(
                                     contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, 160.dp),
                                 ) {
                                     items(shown, key = { it.id }) { song ->
-                                        SongGridCell(
-                                            song = song, artUrl = repo.coverArtUrl(song.coverArt, 300),
-                                            onClick = { player.playAll(shown, shown.indexOf(song), source = "Songs") },
-                                            onActions = { onActions(ActionTarget.Track(song)) },
-                                        )
+                                        Box(Modifier.animateItem()) {
+                                            SongGridCell(
+                                                song = song, artUrl = repo.coverArtUrl(song.coverArt, 300),
+                                                onClick = { player.playAll(shown, shown.indexOf(song), source = "Songs") },
+                                                onActions = { onActions(ActionTarget.Track(song)) },
+                                            )
+                                        }
                                     }
                                 }
                             } else {

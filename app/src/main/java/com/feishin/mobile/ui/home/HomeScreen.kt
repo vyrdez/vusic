@@ -169,9 +169,13 @@ private fun HomeContent(
                 )
             }
             item {
-                QuickPicksPager(
-                    tracks = state.quickPicks, player = player, repo = repo,
-                    nowPlayingId = nowPlaying?.id, isPlaying = isPlaying, onActions = onActions,
+                com.feishin.mobile.ui.components.SongPagerSection(
+                    tracks = state.quickPicks,
+                    sourceName = "Quick picks",
+                    player = player, repo = repo,
+                    nowPlayingId = nowPlaying?.id, isPlaying = isPlaying,
+                    onActions = { onActions(ActionTarget.Track(it)) },
+                    onArtist = onArtist,
                 )
             }
         }
@@ -180,20 +184,27 @@ private fun HomeContent(
             item { AlbumCarousel(state.newest, repo, onAlbum) {} }
         }
         if (state.forgottenAlbums.isNotEmpty() || state.forgottenTracks.isNotEmpty()) {
-            item { SectionHeader(title = "Forgotten favorites") }
+            item {
+                SectionHeader(
+                    title = "Forgotten favorites",
+                    onPlayAll = {
+                        player.playAll(state.forgottenTracks, source = "Forgotten favorites")
+                    },
+                )
+            }
             if (state.forgottenAlbums.isNotEmpty()) {
                 item { AlbumCarousel(state.forgottenAlbums, repo, onAlbum) {} }
             }
-            if (state.forgottenTracks.isNotEmpty()) {
-                items(state.forgottenTracks.take(5), key = { "fg${it.id}" }) { t ->
-                    TrackRow(
-                        track = t, artUrl = repo.coverArtUrl(t.coverArt, 128),
-                        onClick = { player.playAll(state.forgottenTracks, state.forgottenTracks.indexOf(t), source = "Forgotten favorites") },
-                        onActions = { onActions(ActionTarget.Track(t)) },
-                        onArtist = onArtist,
-                        isCurrent = t.id == nowPlaying?.id, isPlaying = isPlaying,
-                    )
-                }
+            // Same pager as Quick picks - one shared component, no duplication.
+            item {
+                com.feishin.mobile.ui.components.SongPagerSection(
+                    tracks = state.forgottenTracks,
+                    sourceName = "Forgotten favorites",
+                    player = player, repo = repo,
+                    nowPlayingId = nowPlaying?.id, isPlaying = isPlaying,
+                    onActions = { onActions(ActionTarget.Track(it)) },
+                    onArtist = onArtist,
+                )
             }
         }
         val artist = state.moreArtist
