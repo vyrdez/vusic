@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -102,6 +103,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.common.Player
 import androidx.palette.graphics.Palette
@@ -833,7 +835,12 @@ private fun QueueList(
             listState.animateScrollToItem(currentIndex.coerceIn(0, displayOrder.size - 1))
         }
     }
-    LazyColumn(state = listState, modifier = modifier.fillMaxWidth()) {
+    // Bottom padding clears the bar so the last row is never hidden under it.
+    LazyColumn(
+        state = listState,
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(bottom = 56.dp),
+    ) {
         items(displayOrder, key = { it.queueId }) { item ->
             val idx = displayOrder.indexOfFirst { it.queueId == item.queueId }
             // animateItem is a LazyItemScope extension: create it here (where
@@ -877,6 +884,8 @@ private fun QueueList(
                         scheme != null -> playingColor(scheme.surfaceText)
                         else -> MaterialTheme.colorScheme.onSurface
                     }
+                    // (colors above are explicit: Unspecified would fall back
+                    // to the dark LocalContentColor and dim these rows)
                     val rowSub = when {
                         isCurrent && scheme != null -> playingColor(scheme.secondary)
                         played && scheme != null -> playingColor(scheme.surfaceSecondary)
@@ -886,8 +895,9 @@ private fun QueueList(
                     Row(
                         placement
                             .fillMaxWidth()
-                            .shadow(if (isDragging) 8.dp else 0.dp, RoundedCornerShape(8.dp))
-                            .background(rowBg, RoundedCornerShape(8.dp))
+                            .shadow(if (isDragging) 8.dp else 0.dp, RoundedCornerShape(16.dp))
+                            // Current row: 16dp rounded container from the artwork scheme.
+                            .background(rowBg, RoundedCornerShape(16.dp))
                             .combinedClickable(
                                 enabled = idx >= 0,
                                 onClick = { if (idx >= 0) onPlayAt(idx) },
@@ -898,12 +908,14 @@ private fun QueueList(
                                     onActions(item.song)
                                 },
                             )
-                            .padding(12.dp, 8.dp),
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         val artUrl = player.coverArtUrl(item.song.coverArt, 128)
                         Box(Modifier.size(56.dp), contentAlignment = Alignment.BottomStart) {
-                            CoverImage(artUrl, item.song.title, modifier = Modifier.size(56.dp), roundedDp = 4.dp)
+                            // 56dp art with 8dp corners (one place, so the
+                            // current-row highlight and the art share a radius).
+                            CoverImage(artUrl, item.song.title, modifier = Modifier.size(56.dp), roundedDp = 8.dp)
                             if (isCurrent && isPlaying) {
                                 // Dark scrim behind the bars: readable on any
                                 // art (see TrackRow).
@@ -926,16 +938,18 @@ private fun QueueList(
                             }
                         }
                         Spacer(Modifier.width(12.dp))
+                        // Both text lines start at the same x (one column).
                         Column(Modifier.weight(1f)) {
                             Text(
                                 item.song.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                fontSize = 16.sp,
                                 fontWeight = if (isCurrent) FontWeight.Bold else null,
                                 color = rowTitle,
                             )
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 "${item.song.artist} • ${formatDuration(item.song.durationSec)}",
-                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 14.sp,
                                 color = rowSub,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
@@ -949,22 +963,28 @@ private fun QueueList(
                             Icon(
                                 Icons.Default.MoreVert,
                                 contentDescription = "Track options",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = rowSub,
                             )
                         }
                         // Immediate drag from the handle: no long-press delay,
                         // and dragging anywhere else never starts a reorder.
-                        Icon(
-                            Icons.Default.DragHandle,
-                            contentDescription = "Reorder",
-                            modifier = Modifier.draggableHandle(
+                        // A 48dp box gives the handle a full-size touch target
+                        // without making the glyph itself huge.
+                        Box(
+                            Modifier.size(48.dp).draggableHandle(
                                 onDragStarted = {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                 },
                                 onDragStopped = { onCommit() },
                             ),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Default.DragHandle,
+                                contentDescription = "Reorder",
+                                tint = rowSub,
+                            )
+                        }
                     }
                 }
             }
@@ -986,35 +1006,58 @@ private fun QueueBottomBar(
     content: Color,
 ) {
     val dim = content.copy(alpha = 0.55f)
+    val scheme = LocalPlayingColors.current
+    // Active toggles get the scheme's primary (contrast-enforced >= 3:1) on a
+    // tonal pill, so "on" is unmistakable next to "off" in both themes.
+    val activeTint = scheme?.let { playingColor(it.primary) } ?: MaterialTheme.colorScheme.primary
+    val activePill = scheme?.let { playingColor(it.container) } ?: MaterialTheme.colorScheme.primaryContainer
+    // OPAQUE scrim: the list must never ghost through the controls.
+    val scrim = scheme?.let { playingColor(it.surfaceBottom) } ?: VusicColors.Surface
     Row(
-        Modifier.fillMaxWidth().padding(top = 4.dp),
+        Modifier
+            .fillMaxWidth()
+            .background(scrim)
+            .padding(top = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        IconButton(onClick = onShuffle, modifier = Modifier.size(48.dp)) {
-            Icon(
-                Icons.Default.Shuffle,
-                contentDescription = if (shuffleOn) "Shuffle on" else "Shuffle off",
-                tint = if (shuffleOn) content else dim,
-            )
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .then(if (shuffleOn) Modifier.background(activePill) else Modifier),
+        ) {
+            IconButton(onClick = onShuffle, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    Icons.Default.Shuffle,
+                    contentDescription = if (shuffleOn) "Shuffle on" else "Shuffle off",
+                    tint = if (shuffleOn) activeTint else dim,
+                )
+            }
         }
         IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Close queue", tint = content)
         }
-        IconButton(onClick = onRepeat, modifier = Modifier.size(48.dp)) {
-            when (repeatMode) {
-                androidx.media3.common.Player.REPEAT_MODE_ONE -> Icon(
-                    Icons.Default.RepeatOne, contentDescription = "Repeat one",
-                    tint = content,
-                )
-                androidx.media3.common.Player.REPEAT_MODE_ALL -> Icon(
-                    Icons.Default.Repeat, contentDescription = "Repeat all",
-                    tint = content,
-                )
-                else -> Icon(
-                    Icons.Default.Repeat, contentDescription = "Repeat off",
-                    tint = dim,
-                )
+        val repeatActive = repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .then(if (repeatActive) Modifier.background(activePill) else Modifier),
+        ) {
+            IconButton(onClick = onRepeat, modifier = Modifier.size(48.dp)) {
+                when (repeatMode) {
+                    androidx.media3.common.Player.REPEAT_MODE_ONE -> Icon(
+                        Icons.Default.RepeatOne, contentDescription = "Repeat one",
+                        tint = activeTint,
+                    )
+                    androidx.media3.common.Player.REPEAT_MODE_ALL -> Icon(
+                        Icons.Default.Repeat, contentDescription = "Repeat all",
+                        tint = activeTint,
+                    )
+                    else -> Icon(
+                        Icons.Default.Repeat, contentDescription = "Repeat off",
+                        tint = dim,
+                    )
+                }
             }
         }
     }
@@ -1044,6 +1087,9 @@ private fun QueueSheet(
     var showSaveDialog by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    // Hoisted: the header (Save pill, secondary line) and the sheet gradient
+    // below both read it, as does each row through the local.
+    val scheme = LocalPlayingColors.current
 
     if (queue.isEmpty()) {
         // The last item is gone: close through the one close path.
@@ -1091,7 +1137,7 @@ private fun QueueSheet(
     // Tinted gradient when the artwork scheme is present, flat surface when
     // the setting is off. Brush either way so the background() overload is
     // unambiguous.
-    val sheetBrush: Brush = LocalPlayingColors.current?.let { s ->
+    val sheetBrush: Brush = scheme?.let { s ->
         Brush.verticalGradient(
             listOf(playingColor(s.surfaceTop), playingColor(s.surfaceBottom)),
         )
@@ -1135,17 +1181,21 @@ private fun QueueSheet(
                 .padding(horizontal = 16.dp),
         ) {
             Spacer(Modifier.height(8.dp))
+            // One standard drag handle at the top.
             Box(
                 Modifier.align(Alignment.CenterHorizontally).width(36.dp).height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)).background(VusicColors.SecondaryText.copy(alpha = 0.5f)),
+                    .clip(RoundedCornerShape(2.dp)).background(content.copy(alpha = 0.5f)),
             )
-            Spacer(Modifier.height(10.dp))
-            // Top row: source title (marquee when long) on the left, a text
-            // Save button on the right. Nothing else lives here.
+            Spacer(Modifier.height(12.dp))
+            // Header: big bold source title on the left; the Radio chip (when
+            // active) and the Save button right-aligned on the same row.
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Large + bold; marquees only when it actually overflows.
                 MarqueeTitle(
                     text = sourceName ?: "Queue (${queue.size})",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                    ),
                     color = content,
                     modifier = Modifier.weight(1f),
                 )
@@ -1162,15 +1212,28 @@ private fun QueueSheet(
                     )
                 }
                 Spacer(Modifier.width(8.dp))
+                // Save pill uses the scheme's primary/onPrimary (contrast
+                // enforced), not a hardcoded white — in Light theme the sheet
+                // is pale, so a white pill would vanish.
                 Text(
                     "Save",
-                    style = MaterialTheme.typography.labelLarge, color = Color.Black,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = scheme?.let { playingColor(it.onPrimary) } ?: MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp)).background(Color.White)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(scheme?.let { playingColor(it.primary) } ?: MaterialTheme.colorScheme.primary)
                         .clickable { showSaveDialog = true }
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
+            // Secondary line: count + total runtime of the queue.
+            Text(
+                "${queue.size} songs · ${formatDuration(queue.sumOf { it.song.durationSec.toLong() }.toInt())}",
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme?.let { playingColor(it.surfaceSecondary) }
+                    ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp),
+            )
             Spacer(Modifier.height(10.dp))
             QueueList(
                 displayOrder = displayOrder,

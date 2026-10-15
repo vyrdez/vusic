@@ -436,6 +436,27 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   in getColorSpace) — all scheme Longs go through Color(Int) now; and rows with
   Color.Unspecified fell back to the dark LocalContentColor, so upcoming queue
   rows rendered dim — every row now sets its colour explicitly.)
+- [x] M6.7d queue restyle
+  (Behaviour untouched: same full-screen sheet over Now Playing, same SheetState
+  machine with exactly two anchors, stable per-entry keys, drag only from the
+  handle, swipe-to-remove, Undo, long-press actions sheet, Radio chip, Save,
+  auto-scroll to current, persisted order; no Clear button. Restyled only.
+  Background is a vertical gradient from the artwork scheme's surface tones
+  (animated on track change), never flat gray/black. Header: large bold source
+  title (marquee only when it overflows), Radio chip + Save pill right-aligned on
+  the same row, a new "N songs · total duration" secondary line, and ONE
+  standard drag handle. Save now uses the scheme's primary/onPrimary instead of
+  hardcoded white — in Light theme the sheet is pale, so a white pill vanished.
+  The 56dp covers moved from 4dp to 8dp corners and both text lines are one
+  column at 16sp/14sp; the drag handle sits in a 48dp touch target. The current
+  row uses a 16dp rounded container from the scheme with the equalizer over a
+  dark scrim; rows before it are dimmed via the scheme's secondary (>= 4.5:1)
+  while upcoming rows are full strength; the ⋮/handle glyphs follow the row
+  colour so they stay visible on the tinted container. Bottom bar: off = dim
+  glyph, on = scheme primary on a tonal pill, over an OPAQUE gradient scrim with
+  56dp list bottom padding so rows never ghost through. Verified in Dark on the
+  emulator; Light verification folded into M6.7e (the Light theme itself was
+  broken until then).)
 - [x] M6.6d M6.5 leftover re-verification (fixes were needed)
   (D1 usage island verified: full-width bar with proportional segments (556 MB
   used renders ~13% against 3.63 GB free), "X used by Vusic, Y free" label,
