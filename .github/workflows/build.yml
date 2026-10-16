@@ -40,11 +40,10 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      # setup-android accepts the SDK licences by default
+      # (accept-android-sdk-licenses: true), so no extra step is needed here.
       - name: Install SDK platform 34
         run: sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-
-      - name: Accept SDK licences
-        run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
 
       - name: Assemble debug, run unit tests and lint
         run: ./gradlew --no-daemon assembleDebug testDebugUnitTest lint
