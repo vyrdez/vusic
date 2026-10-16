@@ -4,10 +4,14 @@
 
 - `keystore/vusic-release.jks` — the release keystore (gitignored).
 - `keystore/keystore.properties` — three lines, no spaces around `=`:
-  `storePassword`, `keyAlias`, `keyPassword`.
-- Back up `D:\Feishin-release-signing\` (keystore copy + `SIGNING-INFO.txt`).
-  NEVER replace the keystore: Android ties updates to the signing
-  certificate, so a new key breaks updates over existing installs.
+  `storePassword`, `keyAlias`, `keyPassword`. See
+  `keystore.properties.example` in the repo root for the format.
+- Keep a copy of the keystore and a `SIGNING-INFO.txt` (alias, validity,
+  SHA-256 fingerprint — never the passwords) somewhere outside the repository,
+  and back it up separately.
+- NEVER replace or regenerate the keystore: Android ties updates to the
+  signing certificate, so a new key means existing installs can never be
+  upgraded in place.
 
 ## Cut a release
 
@@ -32,10 +36,16 @@
    notification, widget, update-over-install
    (`adb install -r` the same file, session must survive), logcat clean of
    tokens/secrets, zero FATAL/ANR. Record pass/fail/not-verified per item.
-6. Copy the finals to `release/` as `Vusic-<version>-arm64-v8a.apk`
-   (phones) and the x86_64 build next to it (emulator), each with a `.sha256`
-   file. Commit them (the `release/` exception below covers APKs).
-7. Tag: `git tag v<version>` on the release commit.
+6. Write the SHA-256 of each final APK into a `.sha256` file next to it:
+   `Get-FileHash <apk> -Algorithm SHA256 | ForEach-Object { $_.Hash.ToLower() + "  " + (Split-Path $_ -Leaf) } > <apk>.sha256`
+7. Verify the signature on both splits before publishing:
+   `apksigner verify --verbose --print-certs <apk>` must show v2/v3 signing and
+   a certificate SHA-256 equal to the one in `SIGNING-INFO.txt`.
+8. Tag: `git tag v<version>` on the release commit, push the tag, then create the
+   GitHub release and attach the APKs and their `.sha256` files:
+   `gh release create v<version> --title "Vusic <version>" --notes-file notes.md <apk> <apk>.sha256 ...`
 
-`release/` is intentionally NOT gitignored (small, versioned artifacts);
-everything under `*/build/` stays ignored.
+APKs are **never committed to git** — `/release/` is gitignored. They exist only
+as GitHub Release assets, which keeps the clone small and lets you re-upload a
+build without a new commit. Screenshot and screen-recording artifacts under
+`docs/` are development-only and gitignored for the same reason.

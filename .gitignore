@@ -1,7 +1,6 @@
 # Android / Gradle
 *.iml
 .gradle/
-/local.properties
 /.idea/
 .DS_Store
 /build/
@@ -10,18 +9,40 @@
 /captures
 .externalNativeBuild
 .cxx/
+.kotlin/
+
+# Local machine configuration (sdk.dir) — never committed.
+/local.properties
 local.properties
-*.apk
-*.aab
-# Release artifacts ARE versioned (small, per docs/RELEASING.md).
-!release/*.apk
-!release/*.sha256
-# Keystore / signing
+
+# Build outputs. Release APKs are published as GitHub Release assets,
+# never stored in the git tree.
+/release/
+
+# Keystore / signing material — never committed, never pushed.
+/keystore/
+keystore.properties
 *.jks
 *.keystore
+*.p12
+*.pfx
+
 # Test config with credentials (never commit live server details)
 nd_test.properties
 
-# Kotlin compiler scratch
-.kotlin/
-keystore/
+# Screenshots / screen recordings. These are development artifacts and are
+# deliberately not part of the public repository. Application resources under
+# src/**/res are build inputs, so they stay exempt.
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.mp4
+!**/src/**/res/**
+
+# OS / editor noise
+Thumbs.db
+*.swp
+.idea/
+*.log

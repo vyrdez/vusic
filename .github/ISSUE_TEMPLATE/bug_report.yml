@@ -1,0 +1,86 @@
+name: Bug report
+
+description: Something in Vusic does not work as expected
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Now Playing
+        2. Tap the queue button
+        3. Swipe a track left
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logcat output
+      description: Optional. `adb logcat -d *:E` filtered to your app's package.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Vusic version
+      description: Settings > About (for example `Vusic 1.0.0 (build 2)`).
+      placeholder: "Vusic 1.0.0 (build 2)"
+    validations:
+      required: true
+
+  - type: input
+    id: android-version
+    attributes:
+      label: Android version and device
+      description: Settings > About > Android version, plus the device model.
+      placeholder: "Android 14, Pixel 7"
+    validations:
+      required: true
+
+  - type: input
+    id: server-version
+    attributes:
+      label: Navidrome server version
+      description: Helps a lot when playback or library data is involved.
+      placeholder: "0.52.3"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area is affected?
+      options:
+        - Playback / queue
+        - Home
+        - Library
+        - Search
+        - Downloads / offline
+        - Android Auto
+        - Home screen widget
+        - Notification / lock screen
+        - Settings
+        - Login / account
+        - Something else
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues for this.
+          required: true

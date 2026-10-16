@@ -1,0 +1,27 @@
+# Normalize line endings: check text in as LF, convert on checkout.
+* text=auto eol=lf
+
+# Windows scripts and Gradle launcher must stay CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+gradlew text eol=lf
+gradlew.bat text eol=crlf
+
+# Never mangle binaries.
+*.apk binary
+*.aab binary
+*.jar binary
+*.zip binary
+*.so binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.mp4 binary
+*.ttf binary
+*.otf binary
+
+# ProGuard / manifest files
+*.pro text
+*.cfg text

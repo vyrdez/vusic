@@ -819,11 +819,13 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   33:99:ED:FC:E8:D6:82:E4:B1:99:D8:0A:A2:6D:6B:09:2B:78:EF:BE:C9:29:77:F9:49:1F:27:97:BD:CC:66:2C.)
 
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
-`testDebugUnitTest` 295/295 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
-LIVE on-device test (emulator Pixel 7, API 34) against server.example.com: login OK,
+`testDebugUnitTest` 295/295 pass.
+LIVE on-device test (emulator Pixel 7, API 34) against a live Navidrome
+server: login OK,
 Home with real albums/art, album detail (17 tracks), streaming playback confirmed
-(mini player + Now Playing 0:33/3:42 + audio focus), zero FATAL crashes. Probe script
-([local user]\AppData\Local\Temp\opencode\nd_probe.ps1, creds via env only, NOT in repo):
+(mini player + Now Playing 0:33/3:42 + audio focus), zero FATAL crashes.
+Server API probe (kept outside the repository, credentials via environment
+variables only):
 ping/albumLists/artists(673)/search/album/stream-HEAD-200-flac/coverArt-JPEG/lyrics/
 playlists/genres/starred2 all OK. No adb physical device; emulator AVD `feishin_test`.
 
