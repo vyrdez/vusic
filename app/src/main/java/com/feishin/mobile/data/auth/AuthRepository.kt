@@ -24,7 +24,9 @@ class AuthRepository @Inject constructor(
     private val store: CredentialsStore,
     private val api: SubsonicApi,
 ) {
-    /** Null = logged out, non-null = logged in. Read synchronously at startup: no launch flicker. */
+    /** Null = logged out, non-null = logged in. Populated by preload() before
+     *  `ready` flips, so the gated UI never sees the initial null: no launch
+     *  flicker. */
     val loginState: StateFlow<Credentials?> = store.state
 
     private val _ready = MutableStateFlow(false)
@@ -33,9 +35,12 @@ class AuthRepository @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + com.feishin.mobile.core.common.CrashGuard.handler)
 
     init {
-        // Backing prefs were read synchronously in the store constructor, so this
-        // flips true before the first frame: no splash flash in practice.
-        scope.launch { _ready.value = true }
+        // Credentials disk read happens here on IO (StrictMode-clean), and
+        // AppNav holds a blank gate on `ready` until it completes.
+        scope.launch {
+            store.preload()
+            _ready.value = true
+        }
     }
 
     /**

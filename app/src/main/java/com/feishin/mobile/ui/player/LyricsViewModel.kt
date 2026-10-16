@@ -29,7 +29,13 @@ sealed interface LyricsUi {
 class LyricsViewModel @Inject constructor(
     private val repo: MusicDataRepository,
 ) : ViewModel() {
-    private val cache = LinkedHashMap<String, LyricsUi>(32)
+    private val cache = object : LinkedHashMap<String, LyricsUi>(64, 0.75f, true) {
+        // Bounded: lyrics are a few KB each and only the current track's
+        // matters; 64 recent entries is plenty and the map can never grow
+        // without bound over a long session.
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, LyricsUi>): Boolean =
+            size > 64
+    }
     private val _ui = MutableStateFlow<LyricsUi>(LyricsUi.None)
     val ui: StateFlow<LyricsUi> = _ui.asStateFlow()
     private var job: Job? = null

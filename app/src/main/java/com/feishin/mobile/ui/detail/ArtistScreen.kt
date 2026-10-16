@@ -42,7 +42,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -106,11 +107,11 @@ fun ArtistScreen(
     onActions: (ActionTarget) -> Unit,
     onBack: () -> Unit = {},
 ) {
-    val ui by vm.ui.collectAsState()
-    val info by vm.info.collectAsState()
-    val topSongsUi by vm.topSongs.collectAsState()
-    val nowPlaying by player.current.collectAsState()
-    val isPlaying by player.isPlaying.collectAsState()
+    val ui by vm.ui.collectAsStateWithLifecycle()
+    val info by vm.info.collectAsStateWithLifecycle()
+    val topSongsUi by vm.topSongs.collectAsStateWithLifecycle()
+    val nowPlaying by player.current.collectAsStateWithLifecycle()
+    val isPlaying by player.isPlaying.collectAsStateWithLifecycle()
     when (val s = ui) {
         is UiState.Loading -> LoadingBox()
         is UiState.Error -> ErrorBox(s.message, vm::refresh)
@@ -118,7 +119,7 @@ fun ArtistScreen(
         is UiState.Data -> {
             val a = s.value
             LaunchedEffect(a.id, a.name) { vm.loadExtras(a.name) }
-            val refreshing by vm.refreshing.collectAsState()
+            val refreshing by vm.refreshing.collectAsStateWithLifecycle()
             var topExpanded by remember(a.id) { mutableStateOf(false) }
             val topBar = LocalTopBarController.current
             // Edge-to-edge hero: this screen draws its own back button over the
@@ -130,11 +131,17 @@ fun ArtistScreen(
             PullToRefreshBox(isRefreshing = refreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
                 val listState = rememberSavableListState()
                 // Publish the artist name so it fades into the shared top bar.
-                LaunchedEffect(a.name, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
+                // Derived once per scroll change instead of re-reading the
+                // frequently-changing scroll state on every composition.
+                val barScrolled by remember {
+                    derivedStateOf {
+                        listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 200
+                    }
+                }
+                LaunchedEffect(a.name, barScrolled) {
                     topBar.title = a.name
                     // The hero is ~300dp tall: the title appears once it is gone.
-                    topBar.scrolled = listState.firstVisibleItemIndex > 0 ||
-                        listState.firstVisibleItemScrollOffset > 200
+                    topBar.scrolled = barScrolled
                 }
                 // Collapsing hero.
                 //
@@ -146,7 +153,9 @@ fun ArtistScreen(
                 // is exactly the "hard to scroll up" report. With a fixed height
                 // the list offset maps 1:1 to content movement in both
                 // directions.
-                val scrollPx = listState.firstVisibleItemScrollOffset.toFloat()
+                val scrollPx by remember {
+                    derivedStateOf { listState.firstVisibleItemScrollOffset.toFloat() }
+                }
                 val topInset = androidx.compose.foundation.layout.WindowInsets.statusBars
                     .asPaddingValues().calculateTopPadding()
                 val heroHeight = 340.dp + topInset
@@ -249,7 +258,7 @@ fun ArtistScreen(
                         item { SectionHeader(title = "Fans might also like") }
                         item {
                             LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
-                                items(similar, key = { it.id }) { sa ->
+                                items(similar, key = { it.id }, contentType = { "item" }) { sa ->
                                     Column(
                                         Modifier.width(110.dp)
                                             .clip(RoundedCornerShape(8.dp))
@@ -302,7 +311,9 @@ fun ArtistScreen(
                     // entirely (past that point firstVisibleItemScrollOffset
                     // resets to the next item, so the offset alone would read
                     // as "back at the top" and the bar would vanish).
-                    val heroGone = listState.firstVisibleItemIndex > 0
+                    val heroGone by remember {
+                        derivedStateOf { listState.firstVisibleItemIndex > 0 }
+                    }
                     val barAlpha = if (heroGone) {
                         1f
                     } else {

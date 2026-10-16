@@ -38,7 +38,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -122,11 +122,11 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     var actionsTarget by remember { mutableStateOf<ActionTarget?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val navScope = rememberCoroutineScope()
-    val username by main.auth.loginState.collectAsState()
+    val username by main.auth.loginState.collectAsStateWithLifecycle()
     val topBar = remember { TopBarController() }
 
     // Widget cover tap (cold start or warm): open Now Playing once per nudge.
-    val nudge by com.feishin.mobile.ui.components.NowPlayingNudge.requests.collectAsState()
+    val nudge by com.feishin.mobile.ui.components.NowPlayingNudge.requests.collectAsStateWithLifecycle()
     LaunchedEffect(nudge) { if (nudge > 0) showNowPlaying = true }
 
     // Home widget: event-driven pushes on track/play-state/queue/favorites
@@ -145,12 +145,12 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     // Empty queue => nothing playing => the Now Playing overlay must go away.
     // Without this, clearing the queue leaves its transparent "Nothing playing"
     // placeholder stretched over every screen.
-    val currentTrack by main.player.current.collectAsState()
+    val currentTrack by main.player.current.collectAsStateWithLifecycle()
     LaunchedEffect(currentTrack) { if (currentTrack == null) showNowPlaying = false }
 
     // Replay queued scrobbles/stars as soon as the network comes back.
-    val online by main.network.isOnline.collectAsState()
-    val pendingUploads by main.offlineSync.pendingCount.collectAsState(initial = 0)
+    val online by main.network.isOnline.collectAsStateWithLifecycle()
+    val pendingUploads by main.offlineSync.pendingCount.collectAsStateWithLifecycle(initialValue = 0)
     val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(online, pendingUploads) {
         if (online && pendingUploads > 0) {
@@ -161,7 +161,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     // Artwork color scheme for the current track, shared by current-row
     // highlights, the mini player, the queue and Now Playing. Null when the
     // setting is off or nothing plays: consumers fall back to the theme pair.
-    val schemeSettings by main.settings.flow.collectAsState(initial = null)
+    val schemeSettings by main.settings.flow.collectAsStateWithLifecycle(initialValue = null)
     val schemeDark = com.feishin.mobile.ui.theme.resolveDark(
         schemeSettings?.theme,
         androidx.compose.foundation.isSystemInDarkTheme(),
@@ -234,7 +234,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 // padding with the card instead of jumping. The claim lives
                 // INSIDE the lists (via LocalMiniClearance), never as a spacer
                 // on the NavHost, so items scroll behind the card.
-                val queueItems by main.player.queue.collectAsState(initial = emptyList())
+                val queueItems by main.player.queue.collectAsStateWithLifecycle(initialValue = emptyList())
                 val miniClaim by androidx.compose.animation.core.animateDpAsState(
                     targetValue = if (queueItems.isEmpty()) {
                         0.dp
@@ -257,7 +257,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     ) {
                     // Effective offline: manual toggle, or auto mode following
                     // the live network. The banner respects "Show offline chip".
-                    val settingsState by main.settings.flow.collectAsState(initial = null)
+                    val settingsState by main.settings.flow.collectAsStateWithLifecycle(initialValue = null)
                     val effectiveOffline = settingsState?.let { s ->
                         s.offlineMode || (s.autoOffline && !online)
                     } == true

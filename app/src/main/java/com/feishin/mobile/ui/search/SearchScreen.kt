@@ -30,7 +30,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -107,15 +108,15 @@ fun SearchScreen(
     onActions: (ActionTarget) -> Unit,
     onBack: (() -> Unit)? = null,
 ) {
-    val q by vm.query.collectAsState()
-    val filter by vm.filter.collectAsState()
-    val ui by vm.ui.collectAsState()
-    val visible by vm.visibleCount.collectAsState()
-    val songsExpanded by vm.songsExpanded.collectAsState()
-    val settingsState by settings.flow.collectAsState(initial = null)
-    val offlineNotice by vm.offlineNotice.collectAsState()
-    val nowPlaying by player.current.collectAsState()
-    val isPlaying by player.isPlaying.collectAsState()
+    val q by vm.query.collectAsStateWithLifecycle()
+    val filter by vm.filter.collectAsStateWithLifecycle()
+    val ui by vm.ui.collectAsStateWithLifecycle()
+    val visible by vm.visibleCount.collectAsStateWithLifecycle()
+    val songsExpanded by vm.songsExpanded.collectAsStateWithLifecycle()
+    val settingsState by settings.flow.collectAsStateWithLifecycle(initialValue = null)
+    val offlineNotice by vm.offlineNotice.collectAsStateWithLifecycle()
+    val nowPlaying by player.current.collectAsStateWithLifecycle()
+    val isPlaying by player.isPlaying.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -243,7 +244,7 @@ private fun RecentSearches(
         TextButton(onClick = onClearAll) { Text("Clear all") }
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current)) {
-        items(recent, key = { "rs$it" }) { r ->
+        items(recent, key = { "rs$it" }, contentType = { "item" }) { r ->
             Row(
                 Modifier.fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
@@ -375,10 +376,14 @@ private fun SingleTypeResults(
 ) {
     val listState = rememberSavableListState()
     // Infinite scroll: reveal the next page as the end approaches.
-    val atEnd = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.let { info ->
-        val total = listState.layoutInfo.totalItemsCount
-        total > 0 && info.index >= total - 4
-    } == true
+    val atEnd by remember {
+        derivedStateOf {
+            listState.layoutInfo.visibleItemsInfo.lastOrNull()?.let { info ->
+                val total = listState.layoutInfo.totalItemsCount
+                total > 0 && info.index >= total - 4
+            } == true
+        }
+    }
     LaunchedEffect(atEnd, visible) { if (atEnd) onShowMore() }
     // Same duplicate-id guard as AllResults above: render and play from the
     // deduped lists so keys stay unique and indices match.

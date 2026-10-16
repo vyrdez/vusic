@@ -36,7 +36,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -97,18 +98,18 @@ fun LibraryScreen(
     onOpenDownloads: () -> Unit,
     onActions: (ActionTarget) -> Unit,
 ) {
-    val tab by vm.tab.collectAsState()
-    val layouts by vm.layouts.collectAsState()
-    val sorts by vm.sorts.collectAsState()
-    val queries by vm.queries.collectAsState()
+    val tab by vm.tab.collectAsStateWithLifecycle()
+    val layouts by vm.layouts.collectAsStateWithLifecycle()
+    val sorts by vm.sorts.collectAsStateWithLifecycle()
+    val queries by vm.queries.collectAsStateWithLifecycle()
     // Read the mode from the collected map (subscribes to changes): reading
     // vm.layoutFor() here would sample StateFlow.value without subscribing,
     // so the icon and layout would never update on toggle.
     val grid = (layouts[tab] ?: LayoutMode.GRID) == LayoutMode.GRID
     var showSortSheet by remember { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
-    val nowPlaying by player.current.collectAsState()
-    val isPlaying by player.isPlaying.collectAsState()
+    val nowPlaying by player.current.collectAsStateWithLifecycle()
+    val isPlaying by player.isPlaying.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val query = queries[tab].orEmpty()
 
@@ -158,7 +159,7 @@ fun LibraryScreen(
         LibraryPullToRefresh(vm, tab) {
             when (tab) {
                 LibraryTab.ALBUMS -> {
-                    val ui by vm.albums.collectAsState()
+                    val ui by vm.albums.collectAsStateWithLifecycle()
                     when (val s = ui) {
                         is UiState.Loading -> com.feishin.mobile.ui.LoadingBox()
                         is UiState.Error -> ErrorState(message = s.message, onRetry = { vm.loadAlbums(true) })
@@ -169,25 +170,33 @@ fun LibraryScreen(
                                 EmptyState("No albums match \"$query\"")
                             } else if (grid) {
                                 val gridState = rememberSavableGridState()
-                                val atEnd = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
-                                    ?.let { it >= shown.size - 6 } == true
+                                val atEnd by remember {
+                                    derivedStateOf {
+                                        gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+                                            ?.let { it >= shown.size - 6 } == true
+                                    }
+                                }
                                 LaunchedEffect(atEnd, shown.size) { if (atEnd) vm.loadAlbums() }
                                 LazyVerticalGrid(GridCells.Fixed(2), Modifier.fillMaxSize(), state = gridState, contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, VusicSpacing.ContentBottom + LocalMiniClearance.current)) {
-                                    items(shown, key = { it.id }) { a ->
+                                    items(shown, key = { it.id }, contentType = { "item" }) { a ->
                                         AlbumCard(a, repo.coverArtUrl(a.coverArt, 300), onClick = { onAlbum(a.id) })
                                     }
                                 }
                             } else {
                                 val listState = rememberSavableListState()
-                                val atEnd = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
-                                    ?.let { it >= shown.size - 6 } == true
+                                val atEnd by remember {
+                                    derivedStateOf {
+                                        listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+                                            ?.let { it >= shown.size - 6 } == true
+                                    }
+                                }
                                 LaunchedEffect(atEnd, shown.size) { if (atEnd) vm.loadAlbums() }
                                 LazyColumn(
                                     Modifier.fillMaxSize(),
                                     state = listState,
                                     contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
                                 ) {
-                                    items(shown, key = { it.id }) { a ->
+                                    items(shown, key = { it.id }, contentType = { "item" }) { a ->
                                     Row(
                                         Modifier.fillMaxWidth()
                                             .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
@@ -216,7 +225,7 @@ fun LibraryScreen(
                 }
                 }
                 LibraryTab.ARTISTS -> {
-                    val ui by vm.artists.collectAsState()
+                    val ui by vm.artists.collectAsStateWithLifecycle()
                     when (val s = ui) {
                         is UiState.Loading -> com.feishin.mobile.ui.LoadingBox()
                         is UiState.Error -> ErrorState(s.message, vm::refresh)
@@ -232,7 +241,7 @@ fun LibraryScreen(
                                     state = rememberSavableGridState(),
                                     contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, VusicSpacing.ContentBottom + LocalMiniClearance.current),
                                 ) {
-                                    items(shown, key = { it.id }) { a ->
+                                    items(shown, key = { it.id }, contentType = { "item" }) { a ->
                                         ArtistPhotoCard(a, photoUrl = vm.artistPhotoUrl(a), repo = repo, onClick = { onArtist(a.id) })
                                         LaunchedEffect(a.id) { vm.prefetchArtistPhoto(a) }
                                     }
@@ -243,7 +252,7 @@ fun LibraryScreen(
                                     state = rememberSavableListState(),
                                     contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
                                 ) {
-                                    items(shown, key = { it.id }) { a ->
+                                    items(shown, key = { it.id }, contentType = { "item" }) { a ->
                                         ArtistPhotoRow(a, photoUrl = vm.artistPhotoUrl(a), repo = repo, onClick = { onArtist(a.id) })
                                         LaunchedEffect(a.id) { vm.prefetchArtistPhoto(a) }
                                     }
@@ -253,7 +262,7 @@ fun LibraryScreen(
                     }
                 }
                 LibraryTab.SONGS -> {
-                    val ui by vm.songs.collectAsState()
+                    val ui by vm.songs.collectAsStateWithLifecycle()
                     when (val s = ui) {
                         is UiState.Loading -> com.feishin.mobile.ui.LoadingBox()
                         is UiState.Error -> ErrorState(s.message, vm::refresh)
@@ -267,7 +276,7 @@ fun LibraryScreen(
                                     GridCells.Fixed(2), Modifier.fillMaxSize(),
                                     contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, VusicSpacing.ContentBottom + LocalMiniClearance.current),
                                 ) {
-                                    items(shown, key = { it.id }) { song ->
+                                    items(shown, key = { it.id }, contentType = { "item" }) { song ->
                                         Box(Modifier.animateItem()) {
                                             SongGridCell(
                                                 song = song, artUrl = repo.coverArtUrl(song.coverArt, 300),
@@ -283,7 +292,7 @@ fun LibraryScreen(
                                     state = rememberSavableListState(),
                                     contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
                                 ) {
-                                    items(shown, key = { it.id }) { song ->
+                                    items(shown, key = { it.id }, contentType = { "item" }) { song ->
                                         TrackRow(
                                             track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),
                                             onClick = { player.playAll(shown, shown.indexOf(song), source = "Songs") },
@@ -298,10 +307,10 @@ fun LibraryScreen(
                     }
                 }
                 LibraryTab.PLAYLISTS -> {
-                    val ui by vm.playlists.collectAsState()
-                    val favsUi by vm.favs.collectAsState()
+                    val ui by vm.playlists.collectAsStateWithLifecycle()
+                    val favsUi by vm.favs.collectAsStateWithLifecycle()
                     val favTracks = (favsUi as? UiState.Data)?.value?.tracks.orEmpty()
-                    val cached by vm.cached.collectAsState()
+                    val cached by vm.cached.collectAsStateWithLifecycle()
                     when (val s = ui) {
                         is UiState.Loading -> com.feishin.mobile.ui.LoadingBox()
                         is UiState.Error -> ErrorState(s.message, vm::refresh)
@@ -344,7 +353,7 @@ fun LibraryScreen(
                                     if (shown.isEmpty() && query.isNotBlank()) {
                                         item { EmptyState("No playlists match \"$query\"") }
                                     }
-                                    items(shown, key = { it.id }) { p ->
+                                    items(shown, key = { it.id }, contentType = { "item" }) { p ->
                                         PlaylistGridCell(
                                             name = p.name, count = "${p.songCount} songs",
                                             cover = PlaylistCover.select(p.coverArt, emptyList()),
@@ -378,7 +387,7 @@ fun LibraryScreen(
                                 if (shown.isEmpty() && query.isNotBlank()) {
                                     item { EmptyState("No playlists match \"$query\"") }
                                 }
-                                items(shown, key = { it.id }) { p ->
+                                items(shown, key = { it.id }, contentType = { "item" }) { p ->
                                 Row(
                                     Modifier.fillMaxWidth()
                                         .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
@@ -409,7 +418,7 @@ fun LibraryScreen(
                 }
                 }
                 LibraryTab.FAVORITES -> {
-                    val ui by vm.favs.collectAsState()
+                    val ui by vm.favs.collectAsStateWithLifecycle()
                     when (val s = ui) {
                         is UiState.Loading -> com.feishin.mobile.ui.LoadingBox()
                         is UiState.Error -> ErrorState(s.message, vm::refresh)
@@ -522,7 +531,7 @@ private fun DownloadsTab(
     onManage: () -> Unit,
     onActions: (ActionTarget) -> Unit,
 ) {
-    val all by downloads.downloads.collectAsState(initial = emptyList())
+    val all by downloads.downloads.collectAsStateWithLifecycle(initialValue = emptyList())
     val done = all.filter { it.statusEnum == com.feishin.mobile.data.db.DownloadStatus.COMPLETED }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     if (all.isEmpty()) {
@@ -548,7 +557,7 @@ private fun DownloadsTab(
                     com.feishin.mobile.ui.settings.SettingsActionButton(label = "Manage", onClick = onManage)
                 }
             }
-            items(done, key = { it.songId }) { entity ->
+            items(done, key = { it.songId }, contentType = { "item" }) { entity ->
                 SongGridCell(
                     song = entity.toDomainTrack(),
                     artUrl = repo.coverArtUrl(entity.coverArt, 300),
@@ -576,7 +585,7 @@ private fun DownloadsTab(
                 com.feishin.mobile.ui.settings.SettingsActionButton(label = "Manage", onClick = onManage)
             }
         }
-        items(done, key = { it.songId }) { entity ->
+        items(done, key = { it.songId }, contentType = { "item" }) { entity ->
             TrackRow(
                 track = entity.toDomainTrack(),
                 artUrl = repo.coverArtUrl(entity.coverArt, 128),
@@ -718,11 +727,11 @@ private fun LibraryPullToRefresh(
     tab: LibraryTab,
     content: @Composable () -> Unit,
 ) {
-    val albums by vm.albums.collectAsState()
-    val artists by vm.artists.collectAsState()
-    val playlists by vm.playlists.collectAsState()
-    val favs by vm.favs.collectAsState()
-    val songs by vm.songs.collectAsState()
+    val albums by vm.albums.collectAsStateWithLifecycle()
+    val artists by vm.artists.collectAsStateWithLifecycle()
+    val playlists by vm.playlists.collectAsStateWithLifecycle()
+    val favs by vm.favs.collectAsStateWithLifecycle()
+    val songs by vm.songs.collectAsStateWithLifecycle()
     val refreshing = when (tab) {
         LibraryTab.ALBUMS -> albums is UiState.Loading
         LibraryTab.ARTISTS -> artists is UiState.Loading

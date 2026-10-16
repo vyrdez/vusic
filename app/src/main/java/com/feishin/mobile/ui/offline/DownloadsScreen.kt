@@ -31,7 +31,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -62,7 +62,7 @@ fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRep
         topBar.alwaysShowTitle = true
         vm.refreshCoverSize()
     }
-    val ui by vm.ui.collectAsState()
+    val ui by vm.ui.collectAsStateWithLifecycle()
     // Cover art lands after the song finishes, so recompute when the list changes.
     LaunchedEffect(ui.rows.size, ui.totalBytes) { vm.refreshCoverSize() }
     val active = ui.rows.filter {
@@ -141,7 +141,7 @@ fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRep
         }
         if (done.isNotEmpty()) {
             item { SectionLabel("Downloaded (${done.size})") }
-            items(done, key = { it.songId }) { row -> DoneRow(row, repo) { vm.remove(row.songId) } }
+            items(done, key = { it.songId }, contentType = { "item" }) { row -> DoneRow(row, repo) { vm.remove(row.songId) } }
         }
         if (active.isEmpty() && done.isEmpty() && failed.isEmpty()) {
             item { EmptyState("No downloads yet. Use the download button on any song, album or playlist.") }

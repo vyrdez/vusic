@@ -28,13 +28,13 @@ import com.feishin.mobile.ui.theme.VusicColors
 @Composable
 fun ArtistAvatar(
     name: String,
+    modifier: Modifier = Modifier,
     /** Provider image (already resolved to a URL), if any. */
     infoImageUrl: String? = null,
     /** Artist cover-art URL, if any. */
     coverArtUrl: String? = null,
     /** First album's cover-art URL, if any. */
     firstAlbumCoverUrl: String? = null,
-    modifier: Modifier = Modifier,
     square: Boolean = false,
 ) {
     val shape: Shape = if (square) RoundedCornerShape(12.dp) else CircleShape

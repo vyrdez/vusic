@@ -39,7 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -91,7 +91,7 @@ fun HomeScreen(
     onActions: (ActionTarget) -> Unit,
     username: String,
 ) {
-    val ui by vm.ui.collectAsState()
+    val ui by vm.ui.collectAsStateWithLifecycle()
     val state = ui
     PullToRefreshBox(isRefreshing = state.loading, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
         when {
@@ -126,8 +126,8 @@ private fun HomeContent(
     username: String,
 ) {
     val scope = rememberCoroutineScope()
-    val nowPlaying by player.current.collectAsState()
-    val isPlaying by player.isPlaying.collectAsState()
+    val nowPlaying by player.current.collectAsStateWithLifecycle()
+    val isPlaying by player.isPlaying.collectAsStateWithLifecycle()
     LazyColumn(
         Modifier.fillMaxSize(),
         state = rememberSavableListState(),
@@ -225,7 +225,7 @@ private fun HomeContent(
             item { SectionHeader(title = "Mixed for you") }
             item {
                 LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(state.mixes, key = { it.name }) { mix ->
+                    items(state.mixes, key = { it.name }, contentType = { "item" }) { mix ->
                         MixCard(mix = mix, repo = repo, onClick = { player.playAll(mix.tracks, source = mix.name) })
                     }
                 }
@@ -420,7 +420,7 @@ private fun AlbumCarousel(
 ) {
     LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
         // Server lists can repeat an id; duplicate lazy keys crash the list.
-        items(albums.distinctBy { it.id }, key = { it.id }) { a ->
+        items(albums.distinctBy { it.id }, key = { it.id }, contentType = { "item" }) { a ->
             AlbumCard(a, repo.coverArtUrl(a.coverArt, 300), onClick = { onAlbum(a.id) }, modifier = Modifier.width(140.dp))
         }
     }

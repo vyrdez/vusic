@@ -30,7 +30,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,8 +55,8 @@ private val ButtonShape = RoundedCornerShape(12.dp)
 
 @Composable
 fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
-    val ui by vm.ui.collectAsState()
-    val settings by vm.settings.flow.collectAsState(initial = null)
+    val ui by vm.ui.collectAsStateWithLifecycle()
+    val settings by vm.settings.flow.collectAsStateWithLifecycle(initialValue = null)
     // Survive rotation; the password is intentionally kept out of saved state so
     // process death never persists it to disk (user retypes it).
     var url by rememberSaveable { mutableStateOf("") }

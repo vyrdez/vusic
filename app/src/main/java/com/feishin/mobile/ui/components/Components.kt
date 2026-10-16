@@ -165,11 +165,11 @@ fun ScreenTitleRow(
 @Composable
 fun SectionHeader(
     title: String,
+    modifier: Modifier = Modifier,
     label: String? = null,
     avatarUrl: String? = null,
     onPlayAll: (() -> Unit)? = null,
     onOpen: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     Row(
         modifier
@@ -269,13 +269,13 @@ fun TrackRow(
     artUrl: String?,
     onClick: () -> Unit,
     onActions: () -> Unit,
+    modifier: Modifier = Modifier,
     onRemove: (() -> Unit)? = null,
     onArtist: ((String) -> Unit)? = null,
     isCurrent: Boolean = false,
     isPlaying: Boolean = false,
     showMenuButton: Boolean = true,
     downloadState: com.feishin.mobile.data.db.DownloadEntity? = null,
-    modifier: Modifier = Modifier,
 ) {
     // Current-track highlight comes from the artwork scheme when present
     // (container + onContainer, both contrast-enforced), else the theme pair.
@@ -408,7 +408,7 @@ fun FilterChipRow(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(options, key = { it }) { option ->
+        items(options, key = { it }, contentType = { "item" }) { option ->
             val isSel = option == selected
             AssistChip(
                 onClick = { onSelect(option) },

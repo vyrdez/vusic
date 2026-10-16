@@ -2,7 +2,7 @@ package com.feishin.mobile.widget
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -36,13 +36,14 @@ fun WidgetPushEffect(main: MainViewModel) {
     val entry = remember(app) {
         EntryPointAccessors.fromApplication(app, WidgetDepsEntry::class.java)
     }
-    val current by main.player.current.collectAsState()
-    val isPlaying by main.player.isPlaying.collectAsState()
-    val queue by main.player.queue.collectAsState()
-    val favTracks by entry.favorites().tracks.collectAsState()
-    val favLoaded by entry.favorites().loaded.collectAsState()
+    val current by main.player.current.collectAsStateWithLifecycle()
+    val isPlaying by main.player.isPlaying.collectAsStateWithLifecycle()
+    val queue by main.player.queue.collectAsStateWithLifecycle()
+    val favTracks by entry.favorites().tracks.collectAsStateWithLifecycle()
+    val favLoaded by entry.favorites().loaded.collectAsStateWithLifecycle()
     LaunchedEffect(current?.id, isPlaying, queue.isEmpty(), favTracks, favLoaded) {
-        val saved = WidgetStateStore(app).load()
+        // Disk reads (DataStore) stay off the main thread (StrictMode).
+        val saved = withContext(Dispatchers.IO) { WidgetStateStore(app).load() }
         val state = WidgetStateMapper.map(
             queueEmpty = queue.isEmpty(),
             current = current,

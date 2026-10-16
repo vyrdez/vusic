@@ -51,7 +51,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -239,8 +239,8 @@ private fun TrackSheetContent(
     // Guarded optimistic star + convergence to the server collection, like the
     // Now Playing chip: the passed track snapshot can be stale.
     var starring by remember(track.id) { mutableStateOf(false) }
-    val favTracks by favs.tracks.collectAsState()
-    val favsLoaded by favs.loaded.collectAsState()
+    val favTracks by favs.tracks.collectAsStateWithLifecycle()
+    val favsLoaded by favs.loaded.collectAsStateWithLifecycle()
     LaunchedEffect(track.id, favTracks, favsLoaded) {
         if (favsLoaded && !starring) {
             starred = favTracks.any { it.id == track.id }
@@ -248,7 +248,7 @@ private fun TrackSheetContent(
     }
     var showPicker by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
-    val pins by settings.flow.collectAsState(initial = null)
+    val pins by settings.flow.collectAsStateWithLifecycle(initialValue = null)
     val pinKey = speedDialKey("album", track.albumId ?: track.album)
     val pinned = pins?.pins?.contains(pinKey) == true
 
@@ -365,7 +365,7 @@ private fun AlbumSheetContent(
     var showPicker by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<AlbumDetail?>(null) }
-    val pins by settings.flow.collectAsState(initial = null)
+    val pins by settings.flow.collectAsStateWithLifecycle(initialValue = null)
     val pinKey = speedDialKey("album", album.id)
     val pinned = pins?.pins?.contains(pinKey) == true
 
@@ -585,7 +585,7 @@ private fun PlaylistSheetContent(
     val context = LocalContext.current
     var showPicker by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<PlaylistDetail?>(null) }
-    val pins by settings.flow.collectAsState(initial = null)
+    val pins by settings.flow.collectAsStateWithLifecycle(initialValue = null)
     val pinKey = speedDialKey("playlist", playlist.id)
     val pinned = pins?.pins?.contains(pinKey) == true
 
@@ -751,7 +751,7 @@ fun PlaylistPickerSheet(
                 Text("No playlists yet — create one above.", color = VusicColors.SecondaryText, modifier = Modifier.padding(vertical = 12.dp))
             } else {
                 LazyColumn(Modifier.fillMaxWidth()) {
-                    items(list, key = { it.id }) { p ->
+                    items(list, key = { it.id }, contentType = { "item" }) { p ->
                         Row(
                             Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -862,7 +862,7 @@ private fun DownloadTrackRow(
     messenger: UiMessenger,
     scope: kotlinx.coroutines.CoroutineScope,
 ) {
-    val state by downloads.observeSong(track.id).collectAsState(initial = null)
+    val state by downloads.observeSong(track.id).collectAsStateWithLifecycle(initialValue = null)
     val status = state?.statusEnum
     val label = when (status) {
         com.feishin.mobile.data.db.DownloadStatus.COMPLETED -> "Remove download"

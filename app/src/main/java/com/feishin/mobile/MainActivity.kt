@@ -13,7 +13,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
         consumeNowPlayingIntent(intent)
         setContent {
             val main: MainViewModel = hiltViewModel()
-            val settings by main.settings.flow.collectAsState(initial = null)
+            val settings by main.settings.flow.collectAsStateWithLifecycle(initialValue = null)
             // System follows the OS live: isSystemInDarkTheme() is a
             // configuration read, so the activity recomposes (and re-themes)
             // the moment the OS switches, with no restart.

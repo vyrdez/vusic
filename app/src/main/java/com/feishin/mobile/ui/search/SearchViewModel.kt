@@ -180,7 +180,12 @@ class SearchViewModel @Inject constructor(
                     ?.firstOrNull { it.coverArt?.isNotBlank() == true }?.coverArt
                     ?.let { repo.coverArtUrl(it, 256) }
             } else null
-            _artistImages.value = _artistImages.value + (artist.id to (info ?: albumCover.orEmpty()))
+            _artistImages.value = (_artistImages.value + (artist.id to (info ?: albumCover.orEmpty())))
+                // Bounded FIFO: `+` on a LinkedHashMap preserves insertion
+                // order, so dropping the first key evicts the oldest entry.
+                // Id->url strings are tiny, but the map must not grow without
+                // bound over a long session.
+                .let { grown -> if (grown.size > 512) grown - grown.keys.first() else grown }
         }
     }
     fun visibleAlbums(res: SearchResults, visible: Int): List<Album> = res.albums.take(visible)

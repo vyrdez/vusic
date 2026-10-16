@@ -15,22 +15,32 @@ data class Credentials(val serverUrl: String, val username: String, val password
 
 @Singleton
 class CredentialsStore @Inject constructor(@ApplicationContext context: Context) {
-    private val masterKey = MasterKey.Builder(context)
-        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-        .build()
+    // Lazy: EncryptedSharedPreferences creation does a Tink keyset disk read,
+    // which must not happen in a constructor on the main thread (StrictMode).
+    // preload() runs once on IO before the UI gates on ready; later touches
+    // are memory-only. Application context: never leaks an Activity.
+    private val appContext = context.applicationContext
+    private val prefs: SharedPreferences by lazy {
+        EncryptedSharedPreferences.create(
+            appContext,
+            "feishin_auth",
+            MasterKey.Builder(appContext)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build(),
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+    }
 
-    private val prefs: SharedPreferences = EncryptedSharedPreferences.create(
-        context,
-        "feishin_auth",
-        masterKey,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-    )
-
-    private val _state = MutableStateFlow(read())
+    private val _state = MutableStateFlow<Credentials?>(null)
     val state: StateFlow<Credentials?> = _state.asStateFlow()
 
     val isLoggedIn: Boolean get() = _state.value != null
+
+    /** Disk read — call once from a background thread (see AuthRepository). */
+    fun preload() {
+        _state.value = read()
+    }
 
     private fun read(): Credentials? {
         val url = prefs.getString("serverUrl", null)

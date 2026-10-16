@@ -8,7 +8,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -73,7 +73,7 @@ fun GenreScreen(
     repo: MusicDataRepository,
     onAlbum: (String) -> Unit,
 ) {
-    val ui by vm.ui.collectAsState()
+    val ui by vm.ui.collectAsStateWithLifecycle()
     PullToRefreshBox(
         isRefreshing = ui is UiState.Loading,
         onRefresh = vm::refresh,
@@ -89,7 +89,7 @@ fun GenreScreen(
                 state = rememberSavableGridState(),
                 contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, VusicSpacing.ContentBottom + LocalMiniClearance.current),
             ) {
-                items(s.value, key = { it.id }) { a ->
+                items(s.value, key = { it.id }, contentType = { "item" }) { a ->
                     AlbumCard(a, repo.coverArtUrl(a.coverArt, 300), onClick = { onAlbum(a.id) })
                 }
             }

@@ -49,8 +49,8 @@ fun SongPagerSection(
     nowPlayingId: String?,
     isPlaying: Boolean,
     onActions: (Track) -> Unit,
-    onArtist: (String) -> Unit = {},
     modifier: Modifier = Modifier,
+    onArtist: (String) -> Unit = {},
 ) {
     if (tracks.isEmpty()) return
     val pages = tracks.chunked(SONG_PAGER_ROWS)

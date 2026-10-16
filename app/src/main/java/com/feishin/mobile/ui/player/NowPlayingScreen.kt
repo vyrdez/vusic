@@ -75,7 +75,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -159,7 +159,7 @@ fun NowPlayingScreen(
     onActions: (ActionTarget) -> Unit,
 ) {
     BackHandler(onBack = onClose)
-    val song by player.current.collectAsState()
+    val song by player.current.collectAsStateWithLifecycle()
     val current = song
     LaunchedEffect(current?.id) { lyricsVm.load(current) }
     if (current == null) {
@@ -231,7 +231,7 @@ fun NowPlayingScreen(
     val scope = rememberCoroutineScope()
     // A fresh queue (empty -> non-empty, e.g. playback after Clear) must not
     // inherit a stale open-sheet value from the previous session.
-    val queue by player.queue.collectAsState()
+    val queue by player.queue.collectAsStateWithLifecycle()
     var hadEmptyQueue by remember { mutableStateOf(queue.isEmpty()) }
 
     // ---- Queue sheet --------------------------------------------------------
@@ -366,9 +366,9 @@ fun NowPlayingScreen(
                     // collection once loaded (the queue's snapshot can be stale).
                     var starred by remember(current.id) { mutableStateOf(current.starred) }
                     var starring by remember(current.id) { mutableStateOf(false) }
-                    val downloadState by downloads.observeSong(current.id).collectAsState(initial = null)
-                    val favTracks by favs.tracks.collectAsState()
-                    val favsLoaded by favs.loaded.collectAsState()
+                    val downloadState by downloads.observeSong(current.id).collectAsStateWithLifecycle(initialValue = null)
+                    val favTracks by favs.tracks.collectAsStateWithLifecycle()
+                    val favsLoaded by favs.loaded.collectAsStateWithLifecycle()
                     LaunchedEffect(current.id, favTracks, favsLoaded) {
                         if (favsLoaded && !starring) {
                             starred = favTracks.any { it.id == current.id }
@@ -583,7 +583,7 @@ private fun PlayingFromBottom(
     onDrag: (Float) -> Unit,
     onDragEnd: (Float) -> Unit,
 ) {
-    val source by player.sourceName.collectAsState()
+    val source by player.sourceName.collectAsStateWithLifecycle()
     // Whole area is tappable and draggable, following the finger 1:1 from the
     // first pointer event (no threshold). The parent swipe-down-to-close only
     // tracks downward drags, so up-here and down-there never fight. The area
@@ -621,8 +621,8 @@ private fun PlayingFromBottom(
 
 @Composable
 private fun SeekBar(player: PlayerManager, content: Color) {
-    val pos by player.position.collectAsState()
-    val dur by player.duration.collectAsState()
+    val pos by player.position.collectAsStateWithLifecycle()
+    val dur by player.duration.collectAsStateWithLifecycle()
     var scrubMs by remember { mutableStateOf<Long?>(null) }
     var dragging by remember { mutableStateOf(false) }
 
@@ -699,9 +699,9 @@ private fun dim75(color: Color) = color.copy(alpha = 0.85f)
 
 @Composable
 private fun ControlsRow(player: PlayerManager, content: Color) {
-    val playing by player.isPlaying.collectAsState()
-    val shuffle by player.shuffleEnabled.collectAsState()
-    val repeat by player.repeatMode.collectAsState()
+    val playing by player.isPlaying.collectAsStateWithLifecycle()
+    val shuffle by player.shuffleEnabled.collectAsStateWithLifecycle()
+    val repeat by player.repeatMode.collectAsStateWithLifecycle()
     val active = content
     val idle = content.copy(alpha = 0.55f)
 
@@ -755,8 +755,8 @@ private fun LyricsPanel(
     dim: Color,
     modifier: Modifier = Modifier,
 ) {
-    val ui by lyricsVm.ui.collectAsState()
-    val pos by player.position.collectAsState()
+    val ui by lyricsVm.ui.collectAsStateWithLifecycle()
+    val pos by player.position.collectAsStateWithLifecycle()
     Box(modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
         when (val s = ui) {
             is LyricsUi.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -851,7 +851,7 @@ private fun QueueList(
         modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(bottom = 56.dp),
     ) {
-        items(displayOrder, key = { it.queueId }) { item ->
+        items(displayOrder, key = { it.queueId }, contentType = { "item" }) { item ->
             val idx = displayOrder.indexOfFirst { it.queueId == item.queueId }
             // animateItem is a LazyItemScope extension: create it here (where
             // the scope is the receiver) and pass it into the row.
@@ -1085,13 +1085,13 @@ private fun QueueSheet(
     onActions: (com.feishin.mobile.domain.model.Track) -> Unit = {},
     onDismiss: () -> Unit,
 ) {
-    val queue by player.queue.collectAsState()
-    val currentIndex by player.currentIndex.collectAsState()
-    val sourceName by player.sourceName.collectAsState()
-    val radioActive by player.radioActive.collectAsState()
-    val isPlaying by player.isPlaying.collectAsState()
-    val shuffleOn by player.shuffleEnabled.collectAsState()
-    val repeatMode by player.repeatMode.collectAsState()
+    val queue by player.queue.collectAsStateWithLifecycle()
+    val currentIndex by player.currentIndex.collectAsStateWithLifecycle()
+    val sourceName by player.sourceName.collectAsStateWithLifecycle()
+    val radioActive by player.radioActive.collectAsStateWithLifecycle()
+    val isPlaying by player.isPlaying.collectAsStateWithLifecycle()
+    val shuffleOn by player.shuffleEnabled.collectAsStateWithLifecycle()
+    val repeatMode by player.repeatMode.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     var showSaveDialog by remember { mutableStateOf(false) }

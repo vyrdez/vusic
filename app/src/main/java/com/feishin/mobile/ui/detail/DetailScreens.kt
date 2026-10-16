@@ -32,8 +32,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -89,9 +91,9 @@ fun AlbumDetailScreen(
     onArtist: (String) -> Unit,
     onActions: (ActionTarget) -> Unit,
 ) {
-    val ui by vm.ui.collectAsState()
-    val nowPlaying by player.current.collectAsState()
-    val isPlaying by player.isPlaying.collectAsState()
+    val ui by vm.ui.collectAsStateWithLifecycle()
+    val nowPlaying by player.current.collectAsStateWithLifecycle()
+    val isPlaying by player.isPlaying.collectAsStateWithLifecycle()
     when (val s = ui) {
         is UiState.Loading -> LoadingBox()
         is UiState.Error -> ErrorBox(s.message, vm::refresh)
@@ -99,14 +101,18 @@ fun AlbumDetailScreen(
         is UiState.Data -> {
             val a = s.value
             val starred = a.starred
-            val refreshing by vm.refreshing.collectAsState()
+            val refreshing by vm.refreshing.collectAsStateWithLifecycle()
             val listState = rememberSavableListState()
             // Publish the name to the shared top bar once the header scrolls away.
             val topBar = LocalTopBarController.current
-            LaunchedEffect(a.name, listState.firstVisibleItemIndex) {
+            val barScrolled by remember {
+                derivedStateOf {
+                    listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 120
+                }
+            }
+            LaunchedEffect(a.name, barScrolled) {
                 topBar.title = a.name
-                topBar.scrolled = listState.firstVisibleItemIndex > 0 ||
-                    listState.firstVisibleItemScrollOffset > 120
+                topBar.scrolled = barScrolled
             }
             PullToRefreshBox(isRefreshing = refreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
@@ -139,7 +145,7 @@ fun AlbumDetailScreen(
                             onArtistClick = onArtist,
                         )
                     }
-                    items(a.tracks, key = { it.id }) { song ->
+                    items(a.tracks, key = { it.id }, contentType = { "item" }) { song ->
                         TrackRow(
                             track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),
                             onClick = { player.playAll(a.tracks, a.tracks.indexOf(song), source = a.name) },
@@ -224,9 +230,9 @@ fun PlaylistDetailScreen(
     onActions: (ActionTarget) -> Unit,
     onBack: () -> Unit,
 ) {
-    val ui by vm.ui.collectAsState()
-    val nowPlaying by player.current.collectAsState()
-    val isPlaying by player.isPlaying.collectAsState()
+    val ui by vm.ui.collectAsStateWithLifecycle()
+    val nowPlaying by player.current.collectAsStateWithLifecycle()
+    val isPlaying by player.isPlaying.collectAsStateWithLifecycle()
     val isVirtual = vm.isVirtualFavorites || vm.isVirtualCached
     when (val s = ui) {
         is UiState.Loading -> LoadingBox()
@@ -238,13 +244,17 @@ fun PlaylistDetailScreen(
         )
         is UiState.Data -> {
             val p = s.value
-            val refreshing by vm.refreshing.collectAsState()
+            val refreshing by vm.refreshing.collectAsStateWithLifecycle()
             val listState = rememberSavableListState()
             val topBar = LocalTopBarController.current
-            LaunchedEffect(p.name, listState.firstVisibleItemIndex) {
+            val barScrolled by remember {
+                derivedStateOf {
+                    listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 120
+                }
+            }
+            LaunchedEffect(p.name, barScrolled) {
                 topBar.title = p.name
-                topBar.scrolled = listState.firstVisibleItemIndex > 0 ||
-                    listState.firstVisibleItemScrollOffset > 120
+                topBar.scrolled = barScrolled
             }
             val cover = if (vm.isVirtualCached) {
                 PlaylistCover.select(
@@ -307,7 +317,7 @@ fun PlaylistDetailScreen(
                             }
                         }
                     }
-                    items(p.tracks.size, key = { i -> p.tracks[i].id + "_$i" }) { i ->
+                    items(p.tracks.size, key = { i -> p.tracks[i].id + "_$i" }, contentType = { "item" }) { i ->
                         val song = p.tracks[i]
                         TrackRow(
                             track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),

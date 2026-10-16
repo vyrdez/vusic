@@ -14,7 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,7 +35,7 @@ fun GenresScreen(
     vm: LibraryViewModel = hiltViewModel(),
     onGenre: (String) -> Unit,
 ) {
-    val ui by vm.genres.collectAsState()
+    val ui by vm.genres.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(Unit) { vm.refreshGenres() }
     // Simple list screen: show the title in the shared top bar immediately.
     val topBar = com.feishin.mobile.ui.LocalTopBarController.current
@@ -53,7 +53,7 @@ fun GenresScreen(
                 state = rememberSavableListState(),
                 contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
             ) {
-                items(s.value, key = { it.name }) { g ->
+                items(s.value, key = { it.name }, contentType = { "item" }) { g ->
                     Row(
                         Modifier.fillMaxWidth()
                             .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))

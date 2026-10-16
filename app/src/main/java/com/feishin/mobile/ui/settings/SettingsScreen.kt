@@ -37,7 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -160,8 +160,8 @@ private fun SettingsHome(
     vm: SettingsViewModel,
     onOpen: (SettingsRoute) -> Unit,
 ) {
-    val settings by vm.store.flow.collectAsState(initial = null)
-    val online by vm.network.isOnline.collectAsState()
+    val settings by vm.store.flow.collectAsStateWithLifecycle(initialValue = null)
+    val online by vm.network.isOnline.collectAsStateWithLifecycle()
     val s = settings
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
@@ -178,7 +178,7 @@ private fun SettingsHome(
             SettingsHomeCard(
                 icon = Icons.Default.AccountCircle,
                 title = "Server & Account",
-                summary = vm.credentials.collectAsState().value?.let { "${it.username} · ${it.serverUrl}" } ?: "Not signed in",
+                summary = vm.credentials.collectAsStateWithLifecycle().value?.let { "${it.username} · ${it.serverUrl}" } ?: "Not signed in",
                 onClick = { onOpen(SettingsRoute.SERVER) },
             )
             SettingsHomeCard(
@@ -254,12 +254,12 @@ private fun OfflineChip() {
 
 @Composable
 private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
-    val creds by vm.credentials.collectAsState()
-    val test by vm.test.collectAsState()
-    val online by vm.network.isOnline.collectAsState()
-    val info by vm.serverInfo.collectAsState()
-    val scan by vm.scanStatus.collectAsState()
-    val counts by vm.libraryCounts.collectAsState()
+    val creds by vm.credentials.collectAsStateWithLifecycle()
+    val test by vm.test.collectAsStateWithLifecycle()
+    val online by vm.network.isOnline.collectAsStateWithLifecycle()
+    val info by vm.serverInfo.collectAsStateWithLifecycle()
+    val scan by vm.scanStatus.collectAsStateWithLifecycle()
+    val counts by vm.libraryCounts.collectAsStateWithLifecycle()
     var showLogout by androidx.compose.runtime.remember { mutableStateOf(false) }
     var keepDownloads by androidx.compose.runtime.remember { mutableStateOf(true) }
     var serverUrl by androidx.compose.runtime.remember(creds?.serverUrl) {
@@ -366,7 +366,7 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
 
 @Composable
 private fun AppearanceScreen(vm: SettingsViewModel) {
-    val settings by vm.store.flow.collectAsState(initial = null)
+    val settings by vm.store.flow.collectAsStateWithLifecycle(initialValue = null)
     val s = settings ?: return
     SettingsSection("THEME")
     SettingsCard {
@@ -424,8 +424,8 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
 
 @Composable
 private fun SoundScreen(vm: SettingsViewModel) {
-    val settings by vm.store.flow.collectAsState(initial = null)
-    val storage by vm.storageStats.collectAsState()
+    val settings by vm.store.flow.collectAsStateWithLifecycle(initialValue = null)
+    val storage by vm.storageStats.collectAsStateWithLifecycle()
     val s = settings ?: return
     var showReset by androidx.compose.runtime.remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { vm.refreshStorageStats() }
@@ -619,8 +619,8 @@ private fun BitrateChoiceRow(label: String, br: Int, fmt: String, onSet: (Int, S
 
 @Composable
 private fun ConnectivityScreen(vm: SettingsViewModel) {
-    val settings by vm.store.flow.collectAsState(initial = null)
-    val online by vm.network.isOnline.collectAsState()
+    val settings by vm.store.flow.collectAsStateWithLifecycle(initialValue = null)
+    val online by vm.network.isOnline.collectAsStateWithLifecycle()
     val s = settings ?: return
     SettingsSection("OFFLINE")
     SettingsCard {
@@ -662,8 +662,8 @@ private fun StorageScreen(
     onOpenDownloads: () -> Unit,
     onOpenLibraryDownloads: () -> Unit,
 ) {
-    val settings by vm.store.flow.collectAsState(initial = null)
-    val storage by vm.storageStats.collectAsState()
+    val settings by vm.store.flow.collectAsStateWithLifecycle(initialValue = null)
+    val storage by vm.storageStats.collectAsStateWithLifecycle()
     val s = settings ?: return
     LaunchedEffect(Unit) { vm.refreshStorageStats() }
     val st = storage
@@ -758,7 +758,7 @@ private fun StorageScreen(
             showDivider = true,
         )
         ActionRow("Clear image cache", buttonLabel = "Clear", onClick = { vm.clearImageCache() })
-        val restartPending by vm.imageCacheRestartPending.collectAsState()
+        val restartPending by vm.imageCacheRestartPending.collectAsStateWithLifecycle()
         if (restartPending) {
             ActionRow(
                 "Restart to apply",

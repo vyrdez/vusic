@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "Feishin"
 include(":app")
+include(":baselineprofile")

@@ -4,7 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -30,12 +30,12 @@ object AuthRoutes {
 @Composable
 fun AppNav(main: MainViewModel = hiltViewModel()) {
     val auth = main.auth
-    val ready by auth.ready.collectAsState()
+    val ready by auth.ready.collectAsStateWithLifecycle()
     if (!ready) {
         Box(Modifier.fillMaxSize())
         return
     }
-    val creds by auth.loginState.collectAsState()
+    val creds by auth.loginState.collectAsStateWithLifecycle()
     val nav = rememberNavController()
     val start = remember { if (creds != null) AuthRoutes.MAIN else AuthRoutes.LOGIN }
 

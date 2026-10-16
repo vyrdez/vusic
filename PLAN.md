@@ -695,6 +695,35 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   dex method counts byte-identical (34,814/39,047). Smoke-tested on the x86_64
   split: login kept, play, queue, search, settings, no FATAL/ANR.)
 
+- [x] M7.0c runtime tuning
+  (94 collectAsState() → collectAsStateWithLifecycle() across 17 files, both
+  overloads — collections now pause below STARTED; the mini-player ring keeps
+  its direct position.value sampling in a 4 Hz draw-phase loop by design: no
+  recomposition, ~zero cost, playback-gated. 9 scroll/pagination reads →
+  derivedStateOf (kills 9 lint warnings); contentType on all keyed lists
+  (constant, zero-alloc); 5 Modifier params moved first-optional (all call
+  sites named — verified). Compose stability report: 145/145 composables
+  restartable+skippable, only FeishinApp unstable (never a param) — nothing to
+  fix. Startup: lazy Provider<ImageLoader> moves the blocking DataStore read
+  out of Application.onCreate; hand-written baseline-prof.txt (exact verified
+  methods only; Macrobenchmark would profile the login screen) embedded via a
+  new :baselineprofile module (Groovy DSL — KTS accessors don't resolve for
+  that plugin here; profile compiler rejects method wildcards, hence exact
+  signatures). Debug-only StrictMode added. Verified no-ops: OkHttp (one
+  shared API client + one justified Coil client, both @Singleton; gzip is
+  OkHttp-default), debounced+cancelled search, Media3-managed service
+  lifecycle, Room indexes sufficient (no migration), Coil already sized (25% +
+  display-size + hardware bitmaps), Palette on ≤128 px art. Fair back-to-back
+  A/B cold start: 1351 ms → 1214 ms (−10%); warm 237 → 191 ms (noise). Bound
+  the two unbounded in-memory caches (lyrics LRU-64, search artist-photos
+  FIFO-512). Debug-only StrictMode caught 3 main-thread disk reads, all
+  fixed and verified zero: EncryptedSharedPreferences creation →
+  lazy prefs + IO preload() behind the ready gate (no login flash);
+  OkHttp TLS init + Media3 SimpleCache SQLite open → IO warmup of the Hilt
+  singletons in FeishinApp.onCreate (cache first); widget DataStore load →
+  withContext(IO). Lint 123 → 112, tests 358/358. Full numbers in
+  docs/perf/after.md.)
+
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
 `testDebugUnitTest` 295/295 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
 LIVE on-device test (emulator Pixel 7, API 34) against server.example.com: login OK,

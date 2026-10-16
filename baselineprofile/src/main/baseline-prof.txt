@@ -1,0 +1,40 @@
+# Vusic baseline profile (hand-written, conservative — §C).
+#
+# Macrobenchmark generation is not usable here: it needs a clean managed
+# device, and a clean device lands on the login screen, so a generated profile
+# would optimize logging in instead of Home/playback. Every entry below is an
+# exact, source-verified method on the cold-start path
+# (Application → MainActivity → first frame) plus the queue/Now Playing
+# hotspots. Entries that match nothing are ignored by the runtime, so this
+# file can only help or do nothing.
+# Flags: H = hot, S = startup (first frame), P = post-startup.
+
+# --- app entry points (verified in FeishinApp.kt / MainActivity.kt) ---
+HSPLcom/feishin/mobile/FeishinApp;->onCreate()V
+HSPLcom/feishin/mobile/FeishinApp;->getWorkManagerConfiguration()Landroidx/work/Configuration;
+HSPLcom/feishin/mobile/FeishinApp;->newImageLoader()Lcoil/ImageLoader;
+HSPLcom/feishin/mobile/FeishinApp;-><init>()V
+HSPLcom/feishin/mobile/Hilt_FeishinApp;-><init>()V
+HSPLcom/feishin/mobile/MainActivity;->onCreate(Landroid/os/Bundle;)V
+HSPLcom/feishin/mobile/MainActivity;-><init>()V
+HSPLcom/feishin/mobile/Hilt_MainActivity;-><init>()V
+
+# --- startup singletons (verified objects: init runs real code) ---
+HSPLcom/feishin/mobile/core/common/CrashGuard;->install()V
+HSPLcom/feishin/mobile/core/common/CrashGuard;-><init>()V
+HSPLcom/feishin/mobile/core/ui/Contrast;-><init>()V
+HSPLcom/feishin/mobile/core/ui/PlayingColors;-><init>()V
+HSPLcom/feishin/mobile/core/ui/DarkToneSpec;-><init>()V
+HSPLcom/feishin/mobile/ui/theme/VusicColors;-><init>()V
+HSPLcom/feishin/mobile/ui/theme/VusicControlColors;-><init>()V
+HSPLcom/feishin/mobile/ui/theme/VusicSpacing;-><init>()V
+HSPLcom/feishin/mobile/ui/theme/VusicControlDefaults;-><init>()V
+HSPLcom/feishin/mobile/ui/theme/VusicColorMath;-><init>()V
+HSPLcom/feishin/mobile/core/network/SubsonicAuth;-><init>()V
+HSPLcom/feishin/mobile/core/network/StreamUrlProvider;-><init>()V
+HSPLcom/feishin/mobile/core/network/CoverArtUrlProvider;-><init>()V
+
+# --- player service lifecycle (verified in PlayerService.kt) ---
+HPPLcom/feishin/mobile/playback/PlayerService;->onCreate()V
+HPPLcom/feishin/mobile/playback/PlayerService;->onDestroy()V
+HPPLcom/feishin/mobile/playback/PlayerService;-><init>()V

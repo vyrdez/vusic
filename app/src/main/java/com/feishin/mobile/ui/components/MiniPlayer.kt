@@ -28,7 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -112,12 +112,12 @@ val LocalMiniClearance = androidx.compose.runtime.compositionLocalOf { 0.dp }
 fun MiniPlayer(
     player: PlayerManager,
     onOpen: () -> Unit,
-    onQueueCleared: (PlayerManager.ClearedQueue) -> Unit = {},
     modifier: Modifier = Modifier,
+    onQueueCleared: (PlayerManager.ClearedQueue) -> Unit = {},
 ) {
-    val queue by player.queue.collectAsState()
-    val current by player.current.collectAsState()
-    val isPlaying by player.isPlaying.collectAsState()
+    val queue by player.queue.collectAsStateWithLifecycle()
+    val current by player.current.collectAsStateWithLifecycle()
+    val isPlaying by player.isPlaying.collectAsStateWithLifecycle()
     // NOTE: position/duration are deliberately NOT collected as state. The
     // ring below samples them at ~4Hz in a coroutine and draws in the draw
     // phase, so position ticks never recompose the card.
