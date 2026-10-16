@@ -8,8 +8,14 @@ Kotlin, Jetpack Compose + Material 3 (dark default), Hilt, Retrofit, Media3, Coi
 ```powershell
 $env:JAVA_HOME = "C:\Program Files\Java\jdk-17"
 .\gradlew.bat assembleDebug
-adb install -r app\build\outputs\apk\debug\app-debug.apk
+adb install -r app\build\outputs\apk\debug\app-x86_64-debug.apk
 ```
+
+(Use `./gradlew` instead of `.\gradlew.bat` on macOS/Linux.)
+Prerequisites: JDK 17 and Android SDK (platform 34, build-tools 34.0.0, platform-tools).
+Set `sdk.dir` in `local.properties` if the SDK lives elsewhere.
+Debug builds are split by ABI: `app-x86_64-debug.apk` for the emulator,
+`app-arm64-v8a-debug.apk` for phones.
 
 (Use `./gradlew` instead of `.\gradlew.bat` on macOS/Linux.)
 Prerequisites: JDK 17 and Android SDK (platform 34, build-tools 34.0.0, platform-tools).
@@ -38,6 +44,27 @@ APK (`app-release-unsigned.apk`), so CI needs no secrets.
 Release builds log nothing: the HTTP logger and all diagnostics are
 compile-time-disabled, and API credentials (`u`/`t`/`s`) are redacted in debug
 as well.
+
+Signing certificate SHA-256:
+`33:99:ED:FC:E8:D6:82:E4:B1:99:D8:0A:A2:6D:6B:09:2B:78:EF:BE:C9:29:77:F9:49:1F:27:97:BD:CC:66:2C`.
+The keystore lives only in `keystore/` (untracked, gitignored) with a backup
+outside the repo; never commit it, and never replace it — Android ties updates
+to the signing certificate. See `docs/RELEASING.md` for the update process.
+
+## Settings overview
+
+- Appearance & Layout: System / Dark / Light theme (live switch), the Dynamic
+  Now Playing color toggle, per-tab grid/list layouts, per-tab sort orders,
+  mix length. Refresh rate: Auto (default, peak rate while interacting, system
+  lowers it when idle), Max (always hold the peak rate), Standard 60 Hz
+  (battery saver); the row shows the rate actually running and is hidden on
+  devices with a single display mode.
+- Sound & Playback: bitrate/format per network, crossfade, ReplayGain, gapless,
+  headphone/volume/focus behavior, playback cache sizes.
+- Library & Offline: offline mode, Wi-Fi-only, keep-downloaded collections,
+  download bitrate/format/quality, max storage, clear-cache actions.
+- Account & About: server details, Test connection, logout (choose whether
+  downloads stay), version info.
 
 ## Notes / limitations
 
@@ -91,5 +118,12 @@ as well.
   (a single failed network call can no longer take the app down) while real
   main-thread bugs still surface; common failures show friendly messages
   (wrong server, expired session, no network) instead of raw errors.
-- Release cold start measured at 505–888 ms total on the Pixel 7 emulator with
-  the R8-minified release APK.
+- Release cold start: 1351 ms median → 1214 ms after the 7.0 tuning pass
+  (fair back-to-back A/B, `am start -W`, logged-in → Home, same emulator;
+  full table in `docs/perf/after.md`). Emulator figures are relative-only:
+  software rendering dominates every frame there.
+- High refresh rate: on 90/120 Hz phones the app requests the peak rate while
+  interacting and lets the system lower it when idle (Auto), holds it (Max),
+  or stays at 60 Hz (Standard). Verified by unit test and code inspection;
+  120 Hz rendering itself was only emulator-checked at 60 Hz (single-mode
+  emulator), as was Bluetooth behavior.

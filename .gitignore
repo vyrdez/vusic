@@ -13,6 +13,9 @@
 local.properties
 *.apk
 *.aab
+# Release artifacts ARE versioned (small, per docs/RELEASING.md).
+!release/*.apk
+!release/*.sha256
 # Keystore / signing
 *.jks
 *.keystore

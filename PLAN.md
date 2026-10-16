@@ -724,6 +724,36 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   withContext(IO). Lint 123 → 112, tests 358/358 (366 with §D). Full numbers
   in docs/perf/after.md.)
 
+## Phase 7.1 status (final)
+- Release 1.0.0 (versionCode 2) signed with the long-lived key
+  (`vusic`, to 2054-03-02). Baseline profile packaged. Lint 112 warnings /
+  0 errors, tests 366/366 (debug+release variants counted once: 358 unit +
+  8 refresh-rate).
+- E2E on the signed release (x86_64, emulator): cold start, login screen
+  (readable, labeled self-signed switch, friendly wrong-host error, masked
+  password, no credential/log leaks in logcat), cached Home on relaunch,
+  play/mini-player/ring/Now Playing, queue open-close x10, drag reorder
+  (order persists), swipe remove, all 9 actions-sheet rows, save sheet,
+  shuffle on/off + restore, mini drag-down clear + Undo restore, radio
+  (16-track queue), search + chips, Library tabs/toggle/sort, artist page +
+  scroll, Favorites + Cached collections, song download + offline playback
+  with position advancing under airplane mode + reconnect, settings
+  sub-screens, theme live-switch, refresh-rate row hidden by design,
+  font 1.3 Home/Settings without clipping, media notification with
+  artwork/controls/seek, update-over-install, zero FATAL/ANR.
+- NOT verified (no real hardware / lost session — see report): correct-password
+  login (session was lost when the Auto test run uninstalled the app; no
+  credentials available), save-as-playlist completion, logout keep/remove
+  choice, scrobble-sync observation, widget tap controls on-device (verified
+  in M6.2; adb broadcasts to the exported=false receiver are inconclusive),
+  headphone-unplug pause (broadcast did not pause; ExoPlayer built-in noisy
+  handling is on, but the pause_on_headphone/resume_on_focus_gain toggles are
+  not wired to anything — pre-existing, non-blocking), lock-screen controls
+  beyond the notification, 120 Hz/Auto idle-drop/8.3 ms budget (single-mode
+  emulator), Bluetooth, battery over long sessions, login screen at 1.3x.
+- Auto browse device test: 3/4 pass; auto_playFromBrowse fails on an empty
+  first album — browse code untouched since M6.1/M6.3, data-dependent.
+
 - [x] M7.1b release audit
   (versionName 1.0.0, versionCode 2 — history and the installed build were all
   versionCode 1, so 2 updates over everything; applicationId unchanged.
@@ -745,6 +775,15 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   Security: strings.xml has no URLs/secrets, release logging is compile-time
   off (VLog + RedactingHttpLogger are BuildConfig.DEBUG-gated), credentials
   live only in EncryptedSharedPreferences.)
+
+- [x] M7.1c end-to-end — no fixes commit (nothing release-blocking found).
+  Full checklist run on the signed release; pass/fail per item and the
+  explicitly-not-verified list are in the final report (commit message for
+  M7.1c omitted per the "only if fixes are needed" rule).
+- [x] M7.1d docs and release notes (README settings overview +
+  keystore/fingerprint/versioning, CHANGELOG 1.0.0, docs/RELEASING.md,
+  release/ APKs + SHA-256, v1.0.0 tag, root cleanup of two stray 0-byte
+  files).
 
 - [x] M7.0d high refresh rate (nothing in the app caps frame pacing: the
   60 Hz audit found no frame-counting — ring/marquee/equalizer/scroll
@@ -797,8 +836,10 @@ playlists/genres/starred2 all OK. No adb physical device; emulator AVD `feishin_
 - Login fields use rememberSaveable for URL/username (rotation + process death);
   the password is intentionally NOT saved across process death (never persisted
   to disk outside EncryptedSharedPreferences).
-- AuthRepository.ready flips true after the (synchronous) encrypted-prefs read,
-  so the splash-until-ready gate never flickers in practice.
+- AuthRepository.ready flips true after the credentials preload finishes on IO
+  (lazy EncryptedSharedPreferences creation + read); AppNav gates the nav
+  graph on it, so there is no login flash. No disk reads happen on the main
+  thread at startup (verified with debug-only StrictMode: zero app sites).
 - Device verified 2026-10-12 on emulator `feishin_test` (Pixel 7, API 34, headless):
   install OK, launch OK, zero FATAL crashes; logout→login→Test & Connect→Home
   against the live server, all with real data. Live creds used via adb input only,
