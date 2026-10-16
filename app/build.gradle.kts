@@ -20,6 +20,9 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Only English is shipped: the app has no other locale content, and
+        // this strips ~85 library locales (mostly AndroidX) from resources.
+        resConfigs("en")
     }
 
     buildTypes {
@@ -67,6 +70,17 @@ android {
     }
     testOptions {
         unitTests.isReturnDefaultValues = true
+    }
+    splits {
+        // Phone APK carries only arm64-v8a native code; the emulator build
+        // stays x86_64. No universal APK (each split drops the other ABIs'
+        // .so files: only DataStore + Compose path libs ship any).
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = false
+        }
     }
     packaging {
         resources {

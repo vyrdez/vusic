@@ -668,6 +668,33 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   unit tests. Limitation: with the app process dead and the player empty,
   Next/Prev are no-ops until Play restores the queue.)
 
+- [x] M7.0a baseline numbers
+  (Release APK 3,781,759 bytes file / 3,328,525 download; dex 34,814 defined /
+  39,047 referenced methods (media3 ~20%); full dependency inventory — every
+  direct dep is used (Guava via Media3, Tink+Gson via security-crypto); 125+36
+  Kotlin files; lint 123 warnings (72 version-notices); cold start median 1360
+  ms / worst 1559 ms, warm median 237 ms / worst 267 ms (`am start -W` x10,
+  emulator); PSS idle 113.5 MB → 123.8 MB after 5 min playback → 152.0 MB after
+  20 screens; jank percentiles per screen (SwiftShader software GL, ~100%
+  legacy-jank — relative only); screen-off 82 s: audio full window, 1 app
+  wakeup, 0 alarms/jobs, PlayerService foreground only. Emulator exposes a
+  single 60 Hz mode, so 90/120 Hz is not verifiable on-device. Full numbers in
+  docs/perf/baseline.md. Runtime measured on a debug-signed release build —
+  byte-identical R8 output, only the signature block differs — so the login
+  survived; size numbers are from the true release-signed APK.)
+
+- [x] M7.0b dead weight
+  (Nothing removable in code or deps: no TODOs/Coming-soon/previews in main,
+  all Room entities+DAOs wired, Palette/reorderable/Glance-free widget all
+  genuinely used, material-icons-extended has ~100 refs incl. extended-only
+  icons (R8 strips the rest), logging already centralized in DEBUG-gated VLog
+  (the one raw Log.w is also DEBUG-gated). Wins are packaging-only: ABI splits
+  (arm64-v8a phone + x86_64 emulator, no universal) and resConfigs("en")
+  (86 → 1 string locale). arm64 APK 3,396,155 bytes file (-385 KB, -10.2%) /
+  3,228,994 download (-100 KB, -3.0%); arsc download 96,314 → 13,798 bytes;
+  dex method counts byte-identical (34,814/39,047). Smoke-tested on the x86_64
+  split: login kept, play, queue, search, settings, no FATAL/ANR.)
+
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
 `testDebugUnitTest` 295/295 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
 LIVE on-device test (emulator Pixel 7, API 34) against server.example.com: login OK,

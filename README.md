@@ -26,8 +26,12 @@ Media3, WorkManager, Coil and the Android Auto/service entry points.
 #   keystore/vusic-release.jks        the keystore
 #   keystore/keystore.properties      storePassword / keyAlias / keyPassword
 .\gradlew.bat assembleRelease
-adb install -r app\build\outputs\apk\release\app-release.apk
+adb install -r app\build\outputs\apk\release\app-arm64-v8a-release.apk
 ```
+
+Release builds use ABI splits (no universal APK): `app-arm64-v8a-release.apk`
+for phones, `app-x86_64-release.apk` for the emulator. Only English resources
+are packaged (`resConfigs("en")`).
 
 Without `keystore/` the release task still succeeds but produces an *unsigned*
 APK (`app-release-unsigned.apk`), so CI needs no secrets.
