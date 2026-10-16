@@ -107,6 +107,11 @@ class ViewModelStateTest {
 
     @After
     fun tearDown() {
+        // PreferenceDataStoreFactory runs its own work on Dispatchers.IO. If a
+        // continuation from this test is still in flight, resetMain() races it
+        // and throws "Dispatchers.Main is used concurrently with setting it".
+        // Let it drain first.
+        Thread.sleep(50)
         Dispatchers.resetMain()
     }
 
@@ -314,7 +319,21 @@ class ViewModelStateTest {
     @Test
     fun library_albumError_mapsToError() {
         val vm = libraryVm(FakeMusicRepo(albums = Result.Err("boom")))
+        awaitAlbumsSettled(vm)
         assertTrue(vm.albums.value is UiState.Error)
         assertEquals("boom", (vm.albums.value as UiState.Error).message)
+    }
+
+    /**
+     * `albums` starts as [UiState.Loading] and is filled asynchronously by
+     * `loadAlbums()`, so asserting straight after construction is a race that
+     * only happened to pass on a fast local machine. Wait it out, same as
+     * [awaitHomeIdle] / [awaitLayout].
+     */
+    private fun awaitAlbumsSettled(vm: LibraryViewModel) {
+        repeat(400) {
+            if (vm.albums.value !is UiState.Loading) return
+            Thread.sleep(25)
+        }
     }
 }
