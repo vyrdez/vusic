@@ -724,6 +724,28 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   withContext(IO). Lint 123 → 112, tests 358/358 (366 with §D). Full numbers
   in docs/perf/after.md.)
 
+- [x] M7.1b release audit
+  (versionName 1.0.0, versionCode 2 — history and the installed build were all
+  versionCode 1, so 2 updates over everything; applicationId unchanged.
+  `clean assembleRelease lint test` green: tests 732/732 (both variants),
+  lint 112 warnings / 0 errors, lintVitalRelease clean. Badging: package
+  com.feishin.mobile 2/1.0.0, minSdk 26 targetSdk 34, not debuggable, no
+  allowBackup deviation. Permissions, each needed: INTERNET (streaming/API),
+  ACCESS_NETWORK_STATE (offline detection), FOREGROUND_SERVICE +
+  _MEDIA_PLAYBACK + _DATA_SYNC (player service, media + WorkManager download
+  FGS types), WAKE_LOCK (playback/downloads), BLUETOOTH maxSdk 30 (headphone
+  unplug on old APIs), MODIFY_AUDIO_SETTINGS (audio focus), POST_NOTIFICATIONS
+  (media/download notifications, runtime-granted); plus library-added
+  RECEIVE_BOOT_COMPLETED (WorkManager) and the system dynamic-receiver
+  permission. Exported: only MainActivity (launcher) and PlayerService
+  (Android Auto + media buttons); widget receivers and WorkManager internals
+  are not exported. apksigner: v2-signed, cert DN CN=Vusic + SHA-256 matching
+  the keystore (NOT the debug cert), both splits. arm64 APK 3,396,155 bytes
+  (arm64 .so only), x86_64 3,395,257 bytes; baseline.prof packaged in both.
+  Security: strings.xml has no URLs/secrets, release logging is compile-time
+  off (VLog + RedactingHttpLogger are BuildConfig.DEBUG-gated), credentials
+  live only in EncryptedSharedPreferences.)
+
 - [x] M7.0d high refresh rate (nothing in the app caps frame pacing: the
   60 Hz audit found no frame-counting — ring/marquee/equalizer/scroll
   physics are all time-based)
