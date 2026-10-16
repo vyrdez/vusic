@@ -37,13 +37,21 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # The ubuntu runner image already ships a working Android SDK and
+      # cmdline-tools. setup-android@v3 re-downloads cmdline-tools 16.0, whose
+      # `sdkmanager --licenses` fails on that image, so the preinstalled SDK is
+      # used instead.
+      - name: Point the build at the preinstalled Android SDK
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          echo "Using SDK: $SDK"
+          echo "sdk.dir=$SDK" >> local.properties
 
-      # setup-android accepts the SDK licences by default
-      # (accept-android-sdk-licenses: true), so no extra step is needed here.
-      - name: Install SDK platform 34
-        run: sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+      - name: Accept SDK licences
+        run: yes | sdkmanager --licenses > /dev/null
+
+      - name: Install SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Assemble debug, run unit tests and lint
         run: ./gradlew --no-daemon assembleDebug testDebugUnitTest lint
