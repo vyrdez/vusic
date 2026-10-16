@@ -829,6 +829,42 @@ variables only):
 ping/albumLists/artists(673)/search/album/stream-HEAD-200-flac/coverArt-JPEG/lyrics/
 playlists/genres/starred2 all OK. No adb physical device; emulator AVD `feishin_test`.
 
+## Phase 7.2 status: published
+Published at **https://github.com/vyrdez/vusic** (public, GPL-3.0-only),
+default branch `main`, first release
+<https://github.com/vyrdez/vusic/releases/tag/v1.0.0>.
+
+- Pre-publish audit: no credential ever existed in the tree or history
+  (keystore passwords: 0 matches in every commit). Personal data that DID exist
+  in history — the server hostname, the Windows username (also reused as a test
+  fixture), a `local.properties` carrying `sdk.dir`, and 2,835 committed build
+  artifacts — was removed by rewriting all commits with `git filter-branch`
+  (index-filter for images/build/`local.properties`, tree-filter for the text
+  scrub), then expiring the reflog and garbage-collecting: 218 MiB -> 585 KiB.
+  The M1–M7 history and the v1.0.0 tag were preserved (5 image-only commits
+  pruned). Production code was verified byte-identical to the audited release
+  commit, so the published APKs still match the published source.
+- No screenshots, screen recordings or third-party app captures are published:
+  every image file was stripped from every commit and is now gitignored
+  (except application resources under `src/**/res`, which stay tracked).
+- Release APKs are no longer committed; they exist only as GitHub Release
+  assets (attached, then re-downloaded and re-verified for SHA-256 and
+  signature).
+- Identity: pre-existing commits are `feishin <feishin@local>` (a placeholder
+  with no personal email, so no rewrite was needed); new commits use
+  `289428354+vyrdez@users.noreply.github.com`.
+- Repo settings: Issues on, Wiki/Projects/Discussions off, topics set, secret
+  scanning + push protection enabled.
+- CI: `.github/workflows/build.yml` (JDK 17, preinstalled Android SDK,
+  `assembleDebug testDebugUnitTest lint`, no secrets, no release signing) is
+  green on `main`. Reaching that fixed three workflow/environment bugs
+  (setup-android's cmdline-tools 16.0 license failure, `sdkmanager` missing from
+  PATH, and a lost executable bit on `gradlew`) plus two genuinely flaky tests in
+  `ViewModelStateTest` that only surfaced under CI load. No app code, behaviour,
+  colour or layout was changed in this phase.
+- A fresh clone builds and tests clean with only `ANDROID_HOME` set — no
+  `local.properties`, no keystore.
+
 ## Assumptions
 - Server speaks Subsonic 1.16.1 / OpenSubsonic; `f=json` always.
 - Phase-1 restructuring kept the already-built M2–M6 screens/playback in place
