@@ -40,18 +40,17 @@ jobs:
       # The ubuntu runner image already ships a working Android SDK and
       # cmdline-tools. setup-android@v3 re-downloads cmdline-tools 16.0, whose
       # `sdkmanager --licenses` fails on that image, so the preinstalled SDK is
-      # used instead.
-      - name: Point the build at the preinstalled Android SDK
+      # used instead. cmdline-tools/latest/bin is NOT on PATH, hence the
+      # explicit path.
+      - name: Install Android SDK packages
         run: |
           SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
           echo "Using SDK: $SDK"
+          test -x "$SDKMANAGER"
           echo "sdk.dir=$SDK" >> local.properties
-
-      - name: Accept SDK licences
-        run: yes | sdkmanager --licenses > /dev/null
-
-      - name: Install SDK packages
-        run: sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          yes | "$SDKMANAGER" --licenses > /dev/null
+          "$SDKMANAGER" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Assemble debug, run unit tests and lint
         run: ./gradlew --no-daemon assembleDebug testDebugUnitTest lint
