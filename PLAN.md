@@ -721,8 +721,29 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   lazy prefs + IO preload() behind the ready gate (no login flash);
   OkHttp TLS init + Media3 SimpleCache SQLite open → IO warmup of the Hilt
   singletons in FeishinApp.onCreate (cache first); widget DataStore load →
-  withContext(IO). Lint 123 → 112, tests 358/358. Full numbers in
-  docs/perf/after.md.)
+  withContext(IO). Lint 123 → 112, tests 358/358 (366 with §D). Full numbers
+  in docs/perf/after.md.)
+
+- [x] M7.0d high refresh rate (nothing in the app caps frame pacing: the
+  60 Hz audit found no frame-counting — ring/marquee/equalizer/scroll
+  physics are all time-based)
+  (New pure selector core/ui/RefreshRate: highest same-resolution rate for
+  AUTO/MAX, nearest-to-60 for STANDARD, ties prefer current,
+  higher-rate-at-lower-resolution never wins; RefreshRateTest 8 cases green.
+  Applied in MainActivity through public window hints only:
+  preferredDisplayModeId always, preferredRefreshRate 0 for Auto / peak for
+  Max / 60 for Standard; Surface.setFrameRate verified present in
+  compileSdk 34 but has no public accessor for the activity window's
+  Surface, so deliberately unused. Re-applied on create/resume/config-change
+  and live on setting change. The one allowed UI addition: Settings >
+  Appearance & Layout > "Refresh rate" (Auto default / Max / Standard
+  60 Hz), DataStore-backed, live-applied, hidden on single-rate devices,
+  with a "Running at X Hz" secondary line. The emulator exposes a single
+  60.000004 Hz mode and ignores the min/peak_refresh_rate override (tried,
+  reset), so 90/120 Hz rendering, Auto idle-drop and the 8.3 ms budget are
+  NOT verifiable here — stated in after.md. Verified instead: row hides
+  correctly, preferredDisplayMode=1 confirmed live in the window attrs, no
+  FATAL/ANR across all apply paths, StrictMode clean, no 60 Hz regressions.)
 
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
 `testDebugUnitTest` 295/295 pass. APK at app/build/outputs/apk/debug/app-debug.apk.

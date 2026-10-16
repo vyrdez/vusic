@@ -69,6 +69,7 @@ class SettingsStore internal constructor(
         val downloadBitrate = intPreferencesKey("download_bitrate")
         val downloadFormat = stringPreferencesKey("download_format")
         val dynamicNpColor = booleanPreferencesKey("dynamic_np_color")
+        val refreshRateMode = stringPreferencesKey("refresh_rate_mode")
         val defaultLayout = stringPreferencesKey("default_layout")
         // M5.5 additions
         val showOfflineChip = booleanPreferencesKey("show_offline_chip")
@@ -110,6 +111,9 @@ class SettingsStore internal constructor(
         val downloadBitrate: Int = 320,
         val downloadFormat: String = "raw",
         val dynamicNpColor: Boolean = true,
+        /** High-refresh-rate request: AUTO (default), MAX, STANDARD (60 Hz). */
+        val refreshRateMode: com.feishin.mobile.core.ui.RefreshRateMode =
+            com.feishin.mobile.core.ui.RefreshRateMode.AUTO,
         val defaultLayout: LayoutMode = LayoutMode.GRID,
         val showOfflineChip: Boolean = true,
         val autoOffline: Boolean = false,
@@ -163,6 +167,12 @@ class SettingsStore internal constructor(
             downloadBitrate = p[K.downloadBitrate] ?: 320,
             downloadFormat = p[K.downloadFormat] ?: "raw",
             dynamicNpColor = p[K.dynamicNpColor] ?: true,
+            refreshRateMode = runCatching {
+                com.feishin.mobile.core.ui.RefreshRateMode.valueOf(
+                    p[K.refreshRateMode]
+                        ?: com.feishin.mobile.core.ui.RefreshRateMode.AUTO.name,
+                )
+            }.getOrDefault(com.feishin.mobile.core.ui.RefreshRateMode.AUTO),
             defaultLayout = runCatching { LayoutMode.valueOf(p[K.defaultLayout] ?: "GRID") }
                 .getOrDefault(LayoutMode.GRID),
             showOfflineChip = p[K.showOfflineChip] ?: true,
@@ -221,6 +231,8 @@ class SettingsStore internal constructor(
     suspend fun setDownloadBitrate(v: Int) = edit { it[K.downloadBitrate] = v }
     suspend fun setDownloadFormat(v: String) = edit { it[K.downloadFormat] = v }
     suspend fun setDynamicNpColor(v: Boolean) = edit { it[K.dynamicNpColor] = v }
+    suspend fun setRefreshRateMode(v: com.feishin.mobile.core.ui.RefreshRateMode) =
+        edit { it[K.refreshRateMode] = v.name }
     suspend fun setDefaultLayout(v: LayoutMode) = edit { it[K.defaultLayout] = v.name }
     suspend fun setShowOfflineChip(v: Boolean) = edit { it[K.showOfflineChip] = v }
     suspend fun setAutoOffline(v: Boolean) = edit { it[K.autoOffline] = v }

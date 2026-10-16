@@ -131,3 +131,29 @@ Caught and fixed 3 main-thread disk reads at startup, all verified gone
   same warmup.
 - `WidgetStateStore.load()` ran on main in the widget push → moved into
   the existing `withContext(IO)`.
+
+## High refresh rate (§D)
+
+- Pure selector (`core/ui/RefreshRate.kt`): highest same-resolution rate for
+  AUTO/MAX, nearest-to-60 same-res mode for STANDARD, ties prefer the current
+  mode, a higher rate at a lower resolution never wins. Unit-tested
+  (`RefreshRateTest`, 8 cases: 60-only, 60/90, 60/90/120, cross-resolution,
+  ties, empty list, hide-predicate).
+- Applied in MainActivity via the public window hints only:
+  `preferredDisplayModeId` always; `preferredRefreshRate` = 0 (no preference)
+  for Auto, peak rate for Max, 60 for Standard. `Surface.setFrameRate` exists
+  in compileSdk 34 (verified) but has no public accessor for the activity
+  window's Surface, so it is deliberately not used. Re-applied on create,
+  resume, config-change, and live on setting change.
+- Setting: Settings > Appearance & Layout > "Refresh rate"
+  (Auto/Max/Standard 60 Hz, DataStore-backed, live, hidden on single-rate
+  devices) with "Running at X Hz" secondary text.
+- Verification limits (emulator exposes exactly one 60.000004 Hz mode; the
+  `min/peak_refresh_rate` override is not honored and was reset): 90/120 Hz
+  rendering, Auto idle-drop, and the 8.3 ms frame budget are NOT verifiable
+  here — stated plainly. What was verified: the row hides on single-mode
+  devices, `preferredDisplayMode=1` confirmed live in the window attrs,
+  mode switches across create/resume/config-change with no FATAL/ANR,
+  StrictMode clean on the settings path, and the 60 Hz audit found no
+  frame-counting code (ring/marquee/equalizer/scroll physics are all
+  time-based: tweens, springs, infinite transitions).

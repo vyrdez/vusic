@@ -146,6 +146,8 @@ class SettingsViewModel @Inject constructor(
     fun setDownloadBitrate(v: Int) = viewModelScope.launch { store.setDownloadBitrate(v) }
     fun setDownloadFormat(v: String) = viewModelScope.launch { store.setDownloadFormat(v) }
     fun setDynamicNpColor(v: Boolean) = viewModelScope.launch { store.setDynamicNpColor(v) }
+    fun setRefreshRateMode(v: com.feishin.mobile.core.ui.RefreshRateMode) =
+        viewModelScope.launch { store.setRefreshRateMode(v) }
     fun setDefaultLayout(v: LayoutMode) = viewModelScope.launch { store.setDefaultLayout(v) }
     fun setShowOfflineChip(v: Boolean) = viewModelScope.launch { store.setShowOfflineChip(v) }
     fun setAutoOffline(v: Boolean) = viewModelScope.launch { store.setAutoOffline(v) }

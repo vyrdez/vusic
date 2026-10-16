@@ -38,8 +38,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlin.math.roundToInt
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -379,6 +381,10 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
         )
         SwitchRow("Dynamic Now Playing color", s.dynamicNpColor, vm::setDynamicNpColor)
     }
+    SettingsSection("DISPLAY")
+    SettingsCard {
+        RefreshRateRow(vm, s.refreshRateMode)
+    }
     SettingsSection("LIBRARY LAYOUT")
     SettingsCard {
         listOf("Songs" to "SONGS", "Albums" to "ALBUMS", "Artists" to "ARTISTS", "Playlists" to "PLAYLISTS").forEach { (label, tab) ->
@@ -418,6 +424,44 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
             description = "Songs per generated mix and radio batch.",
         )
     }
+}
+
+/**
+ * High-refresh-rate request (the one user-visible addition of the
+ * optimization phase). Hidden on devices that expose a single rate: there
+ * would be nothing to choose between. The secondary text shows the rate the
+ * display is actually running at right now.
+ */
+@Composable
+private fun RefreshRateRow(
+    vm: SettingsViewModel,
+    current: com.feishin.mobile.core.ui.RefreshRateMode,
+) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    // Re-read when the row recomposes (every select re-composes the screen).
+    val display = remember(view) {
+        val dm = view.context.getSystemService(android.hardware.display.DisplayManager::class.java)
+        dm.getDisplay(android.view.Display.DEFAULT_DISPLAY)
+    } ?: return
+    val modes = remember(display) {
+        display.supportedModes.map {
+            com.feishin.mobile.core.ui.DisplayModeInfo(
+                it.modeId, it.physicalWidth, it.physicalHeight, it.refreshRate,
+            )
+        }
+    }
+    if (!com.feishin.mobile.core.ui.RefreshRate.shouldShowSetting(modes)) return
+    val options = com.feishin.mobile.core.ui.RefreshRateMode.entries.toList()
+    ChoiceRow(
+        "Refresh rate",
+        com.feishin.mobile.core.ui.RefreshRate.label(current),
+        options.map { com.feishin.mobile.core.ui.RefreshRate.label(it) },
+        onSelect = { picked ->
+            options.firstOrNull { com.feishin.mobile.core.ui.RefreshRate.label(it) == picked }
+                ?.let { vm.setRefreshRateMode(it) }
+        },
+        description = "Running at ${display.refreshRate.roundToInt()} Hz",
+    )
 }
 
 // ---------- Sound & Playback ----------
