@@ -745,6 +745,18 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   correctly, preferredDisplayMode=1 confirmed live in the window attrs, no
   FATAL/ANR across all apply paths, StrictMode clean, no 60 Hz regressions.)
 
+- [x] M7.1a keystore hygiene
+  (Release keystore `keystore/vusic-release.jks` + `keystore/keystore.properties`
+  (keys: storePassword, keyAlias, keyPassword) are untracked and .gitignore-covered
+  (`keystore/`, `*.jks`, `*.keystore`); `git log --all` shows neither was ever
+  committed and the password values appear nowhere in history or tracked files.
+  Signing config reads only that untracked file (falls back to unsigned when
+  absent). Alias `vusic`, validity 2026-10-15 → 2054-03-02 (~27.4 years, over
+  the 25-year minimum — no replacement, which would break updates). Reference
+  copy + SIGNING-INFO.txt (no passwords) at D:\Feishin-release-signing\ —
+  outside git by design, back it up. Certificate SHA-256:
+  33:99:ED:FC:E8:D6:82:E4:B1:99:D8:0A:A2:6D:6B:09:2B:78:EF:BE:C9:29:77:F9:49:1F:27:97:BD:CC:66:2C.)
+
 Verified: `./gradlew assembleDebug` green, `./gradlew lint` green (0 errors),
 `testDebugUnitTest` 295/295 pass. APK at app/build/outputs/apk/debug/app-debug.apk.
 LIVE on-device test (emulator Pixel 7, API 34) against server.example.com: login OK,
