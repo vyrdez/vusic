@@ -767,7 +767,9 @@ private fun StorageScreen(
     }
     SettingsSection("SONG CACHE")
     SettingsCard {
-        val cacheSteps = com.feishin.mobile.core.common.StorageLimits.steps(deviceMax)
+        val cacheSteps = com.feishin.mobile.core.common.StorageLimits.cacheSteps(
+            com.feishin.mobile.core.common.CacheSizePolicy.streamStepBytes(), deviceMax,
+        )
         val cacheBytes = s.cacheSizeMb.toLong() * com.feishin.mobile.core.common.StorageLimits.MB
         val cacheIndex = com.feishin.mobile.core.common.StorageLimits.indexOf(cacheSteps, cacheBytes)
         InfoRow("Songs cached", st?.cachedSongs?.toString() ?: "…", showDivider = true)
@@ -789,7 +791,9 @@ private fun StorageScreen(
     }
     SettingsSection("IMAGE CACHE")
     SettingsCard {
-        val imageSteps = com.feishin.mobile.core.common.StorageLimits.steps(deviceMax)
+        val imageSteps = com.feishin.mobile.core.common.StorageLimits.cacheSteps(
+            com.feishin.mobile.core.common.CacheSizePolicy.imageStepBytes(), deviceMax,
+        )
         val imageBytes = s.imageCacheMb.toLong() * com.feishin.mobile.core.common.StorageLimits.MB
         val imageIndex = com.feishin.mobile.core.common.StorageLimits.indexOf(imageSteps, imageBytes)
         SliderRow(

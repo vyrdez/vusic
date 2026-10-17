@@ -46,6 +46,24 @@ object StorageLimits {
         return out
     }
 
+    /**
+     * Slider steps for a cache whose supported sizes are [supportedBytes],
+     * bounded by [deviceMaxBytes].
+     *
+     * Why this is separate from [steps]: a cache is only ever built at one of
+     * its supported sizes, so a rail built from the raw device steps used to
+     * offer sizes the cache silently rejected - dragging a 512 GB rail past
+     * 5 GB snapped straight back to 5 GB (the "5 GB plateau"). Intersecting the
+     * two keeps every step settable and never offers more than the device holds.
+     *
+     * Never empty: a device smaller than the smallest supported size falls back
+     * to that single smallest size, since no positive value would fit anyway.
+     */
+    fun cacheSteps(supportedBytes: List<Long>, deviceMaxBytes: Long): List<Long> {
+        val kept = supportedBytes.filter { it <= deviceMaxBytes.coerceAtLeast(0L) }
+        return kept.ifEmpty { listOfNotNull(supportedBytes.minOrNull()) }
+    }
+
     /** The step nearest to [value] (used to snap a stored value back onto the rail). */
     fun nearestStep(steps: List<Long>, value: Long): Long =
         steps.minByOrNull { kotlin.math.abs(it - value) } ?: value

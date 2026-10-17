@@ -23,6 +23,18 @@ object CacheSizePolicy {
     fun bytes(mb: Int): Long = mb.toLong() * 1024 * 1024
 
     /**
+     * The supported stream-cache sizes in bytes, for the settings slider.
+     *
+     * The slider must offer exactly these: [normalizeStream] snaps anything else
+     * back onto this set, so a rail with other values would silently bounce
+     * under the user's finger.
+     */
+    fun streamStepBytes(): List<Long> = STREAM_SIZES_MB.map { bytes(it) }
+
+    /** The supported image-cache sizes in bytes, for the settings slider. */
+    fun imageStepBytes(): List<Long> = IMAGE_SIZES_MB.map { bytes(it) }
+
+    /**
      * True when a download of [sizeBytes] would exceed the free space left after
      * keeping [reserveBytes] in hand. Used to pause instead of filling the disk.
      */
