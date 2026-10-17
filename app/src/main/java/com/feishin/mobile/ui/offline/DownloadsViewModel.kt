@@ -10,10 +10,14 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/** Sort preference key for the Downloaded list, in the same store as playlists. */
+private const val DOWNLOADS_SORT_KEY = "__downloads__"
 
 /** One row in the Downloads screen. */
 data class DownloadRow(
@@ -42,9 +46,35 @@ data class DownloadsUi(
 @HiltViewModel
 class DownloadsViewModel @Inject constructor(
     private val repo: DownloadRepository,
+    private val settings: com.feishin.mobile.data.settings.SettingsStore,
 ) : ViewModel() {
 
     private val coverBytes = kotlinx.coroutines.flow.MutableStateFlow(0L)
+
+    /** Remembered per list, under the same key scheme as playlists. */
+    private val _sort = kotlinx.coroutines.flow.MutableStateFlow(
+        com.feishin.mobile.core.common.PlaylistOrdering.DEFAULT,
+    )
+    val sort: StateFlow<com.feishin.mobile.core.common.PlaylistSort> = _sort.asStateFlow()
+    private val _query = kotlinx.coroutines.flow.MutableStateFlow("")
+    val query: StateFlow<String> = _query.asStateFlow()
+
+    init {
+        refreshCoverSize()
+        viewModelScope.launch {
+            settings.playlistSortFlow(DOWNLOADS_SORT_KEY).collect { _sort.value = it }
+        }
+    }
+
+    fun toggleSort(key: com.feishin.mobile.core.common.PlaylistSortKey) {
+        val next = com.feishin.mobile.core.common.PlaylistOrdering.toggle(_sort.value, key)
+        _sort.value = next
+        viewModelScope.launch { settings.setPlaylistSort(DOWNLOADS_SORT_KEY, next) }
+    }
+
+    fun setQuery(q: String) {
+        _query.value = q
+    }
 
     val ui: StateFlow<DownloadsUi> = combine(
         repo.downloads,
@@ -63,10 +93,6 @@ class DownloadsViewModel @Inject constructor(
 
     /** Kept for compatibility with the older call sites. */
     val busy = kotlinx.coroutines.flow.MutableStateFlow<Set<String>>(emptySet())
-
-    init {
-        refreshCoverSize()
-    }
 
     fun refreshCoverSize() {
         viewModelScope.launch { coverBytes.value = repo.coverCacheBytes() }

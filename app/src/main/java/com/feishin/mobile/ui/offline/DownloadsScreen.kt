@@ -29,11 +29,18 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,6 +77,29 @@ fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRep
     }
     val done = ui.rows.filter { it.status == DownloadStatus.COMPLETED }
     val failed = ui.rows.filter { it.status == DownloadStatus.FAILED }
+
+    // View-only ordering, same rules as a playlist. Duration is not offered:
+    // a download row carries no track duration, only a file size.
+    val sort by vm.sort.collectAsStateWithLifecycle()
+    val query by vm.query.collectAsStateWithLifecycle()
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    val downloadableKeys = remember {
+        com.feishin.mobile.core.common.PlaylistSortKey.entries
+            .filter { it != com.feishin.mobile.core.common.PlaylistSortKey.DURATION }
+    }
+    val doneIndices = remember(done, sort, query) {
+        com.feishin.mobile.core.common.PlaylistOrdering.visibleIndices(
+            size = done.size,
+            sort = sort,
+            query = query,
+            titleAt = { done[it].title },
+            artistAt = { done[it].artist },
+            albumAt = { done[it].album },
+            // Never read: DURATION is not in downloadableKeys.
+            durationAt = { 0 },
+        )
+    }
+    val visibleDone = remember(doneIndices, done) { doneIndices.map { done[it] } }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current)) {
         item {
@@ -139,9 +169,54 @@ fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRep
             item { SectionLabel("Failed (${failed.size})") }
             items(failed, key = { "f${it.songId}" }) { row -> ActiveRow(row, vm) }
         }
+        // Sort + filter apply to the downloaded songs themselves; the
+        // in-flight sections above are transient state, not a list to browse.
         if (done.isNotEmpty()) {
-            item { SectionLabel("Downloaded (${done.size})") }
-            items(done, key = { it.songId }, contentType = { "item" }) { row -> DoneRow(row, repo) { vm.remove(row.songId) } }
+            item {
+                Column {
+                    AnimatedVisibility(
+                        visible = searchOpen,
+                        enter = expandVertically(
+                            expandFrom = androidx.compose.ui.Alignment.Top,
+                            animationSpec = com.feishin.mobile.ui.theme.Motion.layoutTween(),
+                        ) + fadeIn(com.feishin.mobile.ui.theme.Motion.fade()),
+                        exit = shrinkVertically(
+                            shrinkTowards = androidx.compose.ui.Alignment.Top,
+                            animationSpec = com.feishin.mobile.ui.theme.Motion.layoutTween(),
+                        ) + fadeOut(com.feishin.mobile.ui.theme.Motion.fade()),
+                    ) {
+                        com.feishin.mobile.ui.library.LibrarySearchField(
+                            query = query,
+                            onQuery = vm::setQuery,
+                            onClose = { searchOpen = false; vm.setQuery("") },
+                            autoFocus = true,
+                        )
+                    }
+                    com.feishin.mobile.ui.detail.PlaylistSortRow(
+                        sort = sort,
+                        onSelect = vm::toggleSort,
+                        onSearchClick = { searchOpen = !searchOpen },
+                        availableKeys = downloadableKeys,
+                    )
+                    Text(
+                        if (query.isBlank()) "Downloaded (${done.size})"
+                        else "Downloaded (${visibleDone.size} of ${done.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp),
+                    )
+                    if (visibleDone.isEmpty() && query.isNotBlank()) {
+                        Text(
+                            "No downloads match \"$query\"",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = VusicColors.SecondaryText,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    }
+                }
+            }
+            items(visibleDone, key = { it.songId }, contentType = { "item" }) { row ->
+                DoneRow(row, repo) { vm.remove(row.songId) }
+            }
         }
         if (active.isEmpty() && done.isEmpty() && failed.isEmpty()) {
             item { EmptyState("No downloads yet. Use the download button on any song, album or playlist.") }

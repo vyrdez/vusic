@@ -130,6 +130,8 @@ class SettingsStore internal constructor(
         val librarySorts: Map<String, com.feishin.mobile.core.common.SortChoice> = emptyMap(),
         /** Per-tab grid/list layout, keyed by tab name. */
         val libraryLayouts: Map<String, LayoutMode> = emptyMap(),
+        /** Per-playlist track order, keyed by playlist id. Never sent to the server. */
+        val playlistSorts: Map<String, com.feishin.mobile.core.common.PlaylistSort> = emptyMap(),
     ) {
         /** Effective ReplayGain mode: the master switch overrides the picker. */
         val effectiveReplayGain: com.feishin.mobile.core.common.ReplayGainMode
@@ -199,12 +201,19 @@ class SettingsStore internal constructor(
                     val tab = k.name.removePrefix(LAYOUT_PREFIX)
                     runCatching { LayoutMode.valueOf(v as String) }.getOrNull()?.let { tab to it }
                 }.toMap(),
+            playlistSorts = p.asMap()
+                .filterKeys { it.name.startsWith(PLAYLIST_SORT_PREFIX) }
+                .mapNotNull { (k, v) ->
+                    val key = k.name.removePrefix(PLAYLIST_SORT_PREFIX)
+                    (v as? String)?.let { raw -> key to com.feishin.mobile.core.common.PlaylistSort.parse(raw) }
+                }.toMap(),
         )
     }
 
     companion object {
         const val SORT_PREFIX = "library_sort_"
         const val LAYOUT_PREFIX = "library_layout_"
+        const val PLAYLIST_SORT_PREFIX = "playlist_sort_"
         val RADIO_BATCH_OPTIONS = listOf(10, 20, 30, 50)
     }
 
@@ -250,6 +259,15 @@ class SettingsStore internal constructor(
     /** Per-tab grid/list layout, e.g. tab = "ALBUMS". */
     suspend fun setLibraryLayout(tab: String, mode: LayoutMode) =
         edit { it[stringPreferencesKey(LAYOUT_PREFIX + tab)] = mode.name }
+
+    /** Per-playlist track order, e.g. playlist = "pl-123". View-only. */
+    suspend fun setPlaylistSort(
+        playlist: String,
+        sort: com.feishin.mobile.core.common.PlaylistSort,
+    ) = edit { it[stringPreferencesKey(PLAYLIST_SORT_PREFIX + playlist)] = sort.serialize() }
+
+    fun playlistSortFlow(playlist: String): Flow<com.feishin.mobile.core.common.PlaylistSort> =
+        flow.map { s -> s.playlistSorts[playlist] ?: com.feishin.mobile.core.common.PlaylistOrdering.DEFAULT }
 
     fun librarySortFlow(tab: String): Flow<com.feishin.mobile.core.common.SortChoice> =
         flow.map { s ->

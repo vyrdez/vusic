@@ -1,5 +1,10 @@
 package com.feishin.mobile.ui.detail
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,15 +17,22 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,7 +46,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +59,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.feishin.mobile.core.common.PlaylistOrdering
+import com.feishin.mobile.core.common.PlaylistSort
+import com.feishin.mobile.core.common.PlaylistSortKey
 import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.domain.model.PlaylistCover
 import com.feishin.mobile.domain.repo.MusicDataRepository
@@ -220,6 +237,67 @@ fun AlbumHeader(
     }
 }
 
+/**
+ * Sort chips plus a search toggle, shared by every track list that supports
+ * view-only ordering (playlists, Favorite songs, Cached, Downloads).
+ *
+ * Tapping the active chip flips ascending/descending and shows an arrow; a
+ * different chip always starts ascending. Same chip language as the Library
+ * tab row so the two do not feel like different apps.
+ */
+@Composable
+fun PlaylistSortRow(
+    sort: PlaylistSort,
+    onSelect: (PlaylistSortKey) -> Unit,
+    onSearchClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    // Downloads rows carry no duration, so that chip is not offered there.
+    availableKeys: List<PlaylistSortKey> = PlaylistSortKey.entries,
+) {
+    // A remembered sort naming a key this list cannot express falls back, so a
+    // stale preference can never blank the list.
+    val effective = remember(sort, availableKeys) {
+        if (sort.key in availableKeys) sort else PlaylistOrdering.DEFAULT
+    }
+    Row(
+        modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        androidx.compose.foundation.lazy.LazyRow(
+            Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(availableKeys, key = { it.name }, contentType = { "item" }) { key ->
+                val selected = key == effective.key
+                AssistChip(
+                    onClick = { onSelect(key) },
+                    label = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(key.label, maxLines = 1)
+                            if (selected) {
+                                Icon(
+                                    if (effective.descending) Icons.Default.ArrowDownward
+                                    else Icons.Default.ArrowUpward,
+                                    contentDescription = if (effective.descending) "Descending" else "Ascending",
+                                    modifier = Modifier.size(14.dp).padding(start = 2.dp),
+                                )
+                            }
+                        }
+                    },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = if (selected) VusicColors.SurfaceHigh
+                        else androidx.compose.ui.graphics.Color.Transparent,
+                    ),
+                )
+            }
+        }
+        IconButton(onClick = onSearchClick) {
+            Icon(Icons.Default.Search, contentDescription = "Search tracks")
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlaylistDetailScreen(
@@ -234,6 +312,9 @@ fun PlaylistDetailScreen(
     val nowPlaying by player.current.collectAsStateWithLifecycle()
     val isPlaying by player.isPlaying.collectAsStateWithLifecycle()
     val isVirtual = vm.isVirtualFavorites || vm.isVirtualCached
+    val sort by vm.sort.collectAsStateWithLifecycle()
+    val query by vm.query.collectAsStateWithLifecycle()
+    var searchOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     when (val s = ui) {
         is UiState.Loading -> LoadingBox()
         is UiState.Error -> ErrorBox(s.message, vm::refresh)
@@ -245,6 +326,24 @@ fun PlaylistDetailScreen(
         is UiState.Data -> {
             val p = s.value
             val refreshing by vm.refreshing.collectAsStateWithLifecycle()
+            // The rows the user can actually see, in the order they can see
+            // them. `visibleIndices` are positions in p.tracks, which stays
+            // untouched: nothing here is ever sent back to the server.
+            val visibleIndices = remember(p.tracks, sort, query) {
+                PlaylistOrdering.visibleIndices(
+                    size = p.tracks.size,
+                    sort = sort,
+                    query = query,
+                    titleAt = { p.tracks[it].title },
+                    artistAt = { p.tracks[it].artist },
+                    albumAt = { p.tracks[it].album },
+                    durationAt = { p.tracks[it].durationSec },
+                )
+            }
+            val visibleTracks = remember(visibleIndices, p.tracks) {
+                visibleIndices.map { p.tracks[it] }
+            }
+            val canMutate = PlaylistOrdering.canMutateOrder(sort, query)
             val listState = rememberSavableListState()
             val topBar = LocalTopBarController.current
             val barScrolled by remember {
@@ -283,10 +382,14 @@ fun PlaylistDetailScreen(
                             artist = "",
                             artistId = null,
                             coverArtUrl = null,
-                            subtitle = "${p.songCount} songs",
+                            // Show the VISIBLE count while a sort or filter narrows
+                            // the list, so the header agrees with what is on
+                            // screen and with what Play will queue.
+                            subtitle = if (query.isBlank()) "${p.songCount} songs"
+                            else "${visibleTracks.size} of ${p.songCount} songs",
                             starred = false,
-                            onPlay = { player.playAll(p.tracks, source = p.name) },
-                            onShuffle = { player.playAll(p.tracks, shuffle = true, source = p.name) },
+                            onPlay = { player.playAll(visibleTracks, source = p.name) },
+                            onShuffle = { player.playAll(visibleTracks, shuffle = true, source = p.name) },
                             onFavorite = {},
                             onMore = {
                                 onActions(
@@ -316,14 +419,53 @@ fun PlaylistDetailScreen(
                                 OutlinedButton(onClick = { vm.delete(onBack) }) { Text("Delete playlist") }
                             }
                         }
+                        AnimatedVisibility(
+                            visible = searchOpen,
+                            enter = expandVertically(
+                                expandFrom = Alignment.Top,
+                                animationSpec = com.feishin.mobile.ui.theme.Motion.layoutTween(),
+                            ) + fadeIn(com.feishin.mobile.ui.theme.Motion.fade()),
+                            exit = shrinkVertically(
+                                shrinkTowards = Alignment.Top,
+                                animationSpec = com.feishin.mobile.ui.theme.Motion.layoutTween(),
+                            ) + fadeOut(com.feishin.mobile.ui.theme.Motion.fade()),
+                        ) {
+                            com.feishin.mobile.ui.library.LibrarySearchField(
+                                query = query,
+                                onQuery = vm::setQuery,
+                                onClose = { searchOpen = false; vm.setQuery("") },
+                                autoFocus = true,
+                            )
+                        }
+                        PlaylistSortRow(
+                            sort = sort,
+                            onSelect = vm::toggleSort,
+                            onSearchClick = { searchOpen = !searchOpen },
+                        )
+                        if (query.isNotBlank() && visibleTracks.isEmpty()) {
+                            Text(
+                                "No tracks match \"$query\"",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = VusicColors.SecondaryText,
+                                modifier = Modifier.padding(horizontal = VusicSpacing.ScreenHorizontal, vertical = 12.dp),
+                            )
+                        }
                     }
-                    items(p.tracks.size, key = { i -> p.tracks[i].id + "_$i" }, contentType = { "item" }) { i ->
-                        val song = p.tracks[i]
+                    // Keyed by source position, not id alone: a playlist may
+                    // legitimately hold the same song twice, and the source
+                    // index is what stays stable across a re-sort/re-filter.
+                    itemsIndexed(visibleIndices, key = { _, src -> "${p.tracks[src].id}#$src" }) { visibleIndex, src ->
+                        val song = p.tracks[src]
                         TrackRow(
                             track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),
-                            onClick = { player.playAll(p.tracks, i, source = p.name) },
+                            // Play exactly what the user can see.
+                            onClick = { player.playAll(visibleTracks, visibleIndex, source = p.name) },
                             onActions = { onActions(ActionTarget.Track(song)) },
-                            onRemove = if (isVirtual) null else ({ vm.removeAt(i) }),
+                            // Reordering/removing act on server positions, so they
+                            // are only offered while the visible list IS the
+                            // stored order. Removal itself still resolves the
+                            // track id, never the row index.
+                            onRemove = if (isVirtual || !canMutate) null else ({ vm.removeTrack(song) }),
                             isCurrent = song.id == nowPlaying?.id, isPlaying = isPlaying,
                         )
                     }

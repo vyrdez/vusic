@@ -121,6 +121,7 @@ class PlaylistDetailViewModel @Inject constructor(
     private val repo: MusicDataRepository,
     private val playlistEvents: PlaylistEvents,
     private val cachedTracks: com.feishin.mobile.data.cache.CachedTrackStore,
+    private val settings: com.feishin.mobile.data.settings.SettingsStore,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     val id: String = savedStateHandle.get<String>("id") ?: ""
@@ -133,8 +134,19 @@ class PlaylistDetailViewModel @Inject constructor(
     private val _ui = MutableStateFlow<UiState<PlaylistDetail>>(UiState.Loading)
     val ui: StateFlow<UiState<PlaylistDetail>> = _ui.asStateFlow()
 
+    // ---- view-only ordering (P8-E) ----------------------------------------
+    // The sort is remembered per playlist; the query is deliberately not
+    // persisted so a filtered view never looks stale on re-entry.
+    private val _sort = MutableStateFlow(com.feishin.mobile.core.common.PlaylistOrdering.DEFAULT)
+    val sort: StateFlow<com.feishin.mobile.core.common.PlaylistSort> = _sort.asStateFlow()
+    private val _query = MutableStateFlow("")
+    val query: StateFlow<String> = _query.asStateFlow()
+
     init {
         refresh()
+        viewModelScope.launch {
+            settings.playlistSortFlow(id).collect { _sort.value = it }
+        }
         // Added tracks refresh this playlist's cover; star changes re-sync
         // the Favorite songs collection.
         viewModelScope.launch {
@@ -202,12 +214,35 @@ class PlaylistDetailViewModel @Inject constructor(
         }
     }
 
-    fun removeAt(index: Int) {
+    /**
+     * Remove by TRACK, never by the row the user saw.
+     *
+     * The screen may be sorted or filtered, so a visible position has nothing
+     * to do with the server's entry index; the index is looked up from the
+     * unmodified list by id. Refuses when the visible list is not the stored
+     * order, which is what keeps a reordering from deleting the wrong song.
+     */
+    fun removeTrack(track: com.feishin.mobile.domain.model.Track) {
         if (isVirtualFavorites) return
+        if (!com.feishin.mobile.core.common.PlaylistOrdering.canMutateOrder(_sort.value, _query.value)) return
+        val source = (_ui.value as? UiState.Data)?.value?.tracks ?: return
+        val index = source.indexOfFirst { it.id == track.id }
+        if (index < 0) return
         viewModelScope.launch {
             repo.removeFromPlaylist(id, listOf(index))
             refresh()
         }
+    }
+
+    /** Tapping a sort key flips direction on repeat, resets it on change. */
+    fun toggleSort(key: com.feishin.mobile.core.common.PlaylistSortKey) {
+        val next = com.feishin.mobile.core.common.PlaylistOrdering.toggle(_sort.value, key)
+        _sort.value = next
+        viewModelScope.launch { settings.setPlaylistSort(id, next) }
+    }
+
+    fun setQuery(q: String) {
+        _query.value = q
     }
 
     fun delete(onDone: () -> Unit) {
