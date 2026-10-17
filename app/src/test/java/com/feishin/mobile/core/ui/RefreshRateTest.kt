@@ -99,8 +99,7 @@ class RefreshRateTest {
     }
 
     @Test
-    fun settingHiddenWithSingleRate() {
-        assertFalse(RefreshRate.shouldShowSetting(only60))
+    fun settingHiddenWithSingleRate() {        assertFalse(RefreshRate.shouldShowSetting(only60))
         assertTrue(RefreshRate.shouldShowSetting(res6090))
         assertTrue(RefreshRate.shouldShowSetting(res6090120))
         // Same rate twice (different ids) is still a single rate: hide.
@@ -112,5 +111,27 @@ class RefreshRateTest {
                 ),
             ),
         )
+    }
+
+    // ---- requested refresh rate ---------------------------------------------
+
+    @Test
+    fun standardAlwaysRequestsExactly60() {
+        // Even on a panel with no 60 Hz mode, "Standard 60 Hz" asks for 60 - it
+        // used to ask for the nearest mode's rate, so the setting did nothing.
+        assertEquals(60f, RefreshRate.requestedRate(RefreshRateMode.STANDARD, 120f), 1e-6f)
+        assertEquals(60f, RefreshRate.requestedRate(RefreshRateMode.STANDARD, 90f), 1e-6f)
+        assertEquals(60f, RefreshRate.requestedRate(RefreshRateMode.STANDARD, 60f), 1e-6f)
+    }
+
+    @Test
+    fun maxRequestsThePeakRate() {
+        assertEquals(120f, RefreshRate.requestedRate(RefreshRateMode.MAX, 120f), 1e-6f)
+        assertEquals(90f, RefreshRate.requestedRate(RefreshRateMode.MAX, 90f), 1e-6f)
+    }
+
+    @Test
+    fun autoRequestsNoPreference() {
+        assertEquals(0f, RefreshRate.requestedRate(RefreshRateMode.AUTO, 120f), 1e-6f)
     }
 }

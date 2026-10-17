@@ -437,11 +437,12 @@ private fun RefreshRateRow(
     vm: SettingsViewModel,
     current: com.feishin.mobile.core.ui.RefreshRateMode,
 ) {
-    val view = androidx.compose.ui.platform.LocalView.current
-    // Re-read when the row recomposes (every select re-composes the screen).
-    val display = remember(view) {
-        val dm = view.context.getSystemService(android.hardware.display.DisplayManager::class.java)
-        dm.getDisplay(android.view.Display.DEFAULT_DISPLAY)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val manager = remember(context) {
+        context.getSystemService(android.hardware.display.DisplayManager::class.java)
+    }
+    val display = remember(manager) {
+        manager?.getDisplay(android.view.Display.DEFAULT_DISPLAY)
     } ?: return
     val modes = remember(display) {
         display.supportedModes.map {
@@ -451,6 +452,35 @@ private fun RefreshRateRow(
         }
     }
     if (!com.feishin.mobile.core.ui.RefreshRate.shouldShowSetting(modes)) return
+
+    // The rate the display is ACTUALLY running at.
+    //
+    // This used to be read straight from `display.refreshRate` during
+    // composition. That value is not snapshot state, so nothing recomposed the
+    // row when the system changed rate: the line froze on whatever it said the
+    // first time the screen was opened and never told the user whether their
+    // pick had taken effect. The display's own change callback is turned into
+    // state here, so the line tracks reality — including an LTPO idle drop or a
+    // vendor override that ignores the request.
+    var runningHz by remember(display) {
+        androidx.compose.runtime.mutableFloatStateOf(display.refreshRate)
+    }
+    androidx.compose.runtime.DisposableEffect(manager, display) {
+        val listener = object : android.hardware.display.DisplayManager.DisplayListener {
+            override fun onDisplayAdded(displayId: Int) = Unit
+            override fun onDisplayRemoved(displayId: Int) = Unit
+            override fun onDisplayChanged(displayId: Int) {
+                if (displayId == android.view.Display.DEFAULT_DISPLAY) {
+                    runningHz = display.refreshRate
+                }
+            }
+        }
+        manager?.registerDisplayListener(
+            listener, android.os.Handler(android.os.Looper.getMainLooper()),
+        )
+        onDispose { manager?.unregisterDisplayListener(listener) }
+    }
+
     val options = com.feishin.mobile.core.ui.RefreshRateMode.entries.toList()
     ChoiceRow(
         "Refresh rate",
@@ -460,7 +490,7 @@ private fun RefreshRateRow(
             options.firstOrNull { com.feishin.mobile.core.ui.RefreshRate.label(it) == picked }
                 ?.let { vm.setRefreshRateMode(it) }
         },
-        description = "Running at ${display.refreshRate.roundToInt()} Hz",
+        description = "Running at ${runningHz.roundToInt()} Hz",
     )
 }
 

@@ -127,12 +127,9 @@ class MainActivity : ComponentActivity() {
             changed = true
         }
         // 0 = no preference (Auto): the system owns the idle rate. Max and
-        // Standard state their rate explicitly.
-        val wantRate = when (mode) {
-            com.feishin.mobile.core.ui.RefreshRateMode.AUTO -> 0f
-            com.feishin.mobile.core.ui.RefreshRateMode.MAX -> targetRate
-            com.feishin.mobile.core.ui.RefreshRateMode.STANDARD -> targetRate
-        }
+        // Standard state their rate explicitly; Standard always asks for exactly
+        // 60, even when the nearest mode is a higher rate (90/120-only panel).
+        val wantRate = com.feishin.mobile.core.ui.RefreshRate.requestedRate(mode, targetRate)
         if (attrs.preferredRefreshRate != wantRate) {
             attrs.preferredRefreshRate = wantRate
             changed = true

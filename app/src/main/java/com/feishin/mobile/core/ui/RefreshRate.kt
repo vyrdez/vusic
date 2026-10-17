@@ -78,4 +78,21 @@ object RefreshRate {
         RefreshRateMode.MAX -> "Max"
         RefreshRateMode.STANDARD -> "Standard 60 Hz"
     }
+
+    /**
+     * The `preferredRefreshRate` value to request for [mode], given the rate of
+     * the mode [selectModeId] picked.
+     *
+     * - AUTO asks for no preference (0) so the system owns the idle rate.
+     * - MAX asks for the selected (peak) rate.
+     * - STANDARD always asks for exactly [STANDARD_RATE]. Deriving it from the
+     *   selected mode — as the caller used to — meant "Standard 60 Hz" asked for
+     *   the *nearest* mode's rate, which on a panel with no 60 Hz mode (90-only,
+     *   120-only) is higher than 60: the setting silently did nothing.
+     */
+    fun requestedRate(mode: RefreshRateMode, selectedModeRate: Float): Float = when (mode) {
+        RefreshRateMode.AUTO -> 0f
+        RefreshRateMode.MAX -> selectedModeRate
+        RefreshRateMode.STANDARD -> STANDARD_RATE
+    }
 }
