@@ -112,6 +112,13 @@ object Motion {
         stiffness = Spring.StiffnessLow,
     )
 
+    /**
+     * IntSize variant over a fixed duration, for a reveal whose timing should
+     * read as deliberate rather than springy (the library filter row).
+     */
+    fun layoutTween(duration: Int = Normal) =
+        tweenSpec<androidx.compose.ui.unit.IntSize>(duration)
+
     /** IntOffset variant, for navigation slides. */
     fun navSlide(): FiniteAnimationSpec<androidx.compose.ui.unit.IntOffset> = spring(
         dampingRatio = 1f,

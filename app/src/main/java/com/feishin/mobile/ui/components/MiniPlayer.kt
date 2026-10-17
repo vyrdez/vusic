@@ -32,6 +32,8 @@ import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -222,10 +224,10 @@ fun MiniPlayer(
     // fade the card out while it is still moving (never fade-only).
     val fade = remember { Animatable(1f) }
     // Committed skip: -1 previous (slid out left), +1 next (slid out right).
-    var pendingSkip by remember { mutableStateOf(0) }
+    var pendingSkip by remember { mutableIntStateOf(0) }
     // Card size in px: the skip slide-off distance and the clear threshold.
-    var cardW by remember { mutableStateOf(0f) }
-    var cardH by remember { mutableStateOf(0f) }
+    var cardW by remember { mutableFloatStateOf(0f) }
+    var cardH by remember { mutableFloatStateOf(0f) }
     val currentIndex by player.currentIndex.collectAsStateWithLifecycle()
     val repeatMode by player.repeatMode.collectAsStateWithLifecycle()
 

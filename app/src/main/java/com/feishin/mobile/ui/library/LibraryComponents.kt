@@ -28,10 +28,14 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,13 +53,25 @@ import com.feishin.mobile.ui.theme.VusicColors
 
 /**
  * Inline library search: back arrow to close, field kept per tab, clear X.
+ *
+ * @param autoFocus take focus once the reveal animation has started, so the
+ *  keyboard animating up does not cover the row growing into place.
  */
 @Composable
 fun LibrarySearchField(
     query: String,
     onQuery: (String) -> Unit,
     onClose: () -> Unit,
+    autoFocus: Boolean = false,
 ) {
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(autoFocus) {
+        if (!autoFocus) return@LaunchedEffect
+        // One frame for the row to start expanding, then focus. Requesting it
+        // immediately races the enter animation and the IME covers it.
+        delay(64)
+        focusRequester.requestFocus()
+    }
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -81,7 +97,7 @@ fun LibrarySearchField(
                 onValueChange = onQuery,
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
             )
         }
         if (query.isNotEmpty()) {

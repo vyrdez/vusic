@@ -1,5 +1,10 @@
 package com.feishin.mobile.ui.library
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -134,12 +139,26 @@ fun LibraryScreen(
             }
         }
         // Inline search: filters the current tab locally, query kept in memory
-        // while the tab is open.
-        if (searchOpen) {
+        // while the tab is open. It used to be a bare `if`, so the row popped in
+        // and the chips below it jumped. Animating the height inside the layout
+        // flow makes the chips glide, and the field only takes focus once the
+        // reveal is under way so the keyboard does not cover the animation.
+        AnimatedVisibility(
+            visible = searchOpen,
+            enter = expandVertically(
+                expandFrom = androidx.compose.ui.Alignment.Top,
+                animationSpec = com.feishin.mobile.ui.theme.Motion.layoutTween(),
+            ) + fadeIn(com.feishin.mobile.ui.theme.Motion.fade()),
+            exit = shrinkVertically(
+                shrinkTowards = androidx.compose.ui.Alignment.Top,
+                animationSpec = com.feishin.mobile.ui.theme.Motion.layoutTween(),
+            ) + fadeOut(com.feishin.mobile.ui.theme.Motion.fade()),
+        ) {
             LibrarySearchField(
                 query = query,
                 onQuery = { vm.setQuery(tab, it) },
                 onClose = { searchOpen = false; vm.clearQuery(tab) },
+                autoFocus = true,
             )
         }
         // Chips own their line and scroll on their own.
