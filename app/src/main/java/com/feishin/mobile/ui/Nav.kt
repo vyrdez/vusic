@@ -1,6 +1,8 @@
 package com.feishin.mobile.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -245,7 +247,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     label = "mini-claim",
                 )
                 CompositionLocalProvider(LocalMiniClearance provides miniClaim) {
-                    Box(
+                    Column(
                         Modifier.fillMaxSize()
                             .padding(
                                 top = padding.calculateTopPadding(),
@@ -261,11 +263,22 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     val effectiveOffline = settingsState?.let { s ->
                         s.offlineMode || (s.autoOffline && !online)
                     } == true
-                    if (effectiveOffline && settingsState?.showOfflineChip != false) {
-                        OfflineBanner(
-                            modifier = Modifier.align(androidx.compose.ui.Alignment.TopCenter),
-                        )
+                    // The banner is a LAYOUT ROW, not an overlay: it used to be a
+                    // sibling of the NavHost aligned TopCenter, so it painted on
+                    // top of every screen's title and filter field instead of
+                    // pushing them down. One shared Column fixes every screen at
+                    // once - no per-screen offset - and the height is animated so
+                    // content glides instead of jumping.
+                    AnimatedVisibility(
+                        visible = effectiveOffline && settingsState?.showOfflineChip != false,
+                        enter = expandVertically(expandFrom = androidx.compose.ui.Alignment.Top, animationSpec = Motion.layoutSize()) +
+                            fadeIn(Motion.fade(Motion.Normal)),
+                        exit = shrinkVertically(shrinkTowards = androidx.compose.ui.Alignment.Top, animationSpec = Motion.layoutSize()) +
+                            fadeOut(Motion.fade(Motion.Normal)),
+                    ) {
+                        OfflineBanner()
                     }
+                    Box(Modifier.fillMaxWidth().weight(1f)) {
                     NavHost(
                         nav,
                         startDestination = Routes.HOME,
@@ -379,6 +392,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 }
             }
         }
+    }
 
             // Floating mini player, hoisted OUT of the scaffold's content slot
             // into the full-window box (below). Inside the slot it would sit in
