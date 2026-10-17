@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
@@ -29,9 +30,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,14 +43,20 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.Player
+import com.feishin.mobile.core.common.MiniPlayerGesture
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.theme.LocalPlayingColors
 import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.playingColor
 import kotlinx.coroutines.launch
+
+private const val REPEAT_ALL = Player.REPEAT_MODE_ALL
+private const val REPEAT_ONE = Player.REPEAT_MODE_ONE
 
 /** Pixels of downward travel that commit a queue clear on release. */
 private const val CLEAR_THRESHOLD_PX = 160f
@@ -201,10 +211,73 @@ fun MiniPlayer(
             }
         }
     }
-    // Drag state lives in an Animatable: snapTo() per pointer event tracks the
+    // Drag state lives in Animatables: snapTo() per pointer event tracks the
     // finger with no recomposition (graphicsLayer reads don't recompose), and
-    // animateTo() springs back on a short release.
+    // animateTo() springs back on a short release. One offset per axis, and the
+    // gesture is axis-locked, so only the locked one is ever non-zero and a
+    // diagonal drag cannot fire two actions.
+    val dragX = remember { Animatable(0f) }
     val dragY = remember { Animatable(0f) }
+    // Dismiss/hand-off alpha, animated independently so a clear or a skip can
+    // fade the card out while it is still moving (never fade-only).
+    val fade = remember { Animatable(1f) }
+    // Committed skip: -1 previous (slid out left), +1 next (slid out right).
+    var pendingSkip by remember { mutableStateOf(0) }
+    // Card size in px: the skip slide-off distance and the clear threshold.
+    var cardW by remember { mutableStateOf(0f) }
+    var cardH by remember { mutableStateOf(0f) }
+    val currentIndex by player.currentIndex.collectAsStateWithLifecycle()
+    val repeatMode by player.repeatMode.collectAsStateWithLifecycle()
+
+    // A committed clear leaves the card translated off the bottom and faded
+    // out. `visible` going true again means the queue came back (Undo, or new
+    // playback), so the offsets must be put back or the card reappears
+    // invisible.
+    LaunchedEffect(visible) {
+        if (visible) {
+            dragX.snapTo(0f)
+            dragY.snapTo(0f)
+            fade.snapTo(1f)
+            pendingSkip = 0
+        }
+    }
+
+    // Two-phase skip: the old content slides out in the drag direction, the
+    // player advances, then the new content slides in from the other side.
+    // The swap and the final rest position are both in a `finally`, because a
+    // newer swipe cancels this effect mid-flight: rapid swipes must still skip
+    // once per gesture and must never strand the card off-screen.
+    androidx.compose.runtime.LaunchedEffect(pendingSkip) {
+        if (pendingSkip == 0) return@LaunchedEffect
+        val dir = pendingSkip.toFloat()
+        val travel = maxOf(cardW * 1.15f, 240f)
+        var swapped = false
+        try {
+            dragX.animateTo(dir * travel, Motion.fade(Motion.Fast))
+            fade.animateTo(0f, Motion.fade(Motion.Fast))
+            if (dir < 0f) player.skipToPrevious() else player.skipToNext()
+            swapped = true
+            dragX.snapTo(-dir * travel)
+            fade.animateTo(1f, Motion.fade(Motion.Fast))
+            dragX.animateTo(0f, Motion.snapBackSpring())
+        } finally {
+            if (!swapped) {
+                if (dir < 0f) player.skipToPrevious() else player.skipToNext()
+            }
+            dragX.snapTo(0f)
+            dragY.snapTo(0f)
+            fade.snapTo(1f)
+        }
+        pendingSkip = 0
+    }
+
+    fun springBack() {
+        scope.launch {
+            launch { dragX.animateTo(0f, Motion.snapBackSpring()) }
+            launch { dragY.animateTo(0f, Motion.snapBackSpring()) }
+        }
+    }
+
     // Full pill: corner radius is half the card height.
     val shape = RoundedCornerShape(MiniPlayerHeight / 2)
 
@@ -212,10 +285,15 @@ fun MiniPlayer(
         modifier
             .fillMaxWidth()
             .padding(horizontal = MiniPlayerMargin)
+            .onSizeChanged { cardW = it.width.toFloat(); cardH = it.height.toFloat() }
             .graphicsLayer {
                 // Enter/exit: rise + fade, driven by the same value the padding uses.
-                translationY = (1f - enter.value) * 48f
-                alpha = enter.value * (1f - dragY.value / 600f).coerceIn(0f, 1f)
+                translationY = dragY.value + (1f - enter.value) * 48f
+                translationX = dragX.value
+                alpha = enter.value * fade.value *
+                    // Only the downward clear dims the card while it travels;
+                    // a skip keeps full opacity so the slide reads as motion.
+                    (1f - (dragY.value / 900f).coerceIn(0f, 1f))
             }
             // Soft elevation instead of the old solid black band. Nothing else
             // here has a background: this container is fully transparent, so
@@ -227,43 +305,83 @@ fun MiniPlayer(
             // still clearly delineated from the page background and nav bar.
             .border(1.dp, outline, shape)
             .clickable(onClick = onOpen)
-            .pointerInput(queue.size) {
-                var totalX = 0f
-                var totalY = 0f
+            .pointerInput(queue.size, currentIndex, repeatMode) {
+                // Axis lock plus a real velocity: detectDragGestures gives the
+                // drag but no release velocity, so a VelocityTracker is fed from
+                // the pointer events to make flings work.
+                val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
+                val slop = viewConfiguration.touchSlop
+                var axis = 0   // 0 undecided, 1 horizontal, 2 vertical
+                var tx = 0f
+                var ty = 0f
                 detectDragGestures(
                     onDragStart = {
-                        totalX = 0f
-                        totalY = 0f
+                        axis = 0; tx = 0f; ty = 0f
+                        tracker.resetTracking()
                     },
-                    onDrag = { change, amount ->
-                        totalX += amount.x
-                        totalY += amount.y
-                        // Only downward travel moves the card; horizontal
-                        // skips and upward opens never displace it.
-                        val down = totalY.coerceAtLeast(0f)
-                        if (down > 0f && down >= kotlin.math.abs(totalX)) {
-                            change.consume()
-                            scope.launch { dragY.snapTo(down) }
+                    onDrag = { change, _ ->
+                        tracker.addPosition(change.uptimeMillis, change.position)
+                        tx += change.position.x - change.previousPosition.x
+                        ty += change.position.y - change.previousPosition.y
+                        if (axis == 0 && (kotlin.math.abs(tx) > slop || kotlin.math.abs(ty) > slop)) {
+                            axis = MiniPlayerGesture.dominantAxis(tx, ty, slop)
+                        }
+                        if (axis == 0) return@detectDragGestures
+                        change.consume()
+                        // Only the locked axis moves the card.
+                        if (axis == 1) {
+                            scope.launch {
+                                dragX.snapTo(tx.coerceIn(-(cardW * 1.2f), cardW * 1.2f))
+                            }
+                        } else {
+                            scope.launch { dragY.snapTo(ty.coerceIn(0f, cardH * 1.4f)) }
                         }
                     },
                     onDragEnd = {
-                        when {
-                            totalY > CLEAR_THRESHOLD_PX && totalY >= kotlin.math.abs(totalX) ->
-                                onQueueCleared(player.clearWithUndo())
-                            totalY < -120f && -totalY >= kotlin.math.abs(totalX) -> onOpen()
-                            totalX < -120f -> player.skipToNext()
-                            totalX > 120f -> player.skipToPrevious()
-                        }
-                        if (totalY <= CLEAR_THRESHOLD_PX) {
-                            scope.launch { dragY.animateTo(0f, Motion.snapBackSpring()) }
-                        } else {
-                            // Card is gone with the queue; reset for next time.
-                            scope.launch { dragY.snapTo(0f) }
+                        val v = tracker.calculateVelocity()
+                        val locked = axis
+                        val hasPrev = MiniPlayerGesture.hasPrevious(
+                            currentIndex, queue.size, repeatMode, REPEAT_ALL, REPEAT_ONE,
+                        )
+                        val hasNext = MiniPlayerGesture.hasNext(
+                            currentIndex, queue.size, repeatMode, REPEAT_ALL, REPEAT_ONE,
+                        )
+                        // Feed only the locked axis so a diagonal cannot commit twice.
+                        val dx = if (locked == 1) tx else 0f
+                        val dy = if (locked == 2) ty else 0f
+                        val vx = if (locked == 1) v.x else 0f
+                        val vy = if (locked == 2) v.y else 0f
+                        when (MiniPlayerGesture.classify(dx, dy, vx, vy, hasPrev, hasNext, cardW, cardH)) {
+                            MiniPlayerGesture.Action.CLEAR_QUEUE -> {
+                                // Slide off the bottom, then clear. Movement first,
+                                // fade second: never a fade-only dismissal.
+                                scope.launch {
+                                    dragY.animateTo(
+                                        cardH + 320f,
+                                        Motion.fade(Motion.Fast),
+                                    )
+                                    fade.animateTo(0f, Motion.fade(Motion.Fast))
+                                    onQueueCleared(player.clearWithUndo())
+                                    // The card is on its way out, so reset the
+                                    // offsets now: otherwise a later restore (the
+                                    // Undo) would bring it back translated and
+                                    // faded. `visible` does not change again in
+                                    // this pass, so this must happen here.
+                                    dragY.snapTo(0f)
+                                    fade.snapTo(1f)
+                                    dragX.snapTo(0f)
+                                }
+                            }
+                            MiniPlayerGesture.Action.PREVIOUS -> pendingSkip = -1
+                            MiniPlayerGesture.Action.NEXT -> pendingSkip = 1
+                            MiniPlayerGesture.Action.OPEN -> {
+                                springBack()
+                                onOpen()
+                            }
+                            MiniPlayerGesture.Action.NONE -> springBack()
                         }
                     },
-                    onDragCancel = {
-                        scope.launch { dragY.animateTo(0f, Motion.snapBackSpring()) }
-                    },
+                    onDragCancel = { springBack() },
                 )
             }
             .height(MiniPlayerHeight),
