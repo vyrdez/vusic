@@ -324,6 +324,41 @@ class ViewModelStateTest {
         assertEquals("boom", (vm.albums.value as UiState.Error).message)
     }
 
+    @Test
+    fun library_albumError_survivesTheSettingsFlowEmitting() {
+        // The settings flow always reports "changed" on its first emission
+        // (_sorts starts empty), which triggers a re-sort. That re-sort may
+        // only rewrite a list that actually rendered: an album load that failed
+        // has to keep reporting its error instead of being replaced by "no
+        // albums". The clobber is an ordering race, so this waits for the
+        // settings emission to actually land before asserting - otherwise the
+        // assertion runs first and passes even with the bug present.
+        val vm = libraryVm(FakeMusicRepo(albums = Result.Err("boom")))
+        awaitAlbumsSettled(vm)
+        // `layoutFor` falls back to GRID until the settings flow emits, so it
+        // cannot prove emission on its own. Round-tripping a real change does:
+        // toggling the layout only comes back through the settings flow, so
+        // once it reads LIST the collector has demonstrably run.
+        vm.toggleLayout(LibraryTab.ALBUMS)
+        repeat(400) {
+            if (vm.layoutFor(LibraryTab.ALBUMS) == LayoutMode.LIST) return@repeat
+            Thread.sleep(25)
+        }
+        assertEquals(
+            "settings flow never emitted, so this test proved nothing (layout=${vm.layoutFor(LibraryTab.ALBUMS)})",
+            LayoutMode.LIST.toString(),
+            vm.layoutFor(LibraryTab.ALBUMS).toString(),
+        )
+        // Now the settings collector is live and has already applied a
+        // re-sort; a short wait covers any further emission.
+        Thread.sleep(200)
+        assertEquals(
+            "boom",
+            (vm.albums.value as? UiState.Error)?.message
+                ?: "album error was clobbered by a re-sort (now ${vm.albums.value})",
+        )
+    }
+
     /**
      * `albums` starts as [UiState.Loading] and is filled asynchronously by
      * `loadAlbums()`, so asserting straight after construction is a race that

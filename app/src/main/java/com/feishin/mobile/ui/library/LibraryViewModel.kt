@@ -241,7 +241,20 @@ class LibraryViewModel @Inject constructor(
 
     /** Re-sorts already-loaded lists when a per-tab choice changes. */
     private fun reapplySorts(changed: Set<LibraryTab>) {
-        if (LibraryTab.ALBUMS in changed) applyAlbumSort()
+        if (LibraryTab.ALBUMS in changed) {
+            // Same guard as every other list here, and for the same reason: a
+            // re-sort may only rewrite a list that actually rendered. Without
+            // it, the settings flow's first emission (which always reports
+            // "changed", because _sorts starts empty) called applyAlbumSort()
+            // unconditionally and overwrote an in-flight Loading - or a real
+            // Error - with Empty. On a slow machine that clobber landed after
+            // loadAlbums() had published its result, so a genuine load failure
+            // was replaced by "no albums" and the message was lost.
+            val current = (_albums.value as? UiState.Data)?.value
+            if (current != null) {
+                _albums.value = UiState.Data(LibraryOrdering.sortAlbums(current, sortFor(LibraryTab.ALBUMS)))
+            }
+        }
         if (LibraryTab.ARTISTS in changed) {
             val current = (_artists.value as? UiState.Data)?.value
             if (current != null) {
