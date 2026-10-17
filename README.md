@@ -241,13 +241,6 @@ These are deliberate, not oversights:
 - **No sleep timer.** Crossfade, buffer settings and cache tuning already change
   the sound; a timer that pauses at a fixed offset tends to land badly with
   variable bitrate, so it was left out.
-- **Gray album covers** fall back to the neutral theme colour. The extraction
-  path is unit-tested, not device-tested.
-- **High refresh rate** is applied through the public window hints
-  (`preferredDisplayModeId` / `preferredRefreshRate`). Behaviour above 60 Hz was
-  verified by unit test and code inspection only — the emulator used during
-  development exposes a single 60 Hz mode.
-- **Bluetooth** audio-device switching was exercised on an emulator only.
 - **Android Auto** browse art may not render in the head unit when your server
   uses a self-signed certificate, because the car's own image loader cannot use
   the app's trust settings.
