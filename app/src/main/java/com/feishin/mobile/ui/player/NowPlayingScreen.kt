@@ -104,6 +104,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.common.Player
 import androidx.palette.graphics.Palette
@@ -283,6 +284,19 @@ fun NowPlayingScreen(
             val dragOffset = remember { androidx.compose.animation.core.Animatable(0f) }
             if (!lyricsMode) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
+                // The queue sheet is not composed while it is closed, so its own
+                // onSizeChanged cannot measure the travel height until it has
+                // already opened once. Seed it from this container (the sheet is
+                // fillMaxHeight(0.78) of it) so a FIRST gesture - a tap-to-open
+                // or an opening drag - converts pixels to progress with the real
+                // height instead of a stale guess.
+                val sheetTravelDp = maxHeight * 0.78f
+                val sheetDensity = LocalDensity.current
+                LaunchedEffect(sheetTravelDp, sheetDensity) {
+                    sheet.sheetHeightPx = with(sheetDensity) {
+                        sheetTravelDp.roundToPx().toFloat().coerceAtLeast(1f)
+                    }
+                }
                 // Nearly full-width art (16dp gutters) that still leaves room
                 // for everything below it on short screens: capped by height.
                 // Landscape/short screens get a compact budget instead.
@@ -584,25 +598,29 @@ private fun PlayingFromBottom(
     onDragEnd: (Float) -> Unit,
 ) {
     val source by player.sourceName.collectAsStateWithLifecycle()
-    // Whole area is tappable and draggable, following the finger 1:1 from the
-    // first pointer event (no threshold). The parent swipe-down-to-close only
-    // tracks downward drags, so up-here and down-there never fight. The area
-    // is at least 72dp tall so the entry is an easy tap target.
+    // The peek strip: the drag handle plus the "Playing from ..." line, with
+    // at least 72dp of hit area so the entry is an easy tap target. The whole
+    // column is BOTH the tap target and the drag handle — what is drawn is
+    // what grabs — and a single vertical `draggable` owns the gesture, so a
+    // tap and a drag can never fight over the same pointer stream: below the
+    // touch slop it is a tap (opens with the sheet spring), above it a drag
+    // that reports its real release velocity, so flings settle correctly.
+    // The parent swipe-down-to-close only tracks downward drags, so up-here
+    // and down-there never fight.
     Column(
         Modifier.fillMaxWidth()
             .heightIn(min = 72.dp)
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .pointerInput(Unit) {
-                detectVerticalDragGestures(
-                    onDragEnd = { onDragEnd(0f) },
-                    onDragCancel = { onDragEnd(0f) },
-                    onVerticalDrag = { change, amount ->
-                        change.consume()
-                        onDrag(amount)
-                    },
-                )
-            }
+            .draggable(
+                orientation = Orientation.Vertical,
+                state = rememberDraggableState { delta -> onDrag(delta) },
+                // Real release velocity (px/s, downward positive): an upward
+                // fling opens fully even from a short drag, a downward fling
+                // closes. The old detector always passed 0 here, which made
+                // every release position-only.
+                onDragStopped = { velocity -> onDragEnd(velocity) },
+            )
             .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -1126,8 +1144,21 @@ private fun QueueSheet(
     // normally and only takes over when the list is already at the top and the
     // finger drags down. Progress is read only inside graphicsLayer lambdas, so
     // dragging never recomposes a frame.
+    //
+    // Touch drags in the list settle through the Column's `draggable`
+    // (onDragStopped); ballistic flings that keep scrolling after the finger
+    // lifted never touch `draggable`, so onPostFling settles those here with
+    // the fling's own velocity. Without it a fast downward fling at the top
+    // of the list parked the sheet halfway with no settle ever coming.
     val nestedScroll = remember {
         object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            // Set when THIS connection moved the sheet, so the release can
+            // settle it even when the Column's own `draggable` never owned the
+            // gesture (a drag that starts over the list goes to the lazy list
+            // first). Without this the sheet kept whatever progress the finger
+            // left it at and rested halfway.
+            var moved = false
+
             override fun onPostScroll(
                 consumed: androidx.compose.ui.geometry.Offset,
                 available: androidx.compose.ui.geometry.Offset,
@@ -1137,9 +1168,44 @@ private fun QueueSheet(
                     listState.firstVisibleItemScrollOffset == 0
                 if (available.y > 0 && atTop) {
                     val h = state.sheetHeightPx
-                    if (h > 0f) state.dragBy(-available.y / h)
+                    if (h > 0f) {
+                        state.dragBy(-available.y / h)
+                        moved = true
+                    }
                 }
                 return androidx.compose.ui.geometry.Offset.Zero
+            }
+
+            // Dispatched on EVERY drag end (including a slow release with zero
+            // velocity), so it is the reliable place to resolve a sheet that
+            // this connection moved.
+            override suspend fun onPreFling(
+                available: androidx.compose.ui.unit.Velocity,
+            ): androidx.compose.ui.unit.Velocity {
+                if (moved) {
+                    moved = false
+                    state.settle(0f)
+                }
+                return androidx.compose.ui.unit.Velocity.Zero
+            }
+
+            override suspend fun onPostFling(
+                consumed: androidx.compose.ui.unit.Velocity,
+                available: androidx.compose.ui.unit.Velocity,
+            ): androidx.compose.ui.unit.Velocity {
+                if (moved) {
+                    moved = false
+                    state.settle(0f)
+                }
+                // A ballistic downward fling still travelling at the top of the
+                // list: close with the fling's own velocity and consume it.
+                val atTop = listState.firstVisibleItemIndex == 0 &&
+                    listState.firstVisibleItemScrollOffset == 0
+                if (available.y > 0 && atTop && state.open) {
+                    state.onDragEnd(available.y)
+                    return available
+                }
+                return androidx.compose.ui.unit.Velocity.Zero
             }
         }
     }

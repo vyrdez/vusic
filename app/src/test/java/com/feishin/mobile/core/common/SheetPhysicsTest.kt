@@ -1,5 +1,6 @@
 package com.feishin.mobile.core.common
 
+import com.feishin.mobile.ui.components.velocityToProgress
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -27,16 +28,46 @@ class SheetPhysicsTest {
 
     @Test
     fun settleTarget_belowThresholdAndNoFling_closes() {
-        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTarget(0.34f, 0f))
+        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTarget(0.17f, 0f))
         assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTarget(0f, 0f))
-        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTarget(0.2f, 0.04f))
+        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTarget(0.1f, 0.04f))
     }
 
     @Test
     fun settleTarget_aboveThresholdAndNoFling_opens() {
-        assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTarget(0.35f, 0f))
+        assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTarget(0.18f, 0f))
+        assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTarget(0.19f, 0f))
         assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTarget(0.99f, 0f))
         assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTarget(1f, 0f))
+    }
+
+    @Test
+    fun settleTarget_shortUpwardDragPastThreshold_opens() {
+        // The flicker this phase fixes: a short upward drag that passes roughly
+        // a fifth of the travel must open fully, never snap back shut.
+        assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTarget(0.19f, 0f))
+        assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTarget(0.25f, 0f))
+        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTarget(0.17f, 0f))
+    }
+
+    @Test
+    fun settleTarget_upwardFlingFromNearClosed_opens() {
+        assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTarget(0.05f, 300f))
+        assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTarget(0f, 300f))
+    }
+
+    @Test
+    fun settleTarget_downwardFlingFromOpen_closes() {
+        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTarget(0.95f, -300f))
+        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTarget(1f, -300f))
+    }
+
+    @Test
+    fun settleTarget_slowReleaseJustBelowThreshold_closes() {
+        // A gentle release below the threshold still closes: direction and
+        // fling only win past the deadzone or the threshold.
+        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTarget(0.1f, 0f))
+        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTarget(0.1f, 0.04f))
     }
 
     @Test
@@ -142,9 +173,82 @@ class SheetPhysicsTest {
     fun repeatedTapOutsideNeverReOpens() {
         // close() must be terminal: settling an already-closed sheet is a no-op
         // that does not leave a residual value to be mistaken for "open".
-        var p = SheetPhysics.settleTarget(0.3f, 0f)
+        var p = SheetPhysics.settleTarget(0.1f, 0f)
         repeat(20) { p = SheetPhysics.settleTarget(p, 0f) }
         assertEquals(SheetPhysics.CLOSED, p, 0f)
         assertTrue(SheetPhysics.isAtRest(p))
+    }
+
+    // ---- directional settle (the gesture actually means direction) ---------
+
+    @Test
+    fun settleTargetFrom_shortUpwardDragFromClosed_opens() {
+        // Started closed, moved up 18%+ -> open.
+        assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTargetFrom(0f, 0.19f, 0f))
+        assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTargetFrom(0f, 0.5f, 0f))
+        assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTargetFrom(0f, 1f, 0f))
+    }
+
+    @Test
+    fun settleTargetFrom_shortDownwardDragFromOpen_closes() {
+        // The symmetric case the absolute rule could not express: from open,
+        // a 18% downward drag closes instead of needing ~82% of the travel.
+        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTargetFrom(1f, 0.81f, 0f))
+        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTargetFrom(1f, 0.5f, 0f))
+        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTargetFrom(1f, 0f, 0f))
+    }
+
+    @Test
+    fun settleTargetFrom_tinyMovement_returnsToStartingAnchor() {
+        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTargetFrom(0f, 0.1f, 0f))
+        assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTargetFrom(1f, 0.9f, 0f))
+    }
+
+    @Test
+    fun settleTargetFrom_flingOverridesPosition() {
+        assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTargetFrom(1f, 0.95f, 3f))
+        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTargetFrom(0f, 0.05f, -3f))
+    }
+
+    @Test
+    fun settleTargetFrom_weakVelocityIsNotAFling() {
+        // Below the fling threshold the POSITION decides, so a weak velocity
+        // pointing the other way cannot override a decisive drag.
+        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTargetFrom(1f, 0.5f, 0.3f))
+        assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTargetFrom(0f, 0.5f, -0.3f))
+        // ...and with only a tiny movement the sheet returns to where it began,
+        // ignoring the weak nudge entirely.
+        assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTargetFrom(1f, 0.95f, 0.3f))
+        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTargetFrom(0f, 0.05f, -0.3f))
+    }
+
+    @Test
+    fun settleTargetFrom_alwaysLandsOnAnAnchor() {
+        val starts = listOf(0f, 1f)
+        val currents = listOf(0f, 0.05f, 0.17f, 0.18f, 0.5f, 0.82f, 0.95f, 1f)
+        val vels = listOf(-3f, -0.9f, -0.2f, 0f, 0.2f, 0.9f, 3f)
+        for (s in starts) for (c in currents) for (v in vels) {
+            val t = SheetPhysics.settleTargetFrom(s, c, v)
+            assertTrue("s=$s c=$c v=$v -> $t", t == SheetPhysics.CLOSED || t == SheetPhysics.OPEN)
+            assertTrue(SheetPhysics.isAtRest(t))
+        }
+    }
+
+    @Test
+    fun settleTargetFrom_noGestureStartEqualsCurrent_returnsToThatAnchor() {
+        // settle() with no gesture in flight: start == current, so the sheet
+        // stays where it already is.
+        assertEquals(SheetPhysics.CLOSED, SheetPhysics.settleTargetFrom(0f, 0f, 0f))
+        assertEquals(SheetPhysics.OPEN, SheetPhysics.settleTargetFrom(1f, 1f, 0f))
+    }
+
+    @Test
+    fun velocityToProgress_downwardIsNegative_upwardIsPositive() {
+        // 500 px/s downward on a 1000 px sheet = half the travel per second
+        // toward closed.
+        assertEquals(-0.5f, velocityToProgress(500f, 1000f), 1e-4f)
+        assertEquals(0.5f, velocityToProgress(-500f, 1000f), 1e-4f)
+        assertEquals(0f, velocityToProgress(0f, 1000f), 1e-4f)
+        assertEquals(0f, velocityToProgress(500f, 0f), 1e-4f)
     }
 }

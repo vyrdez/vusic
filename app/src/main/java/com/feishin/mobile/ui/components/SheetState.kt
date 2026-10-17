@@ -51,16 +51,41 @@ class SheetState internal constructor(private val scope: CoroutineScope) {
     var sheetHeightPx by mutableFloatStateOf(560f)
 
     private var settleJob: Job? = null
+ 
+    /**
+     * Authoritative position, mirrored synchronously on every drag so [settle]
+     * always decides on the finger's latest position — never on a stale
+     * [Animatable] value whose queued snapTo hasn't run yet. That race (a
+     * release reading the pre-drag progress, then a late snap cancelling the
+     * settle animation mid-flight) is what stranded the sheet halfway after
+     * fast drags.
+     */
+    private var dragValue: Float = SheetPhysics.CLOSED
+
+    /** Anchor the current gesture started from, so the settle is directional. */
+    private var dragStart: Float = SheetPhysics.CLOSED
+    private var gestureActive: Boolean = false
 
     /** Positive [deltaProgress] moves the sheet toward OPEN. */
     fun dragBy(deltaProgress: Float) {
         if (deltaProgress == 0f) return
-        settleJob?.cancel()
-        settleJob = null
+        if (settleJob != null) {
+            // Interrupting a settle animation: re-anchor to the live visual
+            // position first, so the sheet follows the finger instead of
+            // jumping to the settle's never-reached target.
+            dragValue = anim.value
+            settleJob?.cancel()
+            settleJob = null
+        }
+        if (!gestureActive) {
+            gestureActive = true
+            dragStart = dragValue
+        }
         // Keep the overlay composed for the whole gesture so the first frame of
         // a close drag is not a pop-in.
         open = true
-        val target = (anim.value + deltaProgress).coerceIn(0f, 1f)
+        dragValue = (dragValue + deltaProgress).coerceIn(0f, 1f)
+        val target = dragValue
         scope.launch { anim.snapTo(target) }
     }
 
@@ -72,11 +97,18 @@ class SheetState internal constructor(private val scope: CoroutineScope) {
     }
 
     /**
-     * Resolve to the nearest anchor. Safe from a cancel path, from back press
-     * and from a configuration change; [velocity] of 0 means "position only".
+     * Resolve to an anchor. Safe from a cancel path, from back press and from a
+     * configuration change; [velocity] of 0 means "position only". Decides on
+     * the synchronously-mirrored [dragValue], never on a possibly stale
+     * animation value, and measures the displacement from [dragStart] so a
+     * short drag opens from closed and equally short one closes from open.
      */
     fun settle(velocityProgressPerSec: Float = 0f) {
-        settleTo(SheetPhysics.settleTarget(anim.value, velocityProgressPerSec), velocityProgressPerSec)
+        val start = if (gestureActive) dragStart else dragValue
+        settleTo(
+            SheetPhysics.settleTargetFrom(start, dragValue, velocityProgressPerSec),
+            velocityProgressPerSec,
+        )
     }
 
     fun openSheet() = settleTo(SheetPhysics.OPEN, 0f)
@@ -87,6 +119,13 @@ class SheetState internal constructor(private val scope: CoroutineScope) {
 
     private fun settleTo(target: Float, velocity: Float) {
         settleJob?.cancel()
+        gestureActive = false
+        // Compose the overlay BEFORE animating when opening: the sheet must
+        // exist (at progress 0, fully translated away) for the rise to be
+        // visible. A tap used to animate an uncomposed sheet and then pop in.
+        if (target > 0.5f) open = true
+        dragValue = target
+        dragStart = target
         settleJob = scope.launch {
             // animateTo is cancelled by the next drag's snapTo; in that case the
             // lines below must not run, which is exactly what we want.
