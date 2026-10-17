@@ -3,8 +3,17 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Vusic mark: eighth note in the brand blue on the dark splash field. -->
-    <path
-        android:fillColor="#8CCDF0"
-        android:pathData="M62,28 L62,68 a10,8 0 1,1 -6,-7 L56,44 L40,48 L40,72 a10,8 0 1,1 -6,-7 L34,40 L62,33 Z" />
+    <!--
+      Splash / launch mark: the eighth note that is now the app icon, white on
+      the dark splash field. A touch larger than the launcher glyph (the splash
+      shows its icon smaller) but still inside the 66dp safe zone, so the splash
+      circle mask cannot clip it.
+    -->
+    <group
+        android:scaleX="2.8" android:scaleY="2.8"
+        android:translateX="20.4" android:translateY="20.4">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M12,3v10.55c-0.59,-0.34 -1.27,-0.55 -2,-0.55 -2.21,0 -4,1.79 -4,4s1.79,4 4,4 4,-1.79 4,-4V7h4V3h-6z" />
+    </group>
 </vector>

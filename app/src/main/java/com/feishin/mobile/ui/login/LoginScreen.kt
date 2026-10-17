@@ -17,12 +17,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -87,11 +92,23 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
                 .padding(horizontal = VusicSpacing.ScreenHorizontal * 1.5f),
             verticalArrangement = Arrangement.Center,
         ) {
-            Text(
-                "Vusic",
-                style = MaterialTheme.typography.displaySmall,
-                color = VusicColors.Accent,
-            )
+            // The app mark, matching the icon and the Home header: the eighth
+            // note followed by the wordmark, so the first screen a new user
+            // sees already carries the branding.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = VusicColors.Accent,
+                    modifier = Modifier.size(36.dp),
+                )
+                Spacer(Modifier.width(VusicSpacing.CardGap))
+                Text(
+                    "Vusic",
+                    style = MaterialTheme.typography.displaySmall,
+                    color = VusicColors.Accent,
+                )
+            }
             Text(
                 "Connect to your Navidrome server",
                 style = MaterialTheme.typography.bodyMedium,

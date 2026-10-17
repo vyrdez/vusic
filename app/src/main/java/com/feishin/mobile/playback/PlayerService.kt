@@ -112,6 +112,16 @@ class PlayerService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
         VLog.d(TAG, "service onCreate")
+        // Brand the playback notification with the Vusic note. Media3 would
+        // otherwise post its own generic small icon; the shape must match the
+        // app icon, and it must be a flat silhouette for the status bar.
+        runCatching {
+            setMediaNotificationProvider(
+                androidx.media3.session.DefaultMediaNotificationProvider(this).apply {
+                    setSmallIcon(R.drawable.ic_stat_vusic)
+                },
+            )
+        }
         // Scheme-aware upstream: downloaded tracks are opened from file:// by
         // DefaultDataSource (FileDataSource), while network streams still go
         // through the shared OkHttp client (self-signed + path prefix).
