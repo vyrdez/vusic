@@ -56,9 +56,26 @@ class MiniPlayerGestureTest {
     }
 
     @Test
-    fun zeroThresholdStillNeedsSomeTravel() {
-        // A zero-length drag with no fling must never commit.
-        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = 0f, vx = 0f))
+    fun subThresholdTravelOnEveryAxisDoesNothing() {
+        // Real thresholds for this card: clear = max(160, 300*0.35) = 160,
+        // open = max(120, 300*0.25) = 120, skip = max(120, 1000*0.35) = 350.
+        // Movement short of the threshold must not commit on any axis - this
+        // is the case that covers all three directions at once, so it is not
+        // the same assertion as a zero-length release.
+        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = 100f, dy = 100f))
+        assertEquals(MiniPlayerGesture.Action.NONE, action(dy = 100f))    // short down
+        assertEquals(MiniPlayerGesture.Action.NONE, action(dy = -100f))   // short up
+        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = -100f))   // short left
+        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = 100f))    // short right
+    }
+
+    @Test
+    fun aFlingCommitsEvenWithAlmostNoTravel() {
+        // The complement of the above: velocity alone is enough, so a quick
+        // flick that never travelled past the distance threshold still acts.
+        // This pins both halves of each rule (distance OR velocity).
+        assertEquals(MiniPlayerGesture.Action.NEXT, action(dx = 5f, vx = 900f))
+        assertEquals(MiniPlayerGesture.Action.CLEAR_QUEUE, action(dy = 5f, vy = 900f))
     }
 
     // ---- edge cases --------------------------------------------------------
@@ -171,14 +188,68 @@ class MiniPlayerGestureTest {
     }
 
     @Test
-    fun classifyAlwaysReturnsAKnownAction() {
-        val axes = listOf(
-            Triple(0f, 0f, 0f), Triple(999f, 0f, 0f), Triple(-999f, 0f, 0f),
-            Triple(0f, 999f, 0f), Triple(0f, -999f, 0f),
+    fun everyAxisAndDirectionResolvesToTheExpectedAction() {
+        // Each case pins the exact action rather than merely "some action":
+        // the old version asserted membership in Action.entries, which can
+        // never fail for a non-null Action and so proved nothing.
+        assertEquals(
+            MiniPlayerGesture.Action.NONE,
+            MiniPlayerGesture.classify(0f, 0f, 0f, 0f, true, true, w, h),
         )
-        for ((dx, dy, v) in axes) {
-            val a = MiniPlayerGesture.classify(dx, dy, v, 0f, true, true, w, h)
-            assertTrue("$dx $dy", a in MiniPlayerGesture.Action.entries)
-        }
+        assertEquals(
+            MiniPlayerGesture.Action.NEXT,
+            MiniPlayerGesture.classify(999f, 0f, 0f, 0f, true, true, w, h),
+        )
+        assertEquals(
+            MiniPlayerGesture.Action.PREVIOUS,
+            MiniPlayerGesture.classify(-999f, 0f, 0f, 0f, true, true, w, h),
+        )
+        assertEquals(
+            MiniPlayerGesture.Action.CLEAR_QUEUE,
+            MiniPlayerGesture.classify(0f, 999f, 0f, 0f, true, true, w, h),
+        )
+        assertEquals(
+            MiniPlayerGesture.Action.OPEN,
+            MiniPlayerGesture.classify(0f, -999f, 0f, 0f, true, true, w, h),
+        )
+    }
+
+    // ---- contradictory input ----------------------------------------------
+
+    @Test
+    fun upwardDragEndingInADownwardFlickDoesNotClearTheQueue() {
+        // A long upward drag legitimately opens Now Playing (dy -300 is well
+        // past the open threshold), so OPEN is the correct answer here - what
+        // matters is that the contradictory downward release velocity does NOT
+        // turn it into a queue clear.
+        assertEquals(
+            MiniPlayerGesture.Action.OPEN,
+            MiniPlayerGesture.classify(
+                dx = 0f, dy = -300f, velocityX = 0f, velocityY = 800f,
+                hasPrevious = true, hasNext = true, widthPx = w, heightPx = h,
+            ),
+        )
+
+        // The regression itself: an upward drag that ends below the open
+        // threshold, flicking downward on release. Before the direction gate
+        // this returned CLEAR_QUEUE, because the velocity arm was ungated.
+        assertEquals(
+            MiniPlayerGesture.Action.NONE,
+            MiniPlayerGesture.classify(
+                dx = 0f, dy = -50f, velocityX = 0f, velocityY = 800f,
+                hasPrevious = true, hasNext = true, widthPx = w, heightPx = h,
+            ),
+        )
+    }
+
+    @Test
+    fun aShortDownwardFlickStillClearsTheQueue() {
+        // The direction gate must not disable the genuine short downward
+        // flick: a small positive dy with a high downward velocity is a real
+        // clear, and it is the case the fix has to keep working.
+        assertEquals(
+            MiniPlayerGesture.Action.CLEAR_QUEUE,
+            MiniPlayerGesture.classify(0f, 12f, 0f, 900f, true, true, w, h),
+        )
     }
 }

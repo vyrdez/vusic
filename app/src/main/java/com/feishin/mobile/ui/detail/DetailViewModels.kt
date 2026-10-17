@@ -215,21 +215,24 @@ class PlaylistDetailViewModel @Inject constructor(
     }
 
     /**
-     * Remove by TRACK, never by the row the user saw.
+     * Remove by SOURCE INDEX, never by the row the user saw and never by
+     * track id.
      *
-     * The screen may be sorted or filtered, so a visible position has nothing
-     * to do with the server's entry index; the index is looked up from the
-     * unmodified list by id. Refuses when the visible list is not the stored
-     * order, which is what keeps a reordering from deleting the wrong song.
+     * Navidrome removes playlist entries by server position, so the source
+     * index is the only thing that identifies the right entry: a playlist may
+     * legitimately hold the same song twice, and looking the row up by id
+     * would delete the first copy instead of the one tapped. Removal is
+     * offered only while the visible list IS the stored order
+     * ([PlaylistOrdering.canMutateOrder]), which is what makes the visible
+     * source index the server index.
      */
-    fun removeTrack(track: com.feishin.mobile.domain.model.Track) {
+    fun removeAt(sourceIndex: Int) {
         if (isVirtualFavorites) return
         if (!com.feishin.mobile.core.common.PlaylistOrdering.canMutateOrder(_sort.value, _query.value)) return
-        val source = (_ui.value as? UiState.Data)?.value?.tracks ?: return
-        val index = source.indexOfFirst { it.id == track.id }
-        if (index < 0) return
+        val tracks = (_ui.value as? UiState.Data)?.value?.tracks ?: return
+        if (sourceIndex !in tracks.indices) return
         viewModelScope.launch {
-            repo.removeFromPlaylist(id, listOf(index))
+            repo.removeFromPlaylist(id, listOf(sourceIndex))
             refresh()
         }
     }

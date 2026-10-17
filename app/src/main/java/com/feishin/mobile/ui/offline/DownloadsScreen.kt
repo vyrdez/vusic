@@ -87,15 +87,24 @@ fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRep
         com.feishin.mobile.core.common.PlaylistSortKey.entries
             .filter { it != com.feishin.mobile.core.common.PlaylistSortKey.DURATION }
     }
-    val doneIndices = remember(done, sort, query) {
+    // Fall back to the default when the remembered sort names a key this list
+    // cannot express (a download row carries no duration). This has to happen
+    // HERE, not only inside PlaylistSortRow: otherwise the chips would show
+    // nothing selected while the list was still being ordered by that key, and
+    // `durationAt = { 0 }` would silently make it a no-op sort for every row.
+    val effectiveSort = remember(sort, downloadableKeys) {
+        if (sort.key in downloadableKeys) sort
+        else com.feishin.mobile.core.common.PlaylistOrdering.DEFAULT
+    }
+    val doneIndices = remember(done, effectiveSort, query) {
         com.feishin.mobile.core.common.PlaylistOrdering.visibleIndices(
             size = done.size,
-            sort = sort,
+            sort = effectiveSort,
             query = query,
             titleAt = { done[it].title },
             artistAt = { done[it].artist },
             albumAt = { done[it].album },
-            // Never read: DURATION is not in downloadableKeys.
+            // Never read: DURATION is filtered out of downloadableKeys above.
             durationAt = { 0 },
         )
     }
@@ -193,7 +202,9 @@ fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRep
                         )
                     }
                     com.feishin.mobile.ui.detail.PlaylistSortRow(
-                        sort = sort,
+                        // The already-resolved sort, so the highlighted chip and
+                        // the order of the list can never disagree.
+                        sort = effectiveSort,
                         onSelect = vm::toggleSort,
                         onSearchClick = { searchOpen = !searchOpen },
                         availableKeys = downloadableKeys,

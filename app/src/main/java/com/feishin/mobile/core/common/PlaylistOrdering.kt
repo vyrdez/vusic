@@ -81,11 +81,19 @@ object PlaylistOrdering {
      * instead of requiring that exact phrase.
      */
     fun matches(query: String, title: String, artist: String, album: String): Boolean {
-        val terms = normalize(query).split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val terms = queryTerms(query)
         if (terms.isEmpty()) return true
         val haystack = normalize("$title $artist $album")
         return terms.all { haystack.contains(it) }
     }
+
+    // Hoisted: `visibleIndices` filters every track on each keystroke, and
+    // compiling the split pattern per row meant thousands of Regex objects per
+    // character on a large playlist.
+    private val WHITESPACE = Regex("\\s+")
+
+    private fun queryTerms(query: String): List<String> =
+        normalize(query).split(WHITESPACE).filter { it.isNotEmpty() }
 
     /**
      * Source indices in display order.
@@ -117,11 +125,12 @@ object PlaylistOrdering {
             return if (sort.descending) indices.reversed() else indices
         }
         val base: Comparator<Int> = when (sort.key) {
-            PlaylistSortKey.PLAYLIST_ORDER, PlaylistSortKey.DATE_ADDED ->
-                return if (sort.descending) indices.reversed() else indices
             PlaylistSortKey.TITLE -> compareBy { normalize(titleAt(it)) }
             PlaylistSortKey.ARTIST -> compareBy { normalize(artistAt(it)) }
             PlaylistSortKey.DURATION -> compareBy { durationAt(it) }
+            // PLAYLIST_ORDER and DATE_ADDED returned above, since both keep the
+            // stored sequence and only reverse.
+            else -> compareBy { it }
         }
         val directed = if (sort.descending) base.reversed() else base
         // sortedWith is stable, so equal keys keep the stored order, which is
@@ -151,11 +160,10 @@ object PlaylistOrdering {
         }
         if (kept.isEmpty()) return kept
         val base: Comparator<Int> = when (sort.key) {
-            PlaylistSortKey.PLAYLIST_ORDER, PlaylistSortKey.DATE_ADDED ->
-                return if (sort.descending) kept.reversed() else kept
             PlaylistSortKey.TITLE -> compareBy { normalize(titleAt(it)) }
             PlaylistSortKey.ARTIST -> compareBy { normalize(artistAt(it)) }
             PlaylistSortKey.DURATION -> compareBy { durationAt(it) }
+            else -> compareBy { it }
         }
         val directed = if (sort.descending) base.reversed() else base
         return kept.sortedWith(directed)

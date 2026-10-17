@@ -60,7 +60,12 @@ object MiniPlayerGesture {
 
         // Down is tested first: clearing the queue is the most destructive, so
         // it must win over an ambiguous upward release.
-        if (dy >= clear || velocityY >= flingVelocity) return Action.CLEAR_QUEUE
+        //
+        // The velocity arm is gated on the drag having actually gone down.
+        // Otherwise a long upward drag that merely *ends* with a downward flick
+        // (dy < 0, velocityY > 0) would clear the queue - a destructive action
+        // committed from input that contradicts itself.
+        if (dy >= clear || (dy > 0f && velocityY >= flingVelocity)) return Action.CLEAR_QUEUE
         if (dy <= -open || velocityY <= -flingVelocity) return Action.OPEN
         if (dx <= -skip || velocityX <= -flingVelocity) {
             return if (hasPrevious) Action.PREVIOUS else Action.NONE
@@ -77,7 +82,7 @@ object MiniPlayerGesture {
      * back instead of restarting or wrapping.
      */
     fun hasPrevious(index: Int, size: Int, repeatMode: Int, repeatAll: Int, repeatOne: Int): Boolean =
-        index > 0 || repeatMode == repeatAll || repeatMode == repeatOne || size <= 1 && index < 0
+        index > 0 || repeatMode == repeatAll || repeatMode == repeatOne
 
     fun hasNext(index: Int, size: Int, repeatMode: Int, repeatAll: Int, repeatOne: Int): Boolean =
         index in 0 until (size - 1) || repeatMode == repeatAll || repeatMode == repeatOne

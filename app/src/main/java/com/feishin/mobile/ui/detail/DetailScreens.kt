@@ -461,11 +461,12 @@ fun PlaylistDetailScreen(
                             // Play exactly what the user can see.
                             onClick = { player.playAll(visibleTracks, visibleIndex, source = p.name) },
                             onActions = { onActions(ActionTarget.Track(song)) },
-                            // Reordering/removing act on server positions, so they
-                            // are only offered while the visible list IS the
-                            // stored order. Removal itself still resolves the
-                            // track id, never the row index.
-                            onRemove = if (isVirtual || !canMutate) null else ({ vm.removeTrack(song) }),
+                            // Removal acts on the server's entry position, so it
+                            // is only offered while the visible list IS the
+                            // stored order - and then it uses the source index
+                            // rather than the id, which is what keeps a
+                            // duplicated song from deleting the wrong copy.
+                            onRemove = if (isVirtual || !canMutate) null else ({ vm.removeAt(src) }),
                             isCurrent = song.id == nowPlaying?.id, isPlaying = isPlaying,
                         )
                     }

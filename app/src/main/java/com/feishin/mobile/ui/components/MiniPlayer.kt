@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
@@ -34,7 +33,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -55,7 +53,9 @@ import com.feishin.mobile.ui.theme.LocalPlayingColors
 import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.playingColor
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val REPEAT_ALL = Player.REPEAT_MODE_ALL
 private const val REPEAT_ONE = Player.REPEAT_MODE_ONE
@@ -223,8 +223,16 @@ fun MiniPlayer(
     // Dismiss/hand-off alpha, animated independently so a clear or a skip can
     // fade the card out while it is still moving (never fade-only).
     val fade = remember { Animatable(1f) }
-    // Committed skip: -1 previous (slid out left), +1 next (slid out right).
-    var pendingSkip by remember { mutableIntStateOf(0) }
+    // Committed skip, split into a direction and a trigger. `skipSeq` increments
+    // on every swipe so the LaunchedEffect restarts even when two swipes in a
+    // row share a direction; `skipDir` (-1 previous, +1 next) is only read by
+    // the effect, so a same-direction repeat is not swallowed.
+    var skipSeq by remember { mutableIntStateOf(0) }
+    var skipDir by remember { mutableFloatStateOf(0f) }
+    fun commitSkip(dir: Float) {
+        skipDir = dir
+        skipSeq++
+    }
     // Card size in px: the skip slide-off distance and the clear threshold.
     var cardW by remember { mutableFloatStateOf(0f) }
     var cardH by remember { mutableFloatStateOf(0f) }
@@ -240,18 +248,22 @@ fun MiniPlayer(
             dragX.snapTo(0f)
             dragY.snapTo(0f)
             fade.snapTo(1f)
-            pendingSkip = 0
+            skipSeq = 0
+            skipDir = 0f
         }
     }
 
     // Two-phase skip: the old content slides out in the drag direction, the
     // player advances, then the new content slides in from the other side.
-    // The swap and the final rest position are both in a `finally`, because a
-    // newer swipe cancels this effect mid-flight: rapid swipes must still skip
-    // once per gesture and must never strand the card off-screen.
-    androidx.compose.runtime.LaunchedEffect(pendingSkip) {
-        if (pendingSkip == 0) return@LaunchedEffect
-        val dir = pendingSkip.toFloat()
+    //
+    // The trigger is a monotonically increasing sequence number, NOT the
+    // direction. Using the direction as the LaunchedEffect key made two fast
+    // swipes in the same direction collapse into one: the second gesture wrote
+    // the same value, the effect did not restart, so that swipe was swallowed
+    // and the card stayed translated where the finger released it.
+    androidx.compose.runtime.LaunchedEffect(skipSeq) {
+        if (skipSeq == 0) return@LaunchedEffect
+        val dir = skipDir
         val travel = maxOf(cardW * 1.15f, 240f)
         var swapped = false
         try {
@@ -263,14 +275,22 @@ fun MiniPlayer(
             fade.animateTo(1f, Motion.fade(Motion.Fast))
             dragX.animateTo(0f, Motion.snapBackSpring())
         } finally {
+            // The skip belongs to the gesture, not to this coroutine: if a
+            // newer swipe cancelled us mid-flight the original must still fire,
+            // otherwise a fast double-swipe skips only once.
             if (!swapped) {
                 if (dir < 0f) player.skipToPrevious() else player.skipToNext()
             }
-            dragX.snapTo(0f)
-            dragY.snapTo(0f)
-            fade.snapTo(1f)
+            // `snapTo` suspends, so on a cancelled coroutine these calls would
+            // themselves throw and leave the card stranded off-screen - exactly
+            // the bug this block exists to prevent. NonCancellable makes the
+            // reset unconditional.
+            withContext(NonCancellable) {
+                dragX.snapTo(0f)
+                dragY.snapTo(0f)
+                fade.snapTo(1f)
+            }
         }
-        pendingSkip = 0
     }
 
     fun springBack() {
@@ -374,8 +394,8 @@ fun MiniPlayer(
                                     dragX.snapTo(0f)
                                 }
                             }
-                            MiniPlayerGesture.Action.PREVIOUS -> pendingSkip = -1
-                            MiniPlayerGesture.Action.NEXT -> pendingSkip = 1
+                            MiniPlayerGesture.Action.PREVIOUS -> commitSkip(-1f)
+                            MiniPlayerGesture.Action.NEXT -> commitSkip(1f)
                             MiniPlayerGesture.Action.OPEN -> {
                                 springBack()
                                 onOpen()

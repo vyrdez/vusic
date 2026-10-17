@@ -868,7 +868,7 @@ default branch `main`, first release
 ## Phase 8 status: gesture correctness, offline banner, playlist sort & search
 
 Version 1.1.0 (versionCode 3) — `applicationId com.feishin.mobile` unchanged,
-same release keystore as 1.0.0/7.1. Eight commits, one per section; reference
+same release keystore as 1.0.0/7.1. Nine commits, one per section; reference
 material (videos + Metrolist screenshots) is in `docs/reference/phase8/` and the
 "before"/"after" captures in `docs/reference/before-8/` and `after-8/` (all
 gitignored). Two things were NOT undone: the floating mini player and the queue
@@ -966,6 +966,57 @@ activity window in compileSdk 34, so the public window hints remain the only
 lever for the refresh rate; the cache ceilings stay at the app's supported sizes
 (5 GB stream / 1 GB image) rather than the whole device; and date-added sort
 falls back to server order because `Track` carries no date field.
+
+### Phase 8 release review fixes
+
+An independent review of the phase-8 diff found no blockers but five
+should-fix issues, all fixed before the 1.1.0 tag. Each was verified in the
+source, not taken on the reviewer's word.
+
+- **Mini player: a same-direction double swipe was swallowed and could strand
+  the card.** `pendingSkip` was both the `LaunchedEffect` key and the
+  direction, so two fast swipes in the same direction wrote the same value,
+  the effect never restarted, and that swipe did nothing - while `dragX` was
+  left wherever the finger released it (up to `cardW * 1.2f`), leaving the
+  mini player permanently translated off to one side. Split into a
+  monotonically increasing `skipSeq` (the trigger) and `skipDir` (the
+  direction). Separately, the reset block in `finally` called `snapTo`, which
+  *suspends* and therefore throws immediately on the cancelled coroutine it was
+  written for - so the "never strand the card" guarantee the comment promised
+  did not hold. It now runs inside `withContext(NonCancellable)`.
+- **Playlist removal could delete the wrong copy.** `removeTrack` resolved the
+  server entry index with `indexOfFirst { it.id == track.id }` and threw the
+  source index away, so on a playlist holding the same song twice, removing the
+  second copy deleted the first - exactly what the row key
+  (`"${id}#$src"`) exists to prevent. `canMutateOrder` already guarantees the
+  visible order *is* the stored order, so the source index is provably the
+  server index: replaced with `removeAt(src)`.
+- **A queue clear could commit from contradictory input.** `classify` gated its
+  downward *distance* term on direction but not its downward *velocity* term, so
+  dragging up and flicking downward on release (dy < 0, velocityY > 0) cleared
+  the queue. The velocity arm is now gated on `dy > 0f`. A short genuine
+  downward flick still clears.
+- **The stale-sort fallback only covered the chips, not the data.** On the
+  Downloads screen the fallback lived inside `PlaylistSortRow`, while the list
+  was ordered by the *raw* sort - so a persisted `DURATION` (not offered there)
+  left the chips showing nothing selected while the list was silently a no-op
+  sort (`durationAt = { 0 }` for every row). Lifted to the screen; the chip row
+  and the list now receive the same resolved sort.
+- **`PlaylistOrdering.matches` compiled a `Regex` per row per keystroke.** The
+  whitespace split pattern is hoisted to a private val; `visibleIndices` re-runs
+  for every track on every character typed, so a large playlist was compiling
+  thousands of `Regex` objects per keystroke.
+
+Also cleaned up while in these files: two unused imports in `MiniPlayer`,
+a duplicated dead `when` branch in `PlaylistOrdering.order`/`visibleIndices`
+(PLAYLIST_ORDER and DATE_ADDED are handled by the early return above it), an
+unreachable `size <= 1 && index < 0` clause in `hasPrevious` (`index` is
+always >= 0), and three files missing a trailing newline. Two tests that
+could not fail were replaced with real assertions: `classifyAlwaysReturnsAKnown
+Action` asserted a non-null `Action` was in `Action.entries`, and
+`zeroThresholdStillNeedsSomeTravel` duplicated an existing case - both now pin
+exact expected values, with new regression tests for the contradictory-fling
+and short-flick cases.
 
 ## Assumptions
 - Server speaks Subsonic 1.16.1 / OpenSubsonic; `f=json` always.
