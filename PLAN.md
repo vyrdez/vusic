@@ -865,6 +865,108 @@ default branch `main`, first release
 - A fresh clone builds and tests clean with only `ANDROID_HOME` set — no
   `local.properties`, no keystore.
 
+## Phase 8 status: gesture correctness, offline banner, playlist sort & search
+
+Version 1.1.0 (versionCode 3) — `applicationId com.feishin.mobile` unchanged,
+same release keystore as 1.0.0/7.1. Eight commits, one per section; reference
+material (videos + Metrolist screenshots) is in `docs/reference/phase8/` and the
+"before"/"after" captures in `docs/reference/before-8/` and `after-8/` (all
+gitignored). Two things were NOT undone: the floating mini player and the queue
+`SheetState` machine were extended, not replaced, and there is no new Room
+migration (all new preferences go to DataStore).
+
+- **P8-A queue-sheet gestures.** Five root causes in one interaction:
+  (1) `SheetState.settle()` read `anim.value`, but `snapTo` had only *queued* its
+  coroutine, so a release was judged on a stale pre-drag position;
+  (2) `open` flipped only *after* `animateTo`, so tapping "Playing from" animated
+  an uncomposed sheet and it popped in;
+  (3) `PlayingFromBottom` used `detectVerticalDragGestures` and hardcoded
+  `onDragEnd(0f)`, throwing the fling velocity away;
+  (4) the sheet's `NestedScrollConnection` handled `onPostScroll` but never
+  `onPostFling`, so a fast fling in the list at the top moved the sheet with no
+  settle ever firing; (5) `SheetPhysics.POSITION_THRESHOLD` was 0.35 — far too
+  high. Fix: a synchronous `dragValue` mirror used by `settle()` (re-anchored
+  from `anim.value` when a settle is interrupted), compose-before-animate on
+  open, a real `draggable` with true `onDragStopped` velocity for the peek strip,
+  `onPostFling` on the nested-scroll connection (settles with the fling velocity
+  and consumes at the top while open), and `POSITION_THRESHOLD = 0.18`.
+- **P8-B mini player gestures.** The pill used `detectDragGestures` (no velocity),
+  a downward-only axis test, `translationY` only, and an alpha fade as the
+  "clear". Rewritten around the pure `MiniPlayerGesture.classify`: a real axis
+  lock (vertical wins ties), the pill tracks the finger on both axes, fling-aware
+  thresholds, direction conventions LEFT = previous / RIGHT = next / DOWN =
+  clear / UP = open (this inverts the pre-1.1 left/right mapping, as specified),
+  and the first/last track with repeat off springs back instead of restarting.
+  Progress ring, floating shape, dynamic colour and transport are untouched.
+- **P8-C offline banner.** Root cause: `OfflineBanner` was an overlay
+  `align(TopCenter)` inside the *same* `Box` as the `NavHost`, so it painted over
+  every screen's title and filter row instead of pushing them down (see
+  `before-8/C-03`). It is now an `AnimatedVisibility(expandVertically)` row in
+  the shared `Column` above the `NavHost`: one change fixes every screen, and the
+  height is animated so content glides instead of jumping.
+- **P8-D library search.** The field appeared instantly; it is now
+  `AnimatedVisibility` + `expandVertically` at `Motion.Normal` (~220 ms), focus
+  is taken after the animation starts (so the field is never focused while
+  invisible) and the filter chips shift with the same motion.
+- **P8-E playlist sort & search** (the one new feature). Pure `PlaylistOrdering`
+  (index-based sort/filter, 27 tests) behind a shared `PlaylistSortRow`:
+  Playlist order / Title / Artist / Date added / Duration, tap-to-toggle
+  ascending/descending with an arrow, plus a search toggle filtering that
+  playlist's tracks by title, artist or album. Applies to normal playlists,
+  Favorite songs, Cached and Downloaded. A sorted or filtered list is read-only:
+  removal resolves the track by id against the stored order (never the visible
+  row) and is disabled while sorted/filtered, and Play/Shuffle use the visible
+  list. Sort is remembered per playlist in DataStore; nothing is ever written
+  back to the server. `Track` carries no date field, so Date added falls back to
+  the server's order.
+- **P8-F cache limits.** Root cause: the song- and image-cache sliders were built
+  from `StorageLimits.steps(deviceMax)` (up to the whole device) while the stored
+  value is clamped by `CacheSizePolicy.normalizeStream/normalizeImage` (top
+  5 GB / 1 GB), so any larger pick bounced straight back — the "5 GB plateau".
+  Both sliders now use `StorageLimits.cacheSteps(supportedBytes, deviceMax)`, the
+  intersection of the cache's real sizes with the device, which is never empty;
+  the clamp and the live-shrink behaviour are unchanged. The download cap keeps
+  the device-bounded `steps()`. 10 new tests.
+- **P8-G high refresh rate.** Two bugs. "Running at X Hz" read
+  `display.refreshRate` during composition — not snapshot state — so nothing
+  recomposed the row when the system changed rate and the line froze on its first
+  value; it is now fed by a `DisplayManager.DisplayListener`. And STANDARD
+  derived its `preferredRefreshRate` from the nearest mode's rate, so on a panel
+  with no 60 Hz mode (90-only / 120-only) "Standard 60 Hz" asked for the higher
+  rate and did nothing; `RefreshRate.requestedRate` now returns exactly 60 for
+  STANDARD, the peak for MAX and 0 for AUTO. 3 new tests.
+- **P8-H app logo.** The launcher drew a bespoke two-note beam; the app's own mark
+  is the eighth note (`Icons.Default.MusicNote`, the glyph beside "Vusic").
+  `ic_launcher_foreground` is now that white note centred in the 66 dp safe zone
+  of the 108 dp canvas, the background is black, `ic_launcher_round` +
+  `android:roundIcon` were added, the splash mark is the same note, the Media3
+  playback notification is branded with a new `ic_stat_vusic` silhouette, and the
+  login screen shows the note beside the wordmark. No old asset was orphaned, so
+  none were removed. Masks were rendered from the icon's own path data
+  (`after-8/H-01..H-04`) and the launcher's real circular mask was confirmed on
+  the emulator (`H-05`), as was the playback-notification icon (`H-06`).
+
+Verification (2026-10-17): `assembleDebug`, `assembleRelease`, `lint` (0 errors)
+and `test` all green; 437 unit tests pass, including the new `SheetPhysicsTest`,
+`MiniPlayerGestureTest`, `PlaylistOrderingTest`, `StorageLimitsTest` and
+`RefreshRateTest` cases. Emulator walkthrough (Pixel 7, API 34, Dark and Light,
+font scale 1.3, offline toggled on and off): queue open by tap / short drag /
+long drag / fling and close by drag (each ≥ 10 times, including fast repeats),
+dead-zone drags, the mini player in all four directions plus the first/last edge
+cases, the offline banner on Home/Library/Search/Settings/detail/Now Playing,
+library search, playlist sort/search on a normal playlist, Favorites, Cached and
+Downloaded, and the storage sliders; playback never glitched, restarted or
+skipped. Not verifiable on the emulator (reported, not claimed): the 60 Hz pin
+itself, because the AVD exposes a single 60.000004 Hz mode so the row is hidden —
+and even on a real phone vendor smart-refresh (e.g. HyperOS) can override the
+request — and real launcher masks other than the emulator's.
+
+Limitations: `Surface`/`Window.setFrameRate` is still unreachable for the
+activity window in compileSdk 34, so the public window hints remain the only
+lever for the refresh rate; the cache ceilings stay at the app's supported sizes
+(5 GB stream / 1 GB image) rather than the whole device; and date-added sort
+falls back to server order because `Track` carries no date field.
+
 ## Assumptions
 - Server speaks Subsonic 1.16.1 / OpenSubsonic; `f=json` always.
 - Phase-1 restructuring kept the already-built M2–M6 screens/playback in place

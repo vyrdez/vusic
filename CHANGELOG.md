@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.1.0 — gesture fixes, playlist sort & search, new icon
+
+### Playback & queue
+- Fixed the queue sheet: tapping or dragging the "Playing from" peel now opens
+  and closes reliably, respects the fling velocity, and settles from the position
+  you actually released at — it used to pop in, flicker on a short drag, or
+  ignore a fast fling.
+- Fixed the mini player: it follows your finger on both axes with a real axis
+  lock and fling-aware thresholds. Drag left/right skips (left = previous,
+  right = next), drag down clears the queue, drag up opens Now Playing, and the
+  first/last track with repeat off springs back instead of restarting.
+
+### Library & discovery
+- New: sort and search inside a playlist — Playlist order / Title / Artist /
+  Date added / Duration with an ascending/descending toggle, and a search box
+  that filters that playlist's tracks by title, artist or album. Works for
+  normal playlists, Favorite songs, Cached and Downloaded; the choice is
+  remembered per playlist and never changes anything on the server.
+
+### Everywhere else
+- The offline banner is part of the layout now, so it no longer covers the
+  screen title, and content glides down instead of being overlapped.
+- The library search field animates open and closed.
+- The storage sliders only offer cache sizes that actually apply, so the value
+  you pick finally sticks (the song cache used to bounce back to 5 GB).
+- "Standard 60 Hz" now asks for exactly 60 Hz, and "Running at X Hz" updates
+  live instead of freezing at whatever it said when the screen opened.
+- New app icon: the Vusic eighth note (matching the in-app mark) on black, with
+  a matching splash, round icon, monochrome layer and playback-notification icon.
+
+### Deliberate limitations
+- Cache ceilings stay at the app's supported sizes (5 GB stream, 1 GB image).
+- Date-added sort falls back to the server's order (tracks carry no date).
+- The 60 Hz request is a public-API hint; vendor smart-refresh may override it.
+
 ## 1.0.0 — first release
 
 Vusic is an Android music player streaming from a Navidrome server via the
