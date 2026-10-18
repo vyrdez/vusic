@@ -188,7 +188,7 @@ class NowPlayingColorsTest {
         // second colour invented for the queue.
         assertEquals(lightPrimary, p.accent)
         // The play button, the toggles and the Save pill all read the same role.
-        assertEquals(p.accent, p.accent)
+        assertTrue(Contrast.ratio(p.onAccent, p.accent) >= NowPlayingColors.TEXT_MIN_RATIO)
         // ... and the ring groove is legible against it.
         assertTrue(Contrast.ratio(p.ringTrack, p.accent) >= NowPlayingColors.ICON_MIN_RATIO)
         // The Light theme's blue accent must not vanish on its own backdrop.

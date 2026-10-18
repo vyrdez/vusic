@@ -1499,11 +1499,13 @@ private fun QueueSheet(
                 player = player,
                 haptics = haptics,
                 onMoveLocal = { from, to ->
-                    displayOrder = com.feishin.mobile.core.common.ShufflePlan
-                        .applyOrder(
-                            shownIds.toMutableList().apply { add(to, removeAt(from)) },
-                            displayOrder,
-                        ) { it.queueId }
+                    // Read `displayOrder` directly. It is a delegated state var,
+                    // so a lambda captured once by
+                    // rememberReorderableLazyColumnState still sees the CURRENT
+                    // order. `shownIds` was a plain val frozen at composition, so
+                    // every frame after the first reordered from the ORIGINAL
+                    // list and the drag drifted back to the start.
+                    displayOrder = displayOrder.toMutableList().apply { add(to, removeAt(from)) }
                 },
                 onCommit = { commitIfDirty() },
                 onPlayAt = { idx -> player.playAt(idx) },

@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.feishin.mobile.core.common.PlaylistOrdering
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.launch
 import com.feishin.mobile.core.common.PlaylistSortKey
 import com.feishin.mobile.core.common.UiState
@@ -315,13 +316,19 @@ fun PlaylistDetailScreen(
     // playlist back under the cover while the reader was filtering. Keep the
     // anchor while the IME is up and put it back when it goes.
     val imeVisible = WindowInsets.isImeVisible
-    var imeAnchor by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    LaunchedEffect(imeVisible) {
+    val imeAnchor = remember { object { var value: Pair<Int, Int>? = null } }
+    LaunchedEffect(imeVisible, listState) {
         if (imeVisible) {
-            imeAnchor = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+            // Keep the anchor current for as long as the keyboard is up, so
+            // closing it restores where the reader actually is. Capturing it
+            // once, on open, threw away any scrolling they did while
+            // filtering and yanked them back to the top.
+            snapshotFlow {
+                listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+            }.collect { imeAnchor.value = it }
         } else {
-            imeAnchor?.let { (index, offset) -> listState.scrollToItem(index, offset) }
-            imeAnchor = null
+            imeAnchor.value?.let { (index, offset) -> listState.scrollToItem(index, offset) }
+            imeAnchor.value = null
         }
     }
     when (val s = ui) {

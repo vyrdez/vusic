@@ -72,7 +72,8 @@ Subsonic/OpenSubsonic API.
 - Crossfade is a volume ramp, not a true two-player overlap.
 - No sleep timer.
 - Gray album covers fall back to the neutral theme (unit-tested only).
-## 1.1.1 — playlist page rework, Now Playing colours, lyrics transition, queue fixes
+
+## 1.1.1 - playlist page rework, Now Playing colours, lyrics transition, queue fixes
 
 ### Playlist page
 - Header row is now shuffle / play / more, centred; the heart is gone (it
