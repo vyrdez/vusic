@@ -74,6 +74,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
@@ -90,6 +91,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -114,18 +116,23 @@ import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.data.favorites.FavoritesStore
 import com.feishin.mobile.data.favorites.PlaylistEvents
 import com.feishin.mobile.core.network.SyncedLyrics
+import com.feishin.mobile.core.ui.NowPlayingColors
+import com.feishin.mobile.core.ui.NowPlayingPalette
+import com.feishin.mobile.core.ui.PlayingColors
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.components.ActionTarget
 import com.feishin.mobile.ui.components.CoverImage
 import com.feishin.mobile.ui.components.EqualizerOverlay
 import com.feishin.mobile.ui.components.MarqueeTitle
+import com.feishin.mobile.ui.components.NowPlayingBarTint
 import com.feishin.mobile.ui.components.PlaylistPickerSheet
 import com.feishin.mobile.ui.components.SheetState
 import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.components.rememberSheetState
 import com.feishin.mobile.ui.components.scrimAlpha
 import com.feishin.mobile.ui.theme.LocalPlayingColors
+import com.feishin.mobile.ui.theme.LocalVusicDark
 import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.theme.playingColor
 import com.feishin.mobile.ui.components.formatDuration
@@ -154,6 +161,13 @@ fun NowPlayingScreen(
     downloads: com.feishin.mobile.data.download.DownloadRepository,
     playlistEvents: PlaylistEvents,
     messenger: com.feishin.mobile.ui.components.UiMessenger,
+    /**
+     * The "Dynamic Now Playing color" setting. When false the screen must use
+     * the app theme only - no artwork tint anywhere - so it is passed in
+     * explicitly rather than inferred from a null scheme (a null scheme also
+     * means "no artwork", which is a different case).
+     */
+    dynamicColor: Boolean,
     onClose: () -> Unit,
     onArtist: (String) -> Unit,
     onAlbum: (String) -> Unit,
@@ -172,26 +186,33 @@ fun NowPlayingScreen(
         return
     }
 
-    // Artwork color scheme (shared with rows, mini player and queue). When it
-    // is present the background is its tinted gradient and the content its
-    // contrast-enforced surface text — in both themes. When it is null (the
-    // setting is off, or no art), the legacy path below runs instead.
+    // ---- Palette ----------------------------------------------------------
+    // Every colour on this screen comes from ONE resolved palette, so no
+    // region can quietly keep a hardcoded literal while another one is fixed.
+    //
+    // - Artwork scheme present (dynamic color on, usable cover): as before.
+    // - Dynamic color on but no scheme (no art / a cover with no usable hue):
+    //   the legacy cover-derived dark gradient, unchanged.
+    // - Dynamic color OFF: the app theme only. No artwork is sampled at all,
+    //   which is what the setting promises; the Light theme gets a light
+    //   surface with dark content instead of white text on a cover tint.
     val scheme = LocalPlayingColors.current
-    val schemeTop = scheme?.let { playingColor(it.surfaceTop) }
-    val schemeBottom = scheme?.let { playingColor(it.surfaceBottom) }
+    val legacyCoverTint = dynamicColor && scheme == null
 
     // Legacy background: cover art's dominant colour, clamped dark enough
-    // that white text always has strong contrast (fixes washed-out light covers).
-    // Captured outside the remember/LaunchedEffect lambdas, which are not
-    // composable and therefore cannot read VusicColors.
-    val themeBackground = VusicColors.Background
-    var targetBg by remember { mutableStateOf(themeBackground) }
+    // that its own content colour has strong contrast. Only ever sampled on
+    // the legacy path (see above).
     val ctx = LocalContext.current
     val artUrl = player.coverArtUrl(current.coverArt, 512)
-    LaunchedEffect(artUrl, scheme) {
+    val themeBackground = VusicColors.Background.toArgb().toLong() and 0xFFFFFFFFL
+    var targetBg by remember { mutableStateOf(themeBackground) }
+    LaunchedEffect(artUrl, scheme, legacyCoverTint) {
         // The shared scheme already sampled this art: decoding twice would
         // double the IO for the same pixels.
-        if (scheme != null) return@LaunchedEffect
+        if (!legacyCoverTint) {
+            targetBg = themeBackground
+            return@LaunchedEffect
+        }
         if (artUrl == null) {
             targetBg = themeBackground
             return@LaunchedEffect
@@ -207,24 +228,65 @@ fun NowPlayingScreen(
         if (sampled != null && sampled != 0) {
             val raw = Color(sampled)
             val (r, g, b) = VusicColorMath.clampToDark(raw.red, raw.green, raw.blue)
-            targetBg = Color(r, g, b)
+            targetBg = Color(r, g, b).toArgb().toLong() and 0xFFFFFFFFL
         }
     }
-    val bg by animateColorAsState(targetBg, label = "np-bg")
+    val bg by animateColorAsState(playingColor(targetBg), label = "np-bg")
     // Mid gradient stop: the same tint, darkened (opaque, so nothing bleeds through).
     val bgMid = VusicColorMath.scale(bg.red, bg.green, bg.blue, 0.55f)
         .let { (r, g, b) -> Color(r, g, b) }
-    // Backdrop: scheme gradient when tinting, legacy dark gradient otherwise.
-    // Every stop is OPAQUE so nothing bleeds through.
-    val backdrop = if (scheme != null && schemeTop != null && schemeBottom != null) {
+
+    val schemeTop = scheme?.let { playingColor(it.surfaceTop) }
+    val schemeBottom = scheme?.let { playingColor(it.surfaceBottom) }
+    val palette: NowPlayingPalette = when {
+        scheme != null -> NowPlayingColors.fromScheme(scheme)
+        legacyCoverTint -> NowPlayingColors.legacyCoverGradient(
+            bg.toArgb().toLong() and 0xFFFFFFFFL,
+            bgMid.toArgb().toLong() and 0xFFFFFFFFL,
+            themeBackground,
+        )
+        else -> {
+            val cs = MaterialTheme.colorScheme
+            NowPlayingColors.static(
+                background = cs.background.toArgb().toLong() and 0xFFFFFFFFL,
+                // The gradient always runs AWAY from the content ink: darkest
+                // surface in Dark, lightest in Light.
+                backdropEnd = if (LocalVusicDark.current) {
+                    cs.surfaceContainerLowest.toArgb().toLong() and 0xFFFFFFFFL
+                } else {
+                    cs.surface.toArgb().toLong() and 0xFFFFFFFFL
+                },
+                onBackground = cs.onBackground.toArgb().toLong() and 0xFFFFFFFFL,
+                onSurface = cs.onSurface.toArgb().toLong() and 0xFFFFFFFFL,
+                onSurfaceVariant = cs.onSurfaceVariant.toArgb().toLong() and 0xFFFFFFFFL,
+                surface = cs.surface.toArgb().toLong() and 0xFFFFFFFFL,
+                surfaceContainer = cs.surfaceContainer.toArgb().toLong() and 0xFFFFFFFFL,
+                primary = cs.primary.toArgb().toLong() and 0xFFFFFFFFL,
+                onPrimary = cs.onPrimary.toArgb().toLong() and 0xFFFFFFFFL,
+                primaryContainer = cs.primaryContainer.toArgb().toLong() and 0xFFFFFFFFL,
+                onPrimaryContainer = cs.onPrimaryContainer.toArgb().toLong() and 0xFFFFFFFFL,
+                track = PlayingColors.ringTrack(
+                    cs.surface.toArgb().toLong() and 0xFFFFFFFFL,
+                    cs.primary.toArgb().toLong() and 0xFFFFFFFFL,
+                ),
+            )
+        }
+    }
+    // Every stop is OPAQUE so nothing bleeds through from the screen below.
+    val backdrop = if (schemeTop != null && schemeBottom != null) {
         Brush.verticalGradient(listOf(schemeTop, schemeBottom))
     } else {
-        Brush.verticalGradient(listOf(bg, bgMid, VusicColors.Background))
+        Brush.verticalGradient(listOf(playingColor(palette.backdropTop), playingColor(palette.backdropBottom)))
     }
-    // Content follows the backdrop: enforced surface text on a scheme
-    // gradient, white on the legacy dark gradient.
-    val content = scheme?.let { playingColor(it.surfaceText) } ?: Color.White
-    val dim = scheme?.let { playingColor(it.surfaceSecondary) } ?: Color.White.copy(alpha = 0.72f)
+    val content = playingColor(palette.content)
+    val dim = playingColor(palette.dim)
+
+    // The system bars follow the surface that is really behind them, not the
+    // theme flag: a tinted Now Playing can be light even in the Dark theme.
+    // Reported on every palette change (keyed on the value, so no null gap)
+    // and cleared only when the screen actually leaves the composition.
+    LaunchedEffect(palette.lightBackdrop) { NowPlayingBarTint.report(palette.lightBackdrop) }
+    DisposableEffect(Unit) { onDispose { NowPlayingBarTint.clear() } }
 
     var lyricsMode by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
@@ -272,7 +334,7 @@ fun NowPlayingScreen(
                     Icon(Icons.Default.KeyboardArrowDown, "Close", tint = content)
                 }
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    SongLyricsToggle(lyricsMode = lyricsMode, onSelect = { lyricsMode = it }, dim = dim)
+                    SongLyricsToggle(lyricsMode = lyricsMode, onSelect = { lyricsMode = it }, palette = palette)
                 }
                 IconButton(onClick = { onActions(ActionTarget.Track(current)) }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.MoreVert, "Options", tint = content)
@@ -468,7 +530,7 @@ fun NowPlayingScreen(
         QueueSheet(
             state = sheet,
             player = player, repo = repo, messenger = messenger,
-            content = content, playlistEvents = playlistEvents,
+            palette = palette, playlistEvents = playlistEvents,
             onActions = { onActions(ActionTarget.Track(it)) },
             onDismiss = { sheet.close() },
         )
@@ -487,7 +549,17 @@ fun NowPlayingScreen(
 }
 
 @Composable
-private fun SongLyricsToggle(lyricsMode: Boolean, onSelect: (Boolean) -> Unit, dim: Color) {
+private fun SongLyricsToggle(
+    lyricsMode: Boolean,
+    onSelect: (Boolean) -> Unit,
+    palette: NowPlayingPalette,
+) {
+    // One accent pair for the whole screen: the "on" segment and its ink come
+    // from the resolved palette, so the selected pill can never disagree with
+    // the tinted backdrop behind it.
+    val dim = playingColor(palette.dim)
+    val accent = playingColor(palette.accent)
+    val onAccent = playingColor(palette.onAccent)
     Row(
         Modifier.clip(RoundedCornerShape(20.dp)).background(dim.copy(alpha = 0.18f)).padding(3.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -497,11 +569,11 @@ private fun SongLyricsToggle(lyricsMode: Boolean, onSelect: (Boolean) -> Unit, d
             Text(
                 label,
                 style = MaterialTheme.typography.labelLarge,
-                color = if (selected) MaterialTheme.colorScheme.onPrimary else dim,
+                color = if (selected) onAccent else dim,
                 modifier = Modifier
                     .clip(RoundedCornerShape(17.dp))
                     .background(
-                        if (selected) MaterialTheme.colorScheme.primary
+                        if (selected) accent
                         else Color.Transparent,
                     )
                     .clickable { onSelect(value) }
@@ -812,7 +884,10 @@ private fun SyncedLyricsList(
             val active = i == index
             Text(
                 line.text,
-                color = if (active) content else dim.copy(alpha = 0.6f),
+                // dim is the palette's verified secondary: dropping the old
+                // 0.6 alpha, which measured only ~3:1 against the backdrop,
+                // below the 4.5:1 text floor.
+                color = if (active) content else dim,
                 style = if (active) {
                     MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)
                 } else {
@@ -849,6 +924,7 @@ private fun QueueList(
     onPlayAt: (Int) -> Unit,
     onRemoveAt: (Int) -> Unit,
     onActions: (com.feishin.mobile.domain.model.Track) -> Unit,
+    palette: NowPlayingPalette,
     modifier: Modifier = Modifier,
 ) {
     val reorderState = rememberReorderableLazyColumnState(listState) { from, to ->
@@ -895,10 +971,12 @@ private fun QueueList(
                     // Played rows (before the current index) dim but stay
                     // legible: secondary text clears 4.5:1, above the 3:1 bar.
                     val played = idx in 0 until currentIndex
-                    val scheme = LocalPlayingColors.current
+                    // Every colour here comes from the resolved palette, never
+                    // from the artwork directly. With dynamic color OFF that
+                    // means the theme's own highlight pair, which is what keeps
+                    // the current row readable on a light backdrop.
                     val rowBg = if (isCurrent) {
-                        scheme?.let { playingColor(it.container) }
-                            ?: MaterialTheme.colorScheme.primaryContainer
+                        playingColor(palette.rowHighlight)
                     } else {
                         Color.Transparent
                     }
@@ -907,18 +985,15 @@ private fun QueueList(
                     // (the sheet is an overlay with no Surface), so upcoming
                     // rows rendered dim instead of full strength.
                     val rowTitle = when {
-                        isCurrent && scheme != null -> playingColor(scheme.onContainer)
-                        played && scheme != null -> playingColor(scheme.surfaceSecondary)
-                        scheme != null -> playingColor(scheme.surfaceText)
-                        else -> MaterialTheme.colorScheme.onSurface
+                        isCurrent -> playingColor(palette.rowHighlightContent)
+                        played -> playingColor(palette.sheetDim)
+                        else -> playingColor(palette.sheetContent)
                     }
                     // (colors above are explicit: Unspecified would fall back
                     // to the dark LocalContentColor and dim these rows)
                     val rowSub = when {
-                        isCurrent && scheme != null -> playingColor(scheme.secondary)
-                        played && scheme != null -> playingColor(scheme.surfaceSecondary)
-                        scheme != null -> playingColor(scheme.surfaceSecondary)
-                        else -> VusicColors.SecondaryText
+                        isCurrent -> playingColor(palette.rowHighlightDim)
+                        else -> playingColor(palette.sheetDim)
                     }
                     Row(
                         placement
@@ -1031,16 +1106,18 @@ private fun QueueBottomBar(
     onShuffle: () -> Unit,
     onRepeat: () -> Unit,
     onClose: () -> Unit,
-    content: Color,
+    palette: NowPlayingPalette,
 ) {
+    val content = playingColor(palette.content)
+    // Icons need 3:1, not 4.5:1, so a 0.55 alpha on an already-high-contrast
+    // ink stays above the bar (>= 4:1 measured in both themes).
     val dim = content.copy(alpha = 0.55f)
-    val scheme = LocalPlayingColors.current
-    // Active toggles get the scheme's primary (contrast-enforced >= 3:1) on a
-    // tonal pill, so "on" is unmistakable next to "off" in both themes.
-    val activeTint = scheme?.let { playingColor(it.primary) } ?: MaterialTheme.colorScheme.primary
-    val activePill = scheme?.let { playingColor(it.container) } ?: MaterialTheme.colorScheme.primaryContainer
+    // Active toggles get the palette's verified accent (>= 3:1 on the sheet)
+    // on a tonal pill, so "on" is unmistakable next to "off" in both themes.
+    val activeTint = playingColor(palette.accent)
+    val activePill = playingColor(palette.rowHighlight)
     // OPAQUE scrim: the list must never ghost through the controls.
-    val scrim = scheme?.let { playingColor(it.surfaceBottom) } ?: VusicColors.Surface
+    val scrim = playingColor(palette.sheetBottom)
     Row(
         Modifier
             .fillMaxWidth()
@@ -1098,7 +1175,7 @@ private fun QueueSheet(
     player: PlayerManager,
     repo: MusicDataRepository,
     messenger: UiMessenger,
-    content: Color = MaterialTheme.colorScheme.onSurface,
+    palette: NowPlayingPalette,
     playlistEvents: PlaylistEvents? = null,
     onActions: (com.feishin.mobile.domain.model.Track) -> Unit = {},
     onDismiss: () -> Unit,
@@ -1115,9 +1192,9 @@ private fun QueueSheet(
     var showSaveDialog by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    // Hoisted: the header (Save pill, secondary line) and the sheet gradient
-    // below both read it, as does each row through the local.
-    val scheme = LocalPlayingColors.current
+    // The header (Save pill, secondary line), the sheet gradient and every row
+    // all read the one resolved palette.
+    val content = playingColor(palette.sheetContent)
 
     if (queue.isEmpty()) {
         // The last item is gone: close through the one close path.
@@ -1210,14 +1287,12 @@ private fun QueueSheet(
         }
     }
 
-    // Tinted gradient when the artwork scheme is present, flat surface when
-    // the setting is off. Brush either way so the background() overload is
-    // unambiguous.
-    val sheetBrush: Brush = scheme?.let { s ->
-        Brush.verticalGradient(
-            listOf(playingColor(s.surfaceTop), playingColor(s.surfaceBottom)),
-        )
-    } ?: SolidColor(VusicColors.Surface)
+    // Tinted gradient from the artwork scheme when it is present, the theme's
+    // own surface pair when it is not. Brush either way so the background()
+    // overload is unambiguous.
+    val sheetBrush: Brush = Brush.verticalGradient(
+        listOf(playingColor(palette.sheetTop), playingColor(palette.sheetBottom)),
+    )
 
     Box(Modifier.fillMaxSize()) {
         // Scrim: alpha follows the drag, tap-outside closes through the one path.
@@ -1294,10 +1369,10 @@ private fun QueueSheet(
                 Text(
                     "Save",
                     style = MaterialTheme.typography.labelLarge,
-                    color = scheme?.let { playingColor(it.onPrimary) } ?: MaterialTheme.colorScheme.onPrimary,
+                    color = playingColor(palette.onAccent),
                     modifier = Modifier
                         .clip(RoundedCornerShape(16.dp))
-                        .background(scheme?.let { playingColor(it.primary) } ?: MaterialTheme.colorScheme.primary)
+                        .background(playingColor(palette.accent))
                         .clickable { showSaveDialog = true }
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 )
@@ -1306,8 +1381,7 @@ private fun QueueSheet(
             Text(
                 "${queue.size} songs · ${formatDuration(queue.sumOf { it.song.durationSec.toLong() }.toInt())}",
                 style = MaterialTheme.typography.bodySmall,
-                color = scheme?.let { playingColor(it.surfaceSecondary) }
-                    ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                color = playingColor(palette.sheetDim),
                 modifier = Modifier.padding(top = 2.dp),
             )
             Spacer(Modifier.height(10.dp))
@@ -1329,6 +1403,7 @@ private fun QueueSheet(
                 onPlayAt = { idx -> player.playAt(idx) },
                 onRemoveAt = { idx -> player.removeAt(idx) },
                 onActions = onActions,
+                palette = palette,
                 modifier = Modifier.weight(1f),
             )
             // Bottom bar: shuffle | close chevron | repeat, all live state.
@@ -1338,7 +1413,7 @@ private fun QueueSheet(
                 onShuffle = { player.toggleShuffle() },
                 onRepeat = { player.cycleRepeat() },
                 onClose = onDismiss,
-                content = content,
+                palette = palette,
             )
             Spacer(Modifier.height(16.dp))
         }

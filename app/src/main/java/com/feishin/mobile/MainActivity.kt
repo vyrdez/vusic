@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.feishin.mobile.data.settings.ThemeMode
+import com.feishin.mobile.ui.components.NowPlayingBarTint
 import com.feishin.mobile.ui.navigation.AppNav
 import com.feishin.mobile.ui.MainViewModel
 import com.feishin.mobile.ui.theme.FeishinTheme
@@ -52,13 +53,19 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(rateMode) { applyRefreshRate(rateMode) }
             // Status/navigation bar icons must flip with the theme (dark icons
             // on light backgrounds), including while Now Playing and the queue
-            // paint a tinted background.
+            // paint a tinted background. Now Playing overrides the theme when it
+            // is on screen, because a tinted surface can be light in the Dark
+            // theme (and dark in the Light one) and white icons there would be
+            // invisible.
+            val npLightBackdrop by NowPlayingBarTint.lightBackdrop
+                .collectAsStateWithLifecycle(initialValue = null)
             val view = LocalView.current
             SideEffect {
                 val window = (view.context as Activity).window
                 val controller = WindowCompat.getInsetsController(window, view)
-                controller.isAppearanceLightStatusBars = !dark
-                controller.isAppearanceLightNavigationBars = !dark
+                val lightBars = npLightBackdrop ?: !dark
+                controller.isAppearanceLightStatusBars = lightBars
+                controller.isAppearanceLightNavigationBars = lightBars
             }
             FeishinTheme(dark = dark) {
                 AppNav(main = main)

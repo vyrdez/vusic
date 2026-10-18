@@ -448,6 +448,9 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     downloads = main.downloads,
                     playlistEvents = main.playlistEvents,
                     messenger = main.messenger,
+                    // "Dynamic Now Playing color" OFF must mean no artwork tint
+                    // anywhere on the screen, so the screen needs to know.
+                    dynamicColor = schemeSettings?.dynamicNpColor != false,
                     onClose = { showNowPlaying = false },
                     onArtist = {
                         showNowPlaying = false
