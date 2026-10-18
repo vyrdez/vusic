@@ -66,8 +66,10 @@ class DownloadsViewModel @Inject constructor(
         }
     }
 
-    fun toggleSort(key: com.feishin.mobile.core.common.PlaylistSortKey) {
-        val next = com.feishin.mobile.core.common.PlaylistOrdering.toggle(_sort.value, key)
+    /** Sets key and direction outright (the sort sheet owns the direction). */
+    fun setSort(key: com.feishin.mobile.core.common.PlaylistSortKey, descending: Boolean) {
+        val next = com.feishin.mobile.core.common.PlaylistSort(key, descending)
+        if (next == _sort.value) return
         _sort.value = next
         viewModelScope.launch { settings.setPlaylistSort(DOWNLOADS_SORT_KEY, next) }
     }

@@ -6,6 +6,11 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -122,6 +127,9 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     val nav = rememberNavController()
     var showNowPlaying by remember { mutableStateOf(false) }
     var actionsTarget by remember { mutableStateOf<ActionTarget?>(null) }
+    // A playlist delete waiting for confirmation. The action moved from a bare
+    // header button into the ⋮ menu, so it now asks first.
+    var pendingPlaylistDelete by remember { mutableStateOf<com.feishin.mobile.domain.model.Playlist?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val navScope = rememberCoroutineScope()
     val username by main.auth.loginState.collectAsStateWithLifecycle()
@@ -142,7 +150,15 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
     val isDetail = route in DETAIL_ROUTES
-    LaunchedEffect(route) { if (!isDetail) topBar.reset() }
+    LaunchedEffect(route) {
+        // The bar's trailing action and inline search belong to whichever
+        // detail screen is on top. Clearing on every route change (not only on
+        // a move back to a tab) means a screen that publishes no action can
+        // never inherit the previous screen's.
+        topBar.action = null
+        topBar.search = null
+        if (!isDetail) topBar.reset()
+    }
 
     // Empty queue => nothing playing => the Now Playing overlay must go away.
     // Without this, clearing the queue leaves its transparent "Nothing playing"
@@ -375,7 +391,6 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                             PlaylistDetailScreen(
                                 player = main.player, repo = main.repo, messenger = main.messenger,
                                 onActions = { actionsTarget = it },
-                                onBack = { nav.popBackStack() },
                             )
                         }
                         composable(Routes.DOWNLOADS) {
@@ -476,6 +491,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 cachedTracks = main.cachedTracks,
                 playlistEvents = main.playlistEvents,
                 onStartRadio = { showNowPlaying = true },
+                onDeletePlaylist = { pendingPlaylistDelete = it },
                 onAlbum = {
                     actionsTarget = null
                     showNowPlaying = false
@@ -487,6 +503,41 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     nav.navigate(Routes.artist(it))
                 },
             )
+
+            // Deleting a playlist is destructive and irreversible on the
+            // server, so it is confirmed before anything is sent - and only
+            // ever offered for a user-created playlist (the sheet decides).
+            pendingPlaylistDelete?.let { doomed ->
+                AlertDialog(
+                    onDismissRequest = { pendingPlaylistDelete = null },
+                    title = { Text("Delete playlist?") },
+                    text = {
+                        Text(
+                            "\"${doomed.name}\" will be removed from the server. " +
+                                "This cannot be undone.",
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            pendingPlaylistDelete = null
+                            navScope.launch {
+                                main.repo.deletePlaylist(doomed.id)
+                                main.messenger.show("Deleted \"${doomed.name}\"")
+                                // The screen behind the sheet is the playlist
+                                // that no longer exists, so leave it.
+                                if (nav.currentBackStackEntry?.destination?.route == Routes.PLAYLIST) {
+                                    nav.popBackStack()
+                                }
+                            }
+                        }) {
+                            Text("Delete", color = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { pendingPlaylistDelete = null }) { Text("Cancel") }
+                    },
+                )
+            }
         }
     }
 }
@@ -518,16 +569,34 @@ private fun OfflineBanner(modifier: Modifier = Modifier) {
 @Composable
 private fun AppTopBar(controller: TopBarController, onBack: () -> Unit) {
     val title = controller.title
+    val search = controller.search
     val showTitle = (controller.alwaysShowTitle || controller.scrolled) && title != null
     TopAppBar(
         title = {
-            if (showTitle) {
+            if (search != null) {
+                // Search replaces the title instead of taking a row from the
+                // screen's own content, so opening it never pushes the list
+                // down or re-measures it under the keyboard.
+                TopBarSearchField(search)
+            } else if (showTitle) {
                 Text(title.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         },
         navigationIcon = {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            // While searching, back closes the search (and keeps the list where
+            // it is) rather than leaving the screen.
+            IconButton(onClick = search?.onClose ?: onBack) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = if (search != null) "Close search" else "Back",
+                )
+            }
+        },
+        actions = {
+            controller.action?.let { action ->
+                IconButton(onClick = action.onSelect, modifier = Modifier.size(48.dp)) {
+                    Icon(action.icon, contentDescription = action.label)
+                }
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
@@ -535,8 +604,64 @@ private fun AppTopBar(controller: TopBarController, onBack: () -> Unit) {
             // Theme-aware: white-on-dark in Dark, dark-on-light in Light.
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+            actionIconContentColor = MaterialTheme.colorScheme.onSurface,
         ),
     )
+}
+
+/**
+ * The bar's inline filter field. Focus is taken one frame after the field has
+ * been laid out, so the keyboard opens onto a measured row instead of covering
+ * the row as it grows.
+ */
+@Composable
+private fun TopBarSearchField(search: TopBarSearch) {
+    val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(search) {
+        kotlinx.coroutines.delay(64)
+        focusRequester.requestFocus()
+    }
+    // The field keeps its own text and pushes edits out, instead of rendering
+    // straight from the screen's StateFlow: a keystroke would otherwise have to
+    // wait a frame for the ViewModel to echo it back, and the cursor/selection
+    // would fight the incoming value.
+    var text by remember { mutableStateOf(search.query) }
+    LaunchedEffect(search.query) {
+        // External change only (clear, close, a new screen): never while typing.
+        if (search.query != text) text = search.query
+    }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(VusicColors.SurfaceHigh)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+    ) {
+        if (text.isEmpty()) {
+            Text(
+                search.hint,
+                style = MaterialTheme.typography.bodyMedium,
+                color = VusicColors.SecondaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        androidx.compose.foundation.text.BasicTextField(
+            value = text,
+            onValueChange = {
+                text = it
+                search.onQuery(it)
+            },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onSurface,
+            ),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester),
+        )
+    }
 }
 
 @Composable

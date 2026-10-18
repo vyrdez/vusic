@@ -1,11 +1,16 @@
 package com.feishin.mobile.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.ui.draw.clipToBounds
@@ -64,6 +69,7 @@ import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.VusicControlColors
 import com.feishin.mobile.ui.theme.LocalPlayingColors
+import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.theme.VusicSpacing
 import com.feishin.mobile.ui.theme.playingColor
 
@@ -346,14 +352,25 @@ fun TrackRow(
             DownloadIndicator(downloadState)
             Spacer(Modifier.width(4.dp))
         }
-        if (onRemove != null) {
-            Text(
-                "✕", color = VusicColors.SecondaryText,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(onClick = onRemove)
-                    .padding(12.dp),
-            )
+        AnimatedVisibility(
+            visible = onRemove != null,
+            // Reveal as a short width+alpha animation rather than a pop, so
+            // toggling edit mode reads as the row making room for the X.
+            enter = fadeIn(Motion.fade(Motion.Fast)) +
+                expandHorizontally(Motion.layoutSize(), expandFrom = Alignment.End),
+            exit = fadeOut(Motion.fade(Motion.Fast)) +
+                shrinkHorizontally(Motion.layoutSize(), shrinkTowards = Alignment.End),
+        ) {
+            val remove = onRemove
+            if (remove != null) {
+                Text(
+                    "✕", color = VusicColors.SecondaryText,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(onClick = remove)
+                        .padding(12.dp),
+                )
+            }
         }
         if (showMenuButton) {
             IconButton(onClick = onActions, modifier = Modifier.size(48.dp)) {

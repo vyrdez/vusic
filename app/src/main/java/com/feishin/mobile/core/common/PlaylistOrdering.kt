@@ -65,9 +65,14 @@ object PlaylistOrdering {
         else PlaylistSort(key, descending = false)
 
     /**
-     * Reorder + remove act on server positions, so they are only safe when the
-     * list the user sees IS the stored order with nothing hidden. Any sort or
-     * an active query disables them.
+     * True only while the list on screen IS the stored order with nothing
+     * hidden, i.e. while a visible row index is also the server's entry index.
+     *
+     * Callers that mutate should prefer mapping the row back through
+     * [visibleIndices] instead of gating on this: removal always addresses the
+     * stored entry the user pointed at, sorted or filtered. This remains the
+     * predicate for anything that genuinely cannot be mapped (a bulk reorder by
+     * index, for instance).
      */
     fun canMutateOrder(sort: PlaylistSort, query: String): Boolean =
         sort.isDefault && query.isBlank()

@@ -112,6 +112,7 @@ fun EntityActionsSheet(
     cachedTracks: com.feishin.mobile.data.cache.CachedTrackStore,
     playlistEvents: PlaylistEvents? = null,
     onStartRadio: () -> Unit = {},
+    onDeletePlaylist: ((Playlist) -> Unit)? = null,
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
 ) {
@@ -122,7 +123,7 @@ fun EntityActionsSheet(
             is ActionTarget.Track -> TrackSheetContent(target.track, onDismiss, player, repo, settings, messenger, favs, downloads, playlistEvents, onStartRadio, onAlbum, onArtist)
             is ActionTarget.Album -> AlbumSheetContent(target.album, target.tracks, onDismiss, player, repo, settings, messenger, downloads, playlistEvents, onStartRadio, onAlbum, onArtist)
             is ActionTarget.Artist -> ArtistSheetContent(target.artist, onDismiss, player, repo, settings, messenger, downloads, playlistEvents, onStartRadio, onAlbum, onArtist)
-            is ActionTarget.Playlist -> PlaylistSheetContent(target.playlist, target.tracks, onDismiss, player, repo, settings, messenger, downloads, cachedTracks, playlistEvents, onAlbum, onArtist)
+            is ActionTarget.Playlist -> PlaylistSheetContent(target.playlist, target.tracks, onDismiss, player, repo, settings, messenger, downloads, cachedTracks, playlistEvents, onDeletePlaylist, onAlbum, onArtist)
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -573,6 +574,7 @@ private fun PlaylistSheetContent(
     downloads: com.feishin.mobile.data.download.DownloadRepository,
     cachedTracks: com.feishin.mobile.data.cache.CachedTrackStore,
     playlistEvents: PlaylistEvents?,
+    onDelete: ((Playlist) -> Unit)? = null,
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
 ) {
@@ -686,6 +688,15 @@ private fun PlaylistSheetContent(
 
     if (showPicker) {
         PlaylistPickerSheet(tracks = tracks, title = playlist.name, onDismiss = { showPicker = false }, repo = repo, messenger = messenger, playlistEvents = playlistEvents)
+    }
+    if (!isBuiltIn && onDelete != null) {
+        // Only a user-created playlist can be deleted; Favorites and Cached are
+        // views over other data, not playlists. The confirmation lives with the
+        // caller so it outlives this sheet closing.
+        SheetRow("Delete playlist", Icons.Default.Delete, onClick = {
+            onDismiss()
+            onDelete(playlist)
+        })
     }
 }
 

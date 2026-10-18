@@ -243,31 +243,44 @@ fun CachedSongsRow(
     }
 }
 
+/** One row of a sort sheet: a stable id and the text the user reads. */
+data class SortOption(val id: String, val label: String)
+
 /**
- * "Sort by" bottom sheet: readable radio options for the tab, an
- * ascending/descending toggle, and a checkmark on the selection. The choice
- * persists per tab in DataStore.
+ * "Sort by" bottom sheet: readable radio options, an ascending/descending
+ * toggle, and a checkmark on the selection.
+ *
+ * Deliberately generic, so the Library tabs and the track lists (playlists,
+ * Favorites, Cached, Downloads) speak the same language from one component:
+ * callers supply their own options and persist the choice themselves.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SortBottomSheet(
-    tabName: String,
-    current: SortChoice,
-    onSelect: (SortChoice) -> Unit,
+    options: List<SortOption>,
+    selectedId: String,
+    ascending: Boolean,
+    onSelect: (id: String, ascending: Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState()
-    var draft by remember(tabName, current) { mutableStateOf(current) }
+    // Tapping applies immediately (there is nothing to commit later) and the
+    // draft keeps the sheet's own rows in step.
+    var draftId by remember(selectedId, options) { mutableStateOf(selectedId) }
+    var draftAscending by remember(ascending) { mutableStateOf(ascending) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
             Text("Sort by", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.size(4.dp))
-            LibrarySorts.options(tabName).forEach { option ->
-                val selected = draft.option == option.id
+            options.forEach { option ->
+                val selected = draftId == option.id
                 Row(
                     Modifier.fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable { draft = draft.copy(option = option.id).also(onSelect) }
+                        .clickable {
+                            draftId = option.id
+                            onSelect(option.id, draftAscending)
+                        }
                         .padding(vertical = 12.dp, horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -286,20 +299,21 @@ fun SortBottomSheet(
                 Modifier.fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
                     .clickable {
-                        draft = draft.copy(ascending = !draft.ascending).also(onSelect)
+                        draftAscending = !draftAscending
+                        onSelect(draftId, draftAscending)
                     }
                     .padding(vertical = 12.dp, horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    if (draft.ascending) "Ascending" else "Descending",
+                    if (draftAscending) "Ascending" else "Descending",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
                 )
                 Icon(
-                    if (draft.ascending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
-                    if (draft.ascending) "Ascending" else "Descending",
+                    if (draftAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                    if (draftAscending) "Ascending" else "Descending",
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(20.dp),
                 )
@@ -307,4 +321,24 @@ fun SortBottomSheet(
             Spacer(Modifier.size(24.dp))
         }
     }
+}
+
+/**
+ * Library wrapper: keeps the per-tab option table and [SortChoice] call sites
+ * exactly as they were.
+ */
+@Composable
+fun SortBottomSheet(
+    tabName: String,
+    current: SortChoice,
+    onSelect: (SortChoice) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    SortBottomSheet(
+        options = LibrarySorts.options(tabName).map { SortOption(it.id, it.label) },
+        selectedId = current.option,
+        ascending = current.ascending,
+        onSelect = { id, ascending -> onSelect(SortChoice(id, ascending)) },
+        onDismiss = onDismiss,
+    )
 }

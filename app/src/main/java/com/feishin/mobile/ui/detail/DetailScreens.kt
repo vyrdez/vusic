@@ -1,45 +1,41 @@
 package com.feishin.mobile.ui.detail
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -48,6 +44,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
@@ -55,12 +52,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.feishin.mobile.core.common.PlaylistOrdering
-import com.feishin.mobile.core.common.PlaylistSort
+import kotlinx.coroutines.launch
 import com.feishin.mobile.core.common.PlaylistSortKey
 import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.domain.model.PlaylistCover
@@ -70,6 +68,8 @@ import com.feishin.mobile.ui.EmptyBox
 import com.feishin.mobile.ui.ErrorBox
 import com.feishin.mobile.ui.LoadingBox
 import com.feishin.mobile.ui.LocalTopBarController
+import com.feishin.mobile.ui.TopBarAction
+import com.feishin.mobile.ui.TopBarSearch
 import com.feishin.mobile.ui.components.ActionTarget
 import com.feishin.mobile.ui.components.LocalMiniClearance
 import com.feishin.mobile.ui.components.ClickableName
@@ -78,8 +78,18 @@ import com.feishin.mobile.ui.components.PlaylistCoverArt
 import com.feishin.mobile.ui.components.TrackRow
 import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.components.rememberSavableListState
+import com.feishin.mobile.ui.library.SortBottomSheet
+import com.feishin.mobile.ui.library.SortOption
+import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.VusicSpacing
+
+/**
+ * How long the page takes to scroll the cover and the buttons away when search
+ * opens. Long enough to read as one movement, short enough that the field feels
+ * immediate.
+ */
+private const val SearchScrollMs = 350
 
 @Composable
 fun CircleIconButton(
@@ -179,7 +189,8 @@ fun AlbumDetailScreen(
 
 /**
  * Shared entity header (album / playlist framing): large rounded cover, title,
- * tappable artist line, count, then shuffle / play / favourite / more.
+ * tappable artist line, count, then shuffle / play / more - with an optional
+ * favourite between play and more for the screens that have a real one.
  */
 @Composable
 fun AlbumHeader(
@@ -194,6 +205,11 @@ fun AlbumHeader(
     onFavorite: () -> Unit,
     onMore: () -> Unit,
     onArtistClick: (String) -> Unit,
+    /**
+     * False on screens with no meaningful favourite action (playlists), so the
+     * row is shuffle / play / more centred instead of carrying a dead button.
+     */
+    showFavorite: Boolean = true,
     cover: @Composable (Modifier) -> Unit = { m ->
         CoverImage(coverArtUrl, name, modifier = m, roundedDp = 12.dp, contentScale = ContentScale.Crop)
     },
@@ -227,78 +243,53 @@ fun AlbumHeader(
             ) {
                 Icon(Icons.Default.PlayArrow, "Play", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(40.dp))
             }
-            CircleIconButton(
-                onClick = onFavorite,
-                icon = if (starred) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                description = "Favorite",
-            )
+            if (showFavorite) {
+                CircleIconButton(
+                    onClick = onFavorite,
+                    icon = if (starred) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    description = "Favorite",
+                )
+            }
             CircleIconButton(onClick = onMore, icon = Icons.Default.MoreVert, description = "More")
         }
     }
 }
 
 /**
- * Sort chips plus a search toggle, shared by every track list that supports
- * view-only ordering (playlists, Favorite songs, Cached, Downloads).
+ * The controls that sit directly above a track list: one sort button in the
+ * Library's language, and an optional edit toggle for per-row removal.
  *
- * Tapping the active chip flips ascending/descending and shows an arrow; a
- * different chip always starts ascending. Same chip language as the Library
- * tab row so the two do not feel like different apps.
+ * Right-aligned and one row tall. The old chip strip grew with the number of
+ * keys and put a search icon in the list; the icon now lives in the top bar and
+ * the sort sheet carries the options and the direction.
  */
 @Composable
-fun PlaylistSortRow(
-    sort: PlaylistSort,
-    onSelect: (PlaylistSortKey) -> Unit,
-    onSearchClick: () -> Unit,
+fun TrackListControlsRow(
+    onSortClick: () -> Unit,
     modifier: Modifier = Modifier,
-    // Downloads rows carry no duration, so that chip is not offered there.
-    availableKeys: List<PlaylistSortKey> = PlaylistSortKey.entries,
+    editMode: Boolean? = null,
+    onToggleEdit: (() -> Unit)? = null,
 ) {
-    // A remembered sort naming a key this list cannot express falls back, so a
-    // stale preference can never blank the list.
-    val effective = remember(sort, availableKeys) {
-        if (sort.key in availableKeys) sort else PlaylistOrdering.DEFAULT
-    }
     Row(
-        modifier.fillMaxWidth(),
+        modifier.fillMaxWidth().padding(horizontal = VusicSpacing.ScreenHorizontal),
+        horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        androidx.compose.foundation.lazy.LazyRow(
-            Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(availableKeys, key = { it.name }, contentType = { "item" }) { key ->
-                val selected = key == effective.key
-                AssistChip(
-                    onClick = { onSelect(key) },
-                    label = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(key.label, maxLines = 1)
-                            if (selected) {
-                                Icon(
-                                    if (effective.descending) Icons.Default.ArrowDownward
-                                    else Icons.Default.ArrowUpward,
-                                    contentDescription = if (effective.descending) "Descending" else "Ascending",
-                                    modifier = Modifier.size(14.dp).padding(start = 2.dp),
-                                )
-                            }
-                        }
-                    },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = if (selected) VusicColors.SurfaceHigh
-                        else androidx.compose.ui.graphics.Color.Transparent,
-                    ),
+        IconButton(onClick = onSortClick) {
+            Icon(Icons.Default.Sort, contentDescription = "Sort")
+        }
+        if (editMode != null && onToggleEdit != null) {
+            IconButton(onClick = onToggleEdit) {
+                Icon(
+                    if (editMode) Icons.Default.Check else Icons.Default.Edit,
+                    contentDescription = if (editMode) "Done editing" else "Edit tracks",
                 )
             }
-        }
-        IconButton(onClick = onSearchClick) {
-            Icon(Icons.Default.Search, contentDescription = "Search tracks")
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun PlaylistDetailScreen(
     vm: PlaylistDetailViewModel = hiltViewModel(),
@@ -306,7 +297,6 @@ fun PlaylistDetailScreen(
     repo: MusicDataRepository,
     messenger: UiMessenger,
     onActions: (ActionTarget) -> Unit,
-    onBack: () -> Unit,
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val nowPlaying by player.current.collectAsStateWithLifecycle()
@@ -315,6 +305,25 @@ fun PlaylistDetailScreen(
     val sort by vm.sort.collectAsStateWithLifecycle()
     val query by vm.query.collectAsStateWithLifecycle()
     var searchOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+
+    // Hoisted above the state machine on purpose: a transient Loading (a
+    // pull-to-refresh, an event-triggered reload) must not throw away where
+    // the reader was.
+    val listState = rememberSavableListState()
+    // Opening or closing the keyboard resizes the list, and the lazy layout
+    // re-anchors on its first visible item when it does - which dragged the
+    // playlist back under the cover while the reader was filtering. Keep the
+    // anchor while the IME is up and put it back when it goes.
+    val imeVisible = WindowInsets.isImeVisible
+    var imeAnchor by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    LaunchedEffect(imeVisible) {
+        if (imeVisible) {
+            imeAnchor = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        } else {
+            imeAnchor?.let { (index, offset) -> listState.scrollToItem(index, offset) }
+            imeAnchor = null
+        }
+    }
     when (val s = ui) {
         is UiState.Loading -> LoadingBox()
         is UiState.Error -> ErrorBox(s.message, vm::refresh)
@@ -343,9 +352,9 @@ fun PlaylistDetailScreen(
             val visibleTracks = remember(visibleIndices, p.tracks) {
                 visibleIndices.map { p.tracks[it] }
             }
-            val canMutate = PlaylistOrdering.canMutateOrder(sort, query)
-            val listState = rememberSavableListState()
             val topBar = LocalTopBarController.current
+            val scope = rememberCoroutineScope()
+            val focusManager = LocalFocusManager.current
             val barScrolled by remember {
                 derivedStateOf {
                     listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 120
@@ -355,6 +364,61 @@ fun PlaylistDetailScreen(
                 topBar.title = p.name
                 topBar.scrolled = barScrolled
             }
+
+            // Sort and edit state. Both are view-only: neither touches the
+            // stored order, and removing a row still addresses the stored entry.
+            val sortOptions = remember {
+                PlaylistSortKey.entries.map { SortOption(it.name, it.label) }
+            }
+            var showSortSheet by remember { mutableStateOf(false) }
+            var editMode by remember { mutableStateOf(false) }
+            // Removal is only possible on a real, user-created playlist.
+            val canEditRows = !isVirtual
+
+            val closeSearch = {
+                searchOpen = false
+                vm.setQuery("")
+                focusManager.clearFocus()
+            }
+            val barSearch = remember {
+                TopBarSearch(
+                    hint = "Filter this playlist…",
+                    onQuery = vm::setQuery,
+                    onClose = closeSearch,
+                )
+            }
+            val openSearch = {
+                scope.launch {
+                    // Scroll the cover and the button row out of the way FIRST,
+                    // so the songs come to rest under the bar, and only then
+                    // reveal the field. Opening straight onto the field dropped
+                    // the list out from under the keyboard instead.
+                    val headerPx = listState.layoutInfo.visibleItemsInfo
+                        .firstOrNull { it.index == 0 }?.size ?: 0
+                    if (headerPx > 0 && listState.canScrollForward) {
+                        listState.animateScrollBy(
+                            headerPx.toFloat(),
+                            Motion.value(SearchScrollMs),
+                        )
+                    }
+                    searchOpen = true
+                }
+            }
+            LaunchedEffect(searchOpen, p.id) {
+                topBar.search = if (searchOpen) barSearch else null
+                // The bar has one action slot and it belongs to search, which
+                // is why the icon stays visible while the list scrolls.
+                topBar.action = if (searchOpen) {
+                    null
+                } else {
+                    TopBarAction(Icons.Default.Search, "Search tracks") { openSearch() }
+                }
+            }
+            LaunchedEffect(query) { barSearch.query = query }
+            // Back leaves the search (keeping the scroll position) rather than
+            // leaving the playlist.
+            androidx.activity.compose.BackHandler(enabled = searchOpen) { closeSearch() }
+
             val cover = if (vm.isVirtualCached) {
                 PlaylistCover.select(
                     serverCoverArtId = null,
@@ -390,7 +454,11 @@ fun PlaylistDetailScreen(
                             starred = false,
                             onPlay = { player.playAll(visibleTracks, source = p.name) },
                             onShuffle = { player.playAll(visibleTracks, shuffle = true, source = p.name) },
+                            // A playlist has no "favourite" of its own: the heart
+                            // was wired to nothing here, so it is gone rather than
+                            // left as a dead button. Delete now lives in the ⋮.
                             onFavorite = {},
+                            showFavorite = false,
                             onMore = {
                                 onActions(
                                     ActionTarget.Playlist(
@@ -410,46 +478,16 @@ fun PlaylistDetailScreen(
                                 )
                             },
                         )
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = VusicSpacing.ScreenHorizontal),
-                            horizontalArrangement = Arrangement.Center,
-                        ) {
-                            // The virtual collection can't be deleted or renamed.
-                            if (!isVirtual) {
-                                OutlinedButton(onClick = { vm.delete(onBack) }) { Text("Delete playlist") }
-                            }
-                        }
-                        AnimatedVisibility(
-                            visible = searchOpen,
-                            enter = expandVertically(
-                                expandFrom = Alignment.Top,
-                                animationSpec = com.feishin.mobile.ui.theme.Motion.layoutTween(),
-                            ) + fadeIn(com.feishin.mobile.ui.theme.Motion.fade()),
-                            exit = shrinkVertically(
-                                shrinkTowards = Alignment.Top,
-                                animationSpec = com.feishin.mobile.ui.theme.Motion.layoutTween(),
-                            ) + fadeOut(com.feishin.mobile.ui.theme.Motion.fade()),
-                        ) {
-                            com.feishin.mobile.ui.library.LibrarySearchField(
-                                query = query,
-                                onQuery = vm::setQuery,
-                                onClose = { searchOpen = false; vm.setQuery("") },
-                                autoFocus = true,
-                            )
-                        }
-                        PlaylistSortRow(
-                            sort = sort,
-                            onSelect = vm::toggleSort,
-                            onSearchClick = { searchOpen = !searchOpen },
+                    }
+                    // Directly above the songs, and the target the search scroll
+                    // stops on, so opening search lands on the controls with the
+                    // list under the bar rather than on the cover.
+                    item {
+                        TrackListControlsRow(
+                            onSortClick = { showSortSheet = true },
+                            editMode = if (canEditRows) editMode else null,
+                            onToggleEdit = { editMode = !editMode },
                         )
-                        if (query.isNotBlank() && visibleTracks.isEmpty()) {
-                            Text(
-                                "No tracks match \"$query\"",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = VusicColors.SecondaryText,
-                                modifier = Modifier.padding(horizontal = VusicSpacing.ScreenHorizontal, vertical = 12.dp),
-                            )
-                        }
                     }
                     // Keyed by source position, not id alone: a playlist may
                     // legitimately hold the same song twice, and the source
@@ -461,16 +499,44 @@ fun PlaylistDetailScreen(
                             // Play exactly what the user can see.
                             onClick = { player.playAll(visibleTracks, visibleIndex, source = p.name) },
                             onActions = { onActions(ActionTarget.Track(song)) },
-                            // Removal acts on the server's entry position, so it
-                            // is only offered while the visible list IS the
-                            // stored order - and then it uses the source index
-                            // rather than the id, which is what keeps a
-                            // duplicated song from deleting the wrong copy.
-                            onRemove = if (isVirtual || !canMutate) null else ({ vm.removeAt(src) }),
+                            // Always the STORED index (`src`), never the visible
+                            // one, so a removal under a sort or filter still hits
+                            // the entry the user pointed at - and a duplicated
+                            // song still cannot delete the wrong copy. The X only
+                            // exists in edit mode.
+                            onRemove = if (canEditRows && editMode) ({ vm.removeAt(src) }) else null,
                             isCurrent = song.id == nowPlaying?.id, isPlaying = isPlaying,
                         )
                     }
+                    if (query.isNotBlank() && visibleTracks.isEmpty()) {
+                        item {
+                            Text(
+                                "No tracks match \"$query\"",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = VusicColors.SecondaryText,
+                                modifier = Modifier.padding(
+                                    horizontal = VusicSpacing.ScreenHorizontal,
+                                    vertical = 12.dp,
+                                ),
+                            )
+                        }
+                    }
                 }
+            }
+            if (showSortSheet) {
+                // The Library's own sheet, reused rather than copied, so the two
+                // places can never drift apart.
+                SortBottomSheet(
+                    options = sortOptions,
+                    selectedId = sort.key.name,
+                    ascending = !sort.descending,
+                    onSelect = { id, ascending ->
+                        val key = runCatching { PlaylistSortKey.valueOf(id) }
+                            .getOrDefault(PlaylistSortKey.PLAYLIST_ORDER)
+                        vm.setSort(key, descending = !ascending)
+                    },
+                    onDismiss = { showSortSheet = false },
+                )
             }
         }
     }

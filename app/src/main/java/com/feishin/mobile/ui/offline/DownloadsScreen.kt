@@ -23,17 +23,13 @@ import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -83,15 +79,39 @@ fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRep
     val sort by vm.sort.collectAsStateWithLifecycle()
     val query by vm.query.collectAsStateWithLifecycle()
     var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var showSortSheet by remember { mutableStateOf(false) }
+    // Search lives in the shared bar, so the filter no longer inserts a row
+    // into the list and the storage header never moves.
+    val closeSearch = {
+        searchOpen = false
+        vm.setQuery("")
+    }
+    val barSearch = remember {
+        com.feishin.mobile.ui.TopBarSearch("Filter downloads…", vm::setQuery, closeSearch)
+    }
+    LaunchedEffect(searchOpen) {
+        topBar.search = if (searchOpen) barSearch else null
+        topBar.action = if (searchOpen) {
+            null
+        } else {
+            com.feishin.mobile.ui.TopBarAction(
+                androidx.compose.material.icons.Icons.Filled.Search,
+                "Search downloads",
+            ) { searchOpen = true }
+        }
+    }
+    LaunchedEffect(query) { barSearch.query = query }
+    androidx.activity.compose.BackHandler(enabled = searchOpen) { closeSearch() }
     val downloadableKeys = remember {
         com.feishin.mobile.core.common.PlaylistSortKey.entries
             .filter { it != com.feishin.mobile.core.common.PlaylistSortKey.DURATION }
     }
     // Fall back to the default when the remembered sort names a key this list
     // cannot express (a download row carries no duration). This has to happen
-    // HERE, not only inside PlaylistSortRow: otherwise the chips would show
-    // nothing selected while the list was still being ordered by that key, and
-    // `durationAt = { 0 }` would silently make it a no-op sort for every row.
+    // HERE, not only where the controls are drawn: otherwise the sort sheet
+    // would show nothing selected while the list was still being ordered by
+    // that key, and `durationAt = { 0 }` would silently make it a no-op sort
+    // for every row.
     val effectiveSort = remember(sort, downloadableKeys) {
         if (sort.key in downloadableKeys) sort
         else com.feishin.mobile.core.common.PlaylistOrdering.DEFAULT
@@ -183,31 +203,8 @@ fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRep
         if (done.isNotEmpty()) {
             item {
                 Column {
-                    AnimatedVisibility(
-                        visible = searchOpen,
-                        enter = expandVertically(
-                            expandFrom = androidx.compose.ui.Alignment.Top,
-                            animationSpec = com.feishin.mobile.ui.theme.Motion.layoutTween(),
-                        ) + fadeIn(com.feishin.mobile.ui.theme.Motion.fade()),
-                        exit = shrinkVertically(
-                            shrinkTowards = androidx.compose.ui.Alignment.Top,
-                            animationSpec = com.feishin.mobile.ui.theme.Motion.layoutTween(),
-                        ) + fadeOut(com.feishin.mobile.ui.theme.Motion.fade()),
-                    ) {
-                        com.feishin.mobile.ui.library.LibrarySearchField(
-                            query = query,
-                            onQuery = vm::setQuery,
-                            onClose = { searchOpen = false; vm.setQuery("") },
-                            autoFocus = true,
-                        )
-                    }
-                    com.feishin.mobile.ui.detail.PlaylistSortRow(
-                        // The already-resolved sort, so the highlighted chip and
-                        // the order of the list can never disagree.
-                        sort = effectiveSort,
-                        onSelect = vm::toggleSort,
-                        onSearchClick = { searchOpen = !searchOpen },
-                        availableKeys = downloadableKeys,
+                    com.feishin.mobile.ui.detail.TrackListControlsRow(
+                        onSortClick = { showSortSheet = true },
                     )
                     Text(
                         if (query.isBlank()) "Downloaded (${done.size})"
@@ -232,6 +229,22 @@ fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRep
         if (active.isEmpty() && done.isEmpty() && failed.isEmpty()) {
             item { EmptyState("No downloads yet. Use the download button on any song, album or playlist.") }
         }
+    }
+    if (showSortSheet) {
+        // The Library's sheet, reused: same options list, same direction
+        // control, same look as every other sortable list.
+        com.feishin.mobile.ui.library.SortBottomSheet(
+            options = downloadableKeys.map {
+                com.feishin.mobile.ui.library.SortOption(it.name, it.label)
+            },
+            selectedId = effectiveSort.key.name,
+            ascending = !effectiveSort.descending,
+            onSelect = { id, ascending ->
+                val key = com.feishin.mobile.core.common.PlaylistSortKey.valueOf(id)
+                vm.setSort(key, descending = !ascending)
+            },
+            onDismiss = { showSortSheet = false },
+        )
     }
 }
 

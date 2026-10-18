@@ -221,25 +221,27 @@ class PlaylistDetailViewModel @Inject constructor(
      * Navidrome removes playlist entries by server position, so the source
      * index is the only thing that identifies the right entry: a playlist may
      * legitimately hold the same song twice, and looking the row up by id
-     * would delete the first copy instead of the one tapped. Removal is
-     * offered only while the visible list IS the stored order
-     * ([PlaylistOrdering.canMutateOrder]), which is what makes the visible
-     * source index the server index.
+     * would delete the first copy instead of the one tapped. The caller maps
+     * the row back through the visible -> source table, so a removal stays
+     * correct under any sort or filter.
      */
     fun removeAt(sourceIndex: Int) {
-        if (isVirtualFavorites) return
-        if (!com.feishin.mobile.core.common.PlaylistOrdering.canMutateOrder(_sort.value, _query.value)) return
+        if (isVirtualFavorites || isVirtualCached) return
         val tracks = (_ui.value as? UiState.Data)?.value?.tracks ?: return
         if (sourceIndex !in tracks.indices) return
         viewModelScope.launch {
+            // `sourceIndex` is always the STORED position (the caller maps a
+            // visible row back through the visible->source table), so a removal
+            // under a sort or filter still hits the entry the user pointed at.
             repo.removeFromPlaylist(id, listOf(sourceIndex))
             refresh()
         }
     }
 
-    /** Tapping a sort key flips direction on repeat, resets it on change. */
-    fun toggleSort(key: com.feishin.mobile.core.common.PlaylistSortKey) {
-        val next = com.feishin.mobile.core.common.PlaylistOrdering.toggle(_sort.value, key)
+    /** Sets key and direction outright, for the sort sheet (see [setSort]). */
+    fun setSort(key: com.feishin.mobile.core.common.PlaylistSortKey, descending: Boolean) {
+        val next = com.feishin.mobile.core.common.PlaylistSort(key, descending)
+        if (next == _sort.value) return
         _sort.value = next
         viewModelScope.launch { settings.setPlaylistSort(id, next) }
     }
