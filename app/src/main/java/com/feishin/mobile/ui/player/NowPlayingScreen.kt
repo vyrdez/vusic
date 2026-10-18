@@ -95,6 +95,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -1259,8 +1260,18 @@ private fun QueueSheet(
             override fun onPostScroll(
                 consumed: androidx.compose.ui.geometry.Offset,
                 available: androidx.compose.ui.geometry.Offset,
-                source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
+                source: NestedScrollSource,
             ): androidx.compose.ui.geometry.Offset {
+                // ONLY a finger drag may move the sheet. A ballistic fling is
+                // dispatched here too, with source = SideEffect. A downward
+                // fling still in flight when the list reaches its top used to
+                // arrive as leftover delta, drag the sheet, latch `moved`, and
+                // then close the sheet on release - so the sheet closed instead
+                // of the list simply coming to rest at the top. The list owns
+                // its own fling; the sheet follows a finger only.
+                if (source != NestedScrollSource.UserInput) {
+                    return androidx.compose.ui.geometry.Offset.Zero
+                }
                 val atTop = listState.firstVisibleItemIndex == 0 &&
                     listState.firstVisibleItemScrollOffset == 0
                 if (available.y > 0 && atTop) {
@@ -1275,17 +1286,23 @@ private fun QueueSheet(
 
             // Dispatched on EVERY drag end (including a slow release with zero
             // velocity), so it is the reliable place to resolve a sheet that
-            // this connection moved.
+            // this connection moved. It receives the release velocity, so a
+            // decisive downward flick still closes even when the travel was
+            // under POSITION_THRESHOLD.
             override suspend fun onPreFling(
                 available: androidx.compose.ui.unit.Velocity,
             ): androidx.compose.ui.unit.Velocity {
                 if (moved) {
                     moved = false
-                    state.settle(0f)
+                    state.onDragEnd(available.y)
                 }
                 return androidx.compose.ui.unit.Velocity.Zero
             }
 
+            // Safety net for a gesture that ended without the pre-fling
+            // dispatch. Deliberately NO velocity close here: a fling the list
+            // consumed that reaches the top must need a NEW gesture to close
+            // the sheet, never resolve into a close from leftover velocity.
             override suspend fun onPostFling(
                 consumed: androidx.compose.ui.unit.Velocity,
                 available: androidx.compose.ui.unit.Velocity,
@@ -1293,14 +1310,6 @@ private fun QueueSheet(
                 if (moved) {
                     moved = false
                     state.settle(0f)
-                }
-                // A ballistic downward fling still travelling at the top of the
-                // list: close with the fling's own velocity and consume it.
-                val atTop = listState.firstVisibleItemIndex == 0 &&
-                    listState.firstVisibleItemScrollOffset == 0
-                if (available.y > 0 && atTop && state.open) {
-                    state.onDragEnd(available.y)
-                    return available
                 }
                 return androidx.compose.ui.unit.Velocity.Zero
             }
