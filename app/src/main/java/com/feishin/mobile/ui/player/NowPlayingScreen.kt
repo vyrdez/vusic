@@ -106,6 +106,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.common.Player
@@ -138,6 +139,7 @@ import com.feishin.mobile.ui.theme.playingColor
 import com.feishin.mobile.ui.components.formatDuration
 import com.feishin.mobile.ui.components.shareText
 import com.feishin.mobile.core.common.PlaybackProgress
+import com.feishin.mobile.core.common.QueueHighlight
 import com.feishin.mobile.ui.theme.VusicColorMath
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.VusicSpacing
@@ -915,7 +917,12 @@ private fun SyncedLyricsList(
 private fun QueueList(
     displayOrder: List<com.feishin.mobile.playback.QueueItem>,
     listState: androidx.compose.foundation.lazy.LazyListState,
-    currentIndex: Int,
+    /**
+     * Id of the entry the player is on. The highlight follows THIS, never an
+     * index: a live reorder changes every row's index, so an index-based
+     * highlight stays on the slot (and the song under it changes).
+     */
+    currentQueueId: Long?,
     isPlaying: Boolean,
     player: PlayerManager,
     haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
@@ -930,13 +937,19 @@ private fun QueueList(
     val reorderState = rememberReorderableLazyColumnState(listState) { from, to ->
         onMoveLocal(from.index, to.index)
     }
+    // The ids in the order they are shown RIGHT NOW - the local, in-drag order.
+    // The highlight and the auto-scroll target both read the current entry's
+    // identity out of this, so neither depends on the player's index staying in
+    // step with a list that is mid-reorder.
+    val displayIds = displayOrder.map { it.queueId }
+    val currentDisplayIndex = QueueHighlight.indexOf(displayIds, currentQueueId)
     // Auto-scroll to the current item on track changes — but never while a
     // drag is in flight (the old per-frame animateScrollToItem fought the
     // gesture and was half the freeze).
     val anyDragging = reorderState.isAnyItemDragging
-    LaunchedEffect(currentIndex, displayOrder.size, anyDragging) {
-        if (!anyDragging && displayOrder.isNotEmpty() && !listState.isScrollInProgress) {
-            listState.animateScrollToItem(currentIndex.coerceIn(0, displayOrder.size - 1))
+    LaunchedEffect(currentDisplayIndex, anyDragging) {
+        if (!anyDragging && currentDisplayIndex >= 0 && !listState.isScrollInProgress) {
+            listState.animateScrollToItem(currentDisplayIndex)
         }
     }
     // Bottom padding clears the bar so the last row is never hidden under it.
@@ -946,7 +959,7 @@ private fun QueueList(
         contentPadding = PaddingValues(bottom = 56.dp),
     ) {
         items(displayOrder, key = { it.queueId }, contentType = { "item" }) { item ->
-            val idx = displayOrder.indexOfFirst { it.queueId == item.queueId }
+            val idx = displayIds.indexOf(item.queueId)
             // animateItem is a LazyItemScope extension: create it here (where
             // the scope is the receiver) and pass it into the row.
             val placement = Modifier.animateItem()
@@ -967,10 +980,14 @@ private fun QueueList(
                     enableDismissFromStartToEnd = false,
                     backgroundContent = {},
                 ) {
-                    val isCurrent = idx == currentIndex
-                    // Played rows (before the current index) dim but stay
+                    // Identity, not position: during a drag the rows around the
+                    // current entry shift on every frame, and only the entry's
+                    // own id says which one is still playing.
+                    val highlight = QueueHighlight.state(displayIds, idx, currentQueueId)
+                    val isCurrent = highlight.isCurrent
+                    // Played rows (behind the current entry) dim but stay
                     // legible: secondary text clears 4.5:1, above the 3:1 bar.
-                    val played = idx in 0 until currentIndex
+                    val played = highlight.isPlayed
                     // Every colour here comes from the resolved palette, never
                     // from the artwork directly. With dynamic color OFF that
                     // means the theme's own highlight pair, which is what keeps
@@ -997,6 +1014,9 @@ private fun QueueList(
                     }
                     Row(
                         placement
+                            // Lift the dragged row above its neighbours so it
+                            // is never painted under the rows it passes over.
+                            .zIndex(if (isDragging) 1f else 0f)
                             .fillMaxWidth()
                             .shadow(if (isDragging) 8.dp else 0.dp, RoundedCornerShape(16.dp))
                             // Current row: 16dp rounded container from the artwork scheme.
@@ -1388,7 +1408,10 @@ private fun QueueSheet(
             QueueList(
                 displayOrder = displayOrder,
                 listState = listState,
-                currentIndex = currentIndex,
+                // The player's current entry, by id. Read from the LIVE queue
+                // (not displayOrder), so the highlight is unaffected by the
+                // in-drag local order.
+                currentQueueId = queue.getOrNull(currentIndex)?.queueId,
                 isPlaying = isPlaying,
                 player = player,
                 haptics = haptics,
