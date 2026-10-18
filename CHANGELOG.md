@@ -72,3 +72,51 @@ Subsonic/OpenSubsonic API.
 - Crossfade is a volume ramp, not a true two-player overlap.
 - No sleep timer.
 - Gray album covers fall back to the neutral theme (unit-tested only).
+## 1.1.1 — playlist page rework, Now Playing colours, lyrics transition, queue fixes
+
+### Playlist page
+- Header row is now shuffle / play / more, centred; the heart is gone (it
+  was wired to nothing on the playlist screen, so nothing is lost). Delete
+  moved into the ⋮ menu with a confirmation dialog, offered only for
+  user-created playlists.
+- Search moved to the top bar, next to the back arrow; it stays put while
+  scrolling and scrolls the cover and buttons away before the field
+  appears. Results filter live; Back or clear closes it without moving the
+  list.
+- Sort chips replaced by one sort button (the Library's sheet, reused) with
+  the same five keys and asc/desc, directly above the song list, on the
+  right. An Edit pencil next to it reveals the per-row remove buttons with
+  a short animation; removal still addresses the stored entry, so it is
+  correct under any sort or filter.
+- Downloads & storage got the same sort button + sheet + bar search.
+
+### Now Playing
+- With dynamic colour off, Now Playing uses only the static theme (no
+  cover-derived tint anywhere: background, buttons, progress, queue peek,
+  lyrics, mini-player expand transition) with one consistent accent. With
+  it on, behaviour is unchanged except every text and icon meets contrast
+  in all four combinations (Light/Dark × dynamic on/off).
+- Song / Lyrics now switches with a 250-350 ms transition: the selection
+  pill slides, the panels cross-fade with a short travel, the background
+  colour animates instead of snapping. Playback, lyrics scroll and the
+  progress bar are unaffected; 10 fast taps do not jank; the system
+  animation scale is honoured (off = instant).
+
+### Queue
+- Scrolling up from the bottom of the queue scrolls the list to the top
+  instead of closing the sheet; the sheet only closes once nothing is left
+  to scroll, and a fling the list consumed no longer closes it. Dragging on
+  the handle or header still opens and closes it.
+- The highlighted row now follows the current track by its stable queue id
+  (so duplicate songs and reorders are tracked correctly), including
+  during a drag, and lands on the right row after a drop with no
+  restart or skip.
+
+### Deliberate limitations
+- The search scroll is 350 ms and needs a header tall enough to scroll; on
+  very short playlists the field still appears but the list may not move.
+- A genuine downward flick shorter than the sheet's settle threshold no
+  longer closes a sheet that is being dragged (the price of not closing on
+  a fling the list consumed).
+- Touch feel, 120 Hz fling behaviour and real-device verification were not
+  performed in this pass (only the emulator).
