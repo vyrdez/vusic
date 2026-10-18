@@ -125,6 +125,12 @@ object Motion {
         stiffness = Spring.StiffnessMediumLow,
     )
 
+    /**
+     * IntOffset variant over a fixed duration, for content that slides a short
+     * distance (it should read as travel decided up front, not as a spring).
+     */
+    fun slide(duration: Int = Slow) = tweenSpec<IntOffset>(duration)
+
     // ---- Navigation --------------------------------------------------------
 
     /** Horizontal push for forward detail navigation. */

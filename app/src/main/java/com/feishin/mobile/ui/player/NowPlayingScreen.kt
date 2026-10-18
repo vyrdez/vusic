@@ -1,7 +1,14 @@
 package com.feishin.mobile.ui.player
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -79,6 +86,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -347,7 +355,31 @@ fun NowPlayingScreen(
             // An Animatable, so a release/cancel always springs back to a
             // settled offset instead of stranding the layout mid-drag.
             val dragOffset = remember { androidx.compose.animation.core.Animatable(0f) }
-            if (!lyricsMode) {
+            // Song <-> Lyrics is a transition, not a swap: the two panels
+            // cross-fade with a short horizontal travel while the selection pill
+            // slides (see SongLyricsToggle). Playback, the progress bar and the
+            // queue are untouched - they live in the player, not in here.
+            AnimatedContent(
+                targetState = lyricsMode,
+                modifier = Modifier.fillMaxSize(),
+                transitionSpec = {
+                    // targetState == true is heading to Lyrics: the incoming
+                    // panel comes from the side it is travelling towards and the
+                    // outgoing one leaves the opposite way. Motion.Slow is
+                    // 300 ms and collapses to 0 when the system animation scale
+                    // is off (the travel is zeroed too, so nothing jumps).
+                    val forward = targetState
+                    val travel = { full: Int -> if (Motion.durationScale == 0f) 0 else full / 5 }
+                    (slideInHorizontally(animationSpec = Motion.slide()) { w ->
+                        if (forward) travel(w) else -travel(w)
+                    } + fadeIn(animationSpec = Motion.fade(Motion.Slow))) togetherWith
+                        (slideOutHorizontally(animationSpec = Motion.slide()) { w ->
+                            if (forward) -travel(w) else travel(w)
+                        } + fadeOut(animationSpec = Motion.fade(Motion.Slow)))
+                },
+                label = "np-tab-content",
+            ) { showLyrics ->
+            if (!showLyrics) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 // The queue sheet is not composed while it is closed, so its own
                 // onSizeChanged cannot measure the travel height until it has
@@ -522,7 +554,8 @@ fun NowPlayingScreen(
                 }
             }
             } else {
-                LyricsPanel(lyricsVm, player, content, dim, modifier = Modifier.weight(1f))
+                LyricsPanel(lyricsVm, player, content, dim, modifier = Modifier.fillMaxSize())
+            }
             }
         }
     }
@@ -563,25 +596,66 @@ private fun SongLyricsToggle(
     val dim = playingColor(palette.dim)
     val accent = playingColor(palette.accent)
     val onAccent = playingColor(palette.onAccent)
-    Row(
-        Modifier.clip(RoundedCornerShape(20.dp)).background(dim.copy(alpha = 0.18f)).padding(3.dp),
-        verticalAlignment = Alignment.CenterVertically,
+
+    // The selection is ONE pill that slides between the two labels, instead of
+    // each label swapping its own background, so switching tabs reads as the
+    // selection travelling rather than the fill blinking. The segment widths
+    // are measured from the real text, so the two labels keep their natural
+    // sizes. The container background animates for the same reason.
+    val density = LocalDensity.current
+    var songPx by remember { mutableIntStateOf(0) }
+    var lyricsPx by remember { mutableIntStateOf(0) }
+    var innerHeightPx by remember { mutableIntStateOf(0) }
+    val slide by animateFloatAsState(
+        targetValue = if (lyricsMode) 1f else 0f,
+        animationSpec = Motion.value(Motion.Slow),
+        label = "np-tab-slide",
+    )
+    val container by animateColorAsState(
+        targetValue = dim.copy(alpha = 0.18f),
+        animationSpec = Motion.color(),
+        label = "np-tab-container",
+    )
+    val padPx = with(density) { 3.dp.toPx() }
+    val pillX = songPx * slide
+    val pillW = songPx + (lyricsPx - songPx) * slide
+    val pillH = (innerHeightPx - padPx * 2f).coerceAtLeast(0f)
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(container)
+            .onSizeChanged { innerHeightPx = it.height },
     ) {
-        listOf("Song" to false, "Lyrics" to true).forEach { (label, value) ->
-            val selected = lyricsMode == value
-            Text(
-                label,
-                style = MaterialTheme.typography.labelLarge,
-                color = if (selected) onAccent else dim,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(17.dp))
-                    .background(
-                        if (selected) accent
-                        else Color.Transparent,
+        // Drawn only once both labels have been measured: a zero-width pill on
+        // the first frame would flash against the left edge.
+        if (songPx > 0 && lyricsPx > 0 && pillH > 0f) {
+            Box(
+                Modifier
+                    .offset { IntOffset((pillX + padPx).roundToInt(), padPx.roundToInt()) }
+                    .size(
+                        width = with(density) { pillW.toDp() },
+                        height = with(density) { pillH.toDp() },
                     )
-                    .clickable { onSelect(value) }
-                    .padding(horizontal = 16.dp, vertical = 7.dp),
+                    .clip(RoundedCornerShape(17.dp))
+                    .background(accent),
             )
+        }
+        Row(
+            Modifier.padding(3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            listOf("Song" to false, "Lyrics" to true).forEach { (label, value) ->
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (lyricsMode == value) onAccent else dim,
+                    modifier = Modifier
+                        .onSizeChanged { if (value) lyricsPx = it.width else songPx = it.width }
+                        .clip(RoundedCornerShape(17.dp))
+                        .clickable { onSelect(value) }
+                        .padding(horizontal = 16.dp, vertical = 7.dp),
+                )
+            }
         }
     }
 }
