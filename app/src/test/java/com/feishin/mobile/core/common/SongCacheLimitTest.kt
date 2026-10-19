@@ -33,9 +33,10 @@ class SongCacheLimitTest {
 
     @Test
     fun theSliderThumbIsFullExactlyAt100Gb() {
-        // The slider offers every supported size, so its last step IS 100 GB and
-        // full travel lands there.
-        val steps = StorageLimits.cacheSteps(CacheSizePolicy.streamStepBytes(), 2_000L * gb)
+        // The rail is the whole supported range - it is NOT trimmed to the
+        // device's size, because a limit bigger than the phone is exactly the
+        // case the free-space warning is for.
+        val steps = CacheSizePolicy.streamStepBytes()
         assertEquals(100L * gb, steps.last())
         assertEquals("100 GB", StorageLimits.label(steps.last()))
     }
