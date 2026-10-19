@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.overscroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -1030,7 +1031,22 @@ private fun QueueList(
     // Bottom padding clears the bar so the last row is never hidden under it.
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxWidth(),
+        // NO overscroll effect on this list, on purpose.
+        //
+        // A LazyColumn overscrolls at its boundaries by default, and Compose
+        // takes the WHOLE drag into the effect the moment the list is at its
+        // first item and the finger moves down: the delta is applied to the
+        // stretch/glow and never enters the nested-scroll chain at all. That
+        // is why the queue sheet could not be closed by dragging down on the
+        // list - every nested-scroll callback received available.y == 0 from
+        // the frame the list reached its top, and only the header's own
+        // `draggable` could move the sheet.
+        //
+        // With a no-op effect the delta always reaches the connection, so
+        // QueueHandoff can give it to the sheet. The cost is the stretch/glow
+        // animation on this one list; the sheet moving with the finger in its
+        // place is the behaviour that was asked for.
+        modifier = modifier.fillMaxWidth().overscroll(com.feishin.mobile.core.common.PassThroughOverscroll),
         contentPadding = PaddingValues(bottom = 56.dp),
     ) {
         items(displayOrder, key = { it.queueId }, contentType = { "item" }) { item ->
@@ -1331,29 +1347,77 @@ private fun QueueSheet(
             // left it at and rested halfway.
             var moved = false
 
+            /** The list can only hand off once its first item is really showing. */
+            fun listAtTop(): Boolean =
+                listState.firstVisibleItemIndex == 0 &&
+                    listState.firstVisibleItemScrollOffset == 0
+
+            /**
+             * The delta has to be taken HERE, before the list sees it.
+             *
+             * A LazyColumn overscrolls at its boundary, and from the frame the
+             * list reaches its first item the overscroll effect owns the drag:
+             * it reports the delta as consumed and dispatches nothing onward,
+             * so `onPostScroll` sees available == 0. A handoff written only
+             * there moved the sheet for exactly one frame (~80px) and then
+             * stuck - the reported bug.
+             */
+            override fun onPreScroll(
+                available: androidx.compose.ui.geometry.Offset,
+                source: NestedScrollSource,
+            ): androidx.compose.ui.geometry.Offset {
+                                when (val handoff = com.feishin.mobile.core.common.QueueHandoff.decide(
+                    deltaY = available.y,
+                    sheetHeightPx = state.sheetHeightPx,
+                    userInput = source == NestedScrollSource.UserInput,
+                    listAtTop = listAtTop(),
+                    sheetDragging = state.dragging,
+                    sheetAtOpen = state.progress >= 1f,
+                )) {
+                    is com.feishin.mobile.core.common.ListHandoff.PassToList ->
+                        return androidx.compose.ui.geometry.Offset.Zero
+
+                    is com.feishin.mobile.core.common.ListHandoff.TakeBySheet -> {
+                        state.dragBy(handoff.deltaProgress)
+                        moved = true
+                    }
+                }
+                return androidx.compose.ui.geometry.Offset(0f, available.y)
+            }
+
+            /**
+             * The LEFTOVER of a drag the list partly took: the frame where the
+             * list was still one or two pixels from its first item, so it
+             * consumed what it could and handed the rest back. That is the
+             * "only the distance left after the list reached the top" part of
+             * the gesture - without it there is a one-frame dead zone at the
+             * boundary.
+             *
+             * Only a finger may move the sheet. A ballistic fling is dispatched
+             * here too, with source = SideEffect; a downward fling still in
+             * flight when the list reached its top used to arrive as leftover,
+             * drag the sheet, latch `moved` and then close it on release. The
+             * list owns its own fling; the sheet follows a finger only.
+             */
             override fun onPostScroll(
                 consumed: androidx.compose.ui.geometry.Offset,
                 available: androidx.compose.ui.geometry.Offset,
                 source: NestedScrollSource,
             ): androidx.compose.ui.geometry.Offset {
-                // ONLY a finger drag may move the sheet. A ballistic fling is
-                // dispatched here too, with source = SideEffect. A downward
-                // fling still in flight when the list reaches its top used to
-                // arrive as leftover delta, drag the sheet, latch `moved`, and
-                // then close the sheet on release - so the sheet closed instead
-                // of the list simply coming to rest at the top. The list owns
-                // its own fling; the sheet follows a finger only.
                 if (source != NestedScrollSource.UserInput) {
                     return androidx.compose.ui.geometry.Offset.Zero
                 }
-                val atTop = listState.firstVisibleItemIndex == 0 &&
-                    listState.firstVisibleItemScrollOffset == 0
-                if (available.y > 0 && atTop) {
-                    val h = state.sheetHeightPx
-                    if (h > 0f) {
-                        state.dragBy(-available.y / h)
-                        moved = true
-                    }
+                val handoff = com.feishin.mobile.core.common.QueueHandoff.decide(
+                    deltaY = available.y,
+                    sheetHeightPx = state.sheetHeightPx,
+                    userInput = true,
+                    listAtTop = listAtTop(),
+                    sheetDragging = state.dragging,
+                    sheetAtOpen = state.progress >= 1f,
+                )
+                if (handoff is com.feishin.mobile.core.common.ListHandoff.TakeBySheet) {
+                    state.dragBy(handoff.deltaProgress)
+                    moved = true
                 }
                 return androidx.compose.ui.geometry.Offset.Zero
             }

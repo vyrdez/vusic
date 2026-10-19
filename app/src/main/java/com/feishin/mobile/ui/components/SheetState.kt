@@ -41,6 +41,17 @@ class SheetState internal constructor(private val scope: CoroutineScope) {
     val progress: Float get() = anim.value
 
     /**
+     * True while a finger owns the sheet: a drag has moved it and no release,
+     * cancel or back press has resolved it yet.
+     *
+     * The queue's nested-scroll handoff needs this, because a drag that
+     * started on the list continues to *be* a drag after the sheet begins to
+     * move - a reversal inside that gesture must be handled by the sheet
+     * rather than by the header's own `draggable`, which is not involved.
+     */
+    val dragging: Boolean get() = gestureActive
+
+    /**
      * True while the sheet and its touch-blocking scrim are part of the
      * composition. Never true at rest-closed.
      */
