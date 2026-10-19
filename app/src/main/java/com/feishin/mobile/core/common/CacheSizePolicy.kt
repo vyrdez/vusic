@@ -9,12 +9,12 @@ object CacheSizePolicy {
     /**
      * Supported stream-cache sizes in MB.
      *
-     * This table IS the song-cache slider: [StorageLimits.cacheSteps] can only
-     * offer a size the cache is willing to hold, and [normalizeStream] snaps
-     * anything else onto it. Phase 8 raised the slider to 5 GB by adding
-     * 5120 here and left the table itself at five entries, which is why the
-     * limit was still 5 GB afterwards - the slider was never the thing holding
-     * it down.
+     * This table IS the song-cache slider: the rail is built straight from it
+     * (not trimmed to the device - a limit bigger than the phone is what the
+     * free-space warning is for), and [normalizeStream] snaps anything else
+     * onto it. Phase 8 raised the slider to 5 GB by adding 5120 here and
+     * left the table itself at five entries, which is why the limit was still
+     * 5 GB afterwards - the slider was never the thing holding it down.
      *
      * Ascending, ends exactly on 100 GB so the slider's full-travel position is
      * 100 GB. Fine at the bottom (a phone that only streams a little should not
