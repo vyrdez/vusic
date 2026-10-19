@@ -241,9 +241,24 @@ class PrefetchWindowTest {
 
     @Test
     fun allowedOnNetwork_respectsWifiOnly() {
-        assertTrue(PrefetchWindow.allowedOnNetwork(NetworkClass.WIFI, true))
-        assertFalse(PrefetchWindow.allowedOnNetwork(NetworkClass.MOBILE, true))
-        assertTrue(PrefetchWindow.allowedOnNetwork(NetworkClass.MOBILE, false))
+        // The rule moved to MobileDataPolicy, which uses the real
+        // NOT_METERED capability instead of the transport name, so a metered
+        // Wi-Fi hotspot counts as mobile data.
+        assertTrue(
+            MobileDataPolicy.allows(
+                online = true, unmetered = true, roaming = false, allowMobileData = false,
+            ),
+        )
+        assertFalse(
+            MobileDataPolicy.allows(
+                online = true, unmetered = false, roaming = false, allowMobileData = false,
+            ),
+        )
+        assertTrue(
+            MobileDataPolicy.allows(
+                online = true, unmetered = false, roaming = false, allowMobileData = true,
+            ),
+        )
     }
 }
 

@@ -41,6 +41,39 @@ class DownloadScheduler @Inject constructor(
         }
     }
 
+    /**
+     * Re-evaluates the queued work against the CURRENT setting.
+     *
+     * Called when the "download over mobile data" switch is flipped. A job
+     * enqueued under the old constraint keeps that constraint until it is
+     * replaced, so without this a download that was waiting for Wi-Fi would
+     * keep waiting after the user allowed mobile data - and a download running
+     * on mobile data would keep running after the user forbade it.
+     *
+     * The work is REPLACED, not restarted from scratch: the progress lives in
+     * the database, and the worker resumes a partial file with an HTTP Range
+     * request, so nothing is lost. A queued row simply waits for the new
+     * constraint, and a running transfer is interrupted and resumes later.
+     */
+    suspend fun reEvaluate() {
+        val wifiOnly = runCatching { settings.flow.first().downloadWifiOnly }.getOrDefault(true)
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
+            .build()
+        val request = OneTimeWorkRequestBuilder<DownloadWorker>()
+            .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 15, TimeUnit.SECONDS)
+            .addTag(TAG)
+            .build()
+        runCatching {
+            val wm = WorkManager.getInstance(context)
+            // Cancel first: a running job holds the old constraint, and
+            // replacing it while it runs would leave two workers on the queue.
+            wm.cancelUniqueWork(UNIQUE_NAME)
+            wm.enqueueUniqueWork(UNIQUE_NAME, ExistingWorkPolicy.REPLACE, request)
+        }
+    }
+
     /** Stops the running transfer; the row is left PAUSED for a later resume. */
     fun cancelCurrent() {
         runCatching { WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_NAME) }

@@ -582,7 +582,6 @@ private fun SoundScreen(vm: SettingsViewModel) {
             description = "Keep every song you finish (or pass 50% of).",
             showDivider = true,
         )
-        SwitchRow("Cache on Wi-Fi only", s.cacheWifiOnly, vm::setCacheWifiOnly, showDivider = true)
         InfoRow(
             "Song cache usage",
             storage?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.cachedBytes) } ?: "…",
@@ -709,6 +708,20 @@ private fun ConnectivityScreen(vm: SettingsViewModel) {
         )
         InfoRow("Connection", if (online) "Online" else "Offline")
     }
+    // Both switches default to OFF, which is the behaviour every install has
+    // today: no bulk transfer ever spends mobile data unless the user says so.
+    SettingsSection("MOBILE DATA")
+    SettingsCard {
+        SwitchRow(
+            "Download over mobile data", !s.downloadWifiOnly, vm::setDownloadOverMobileData,
+            description = "May use mobile data; extra data charges may apply.",
+            showDivider = true,
+        )
+        SwitchRow(
+            "Auto-cache over mobile data", !s.cacheWifiOnly, vm::setCacheOverMobileData,
+            description = "May use mobile data; extra data charges may apply.",
+        )
+    }
     SettingsSection("CERTIFICATES")
     SettingsCard {
         SwitchRow(
@@ -797,9 +810,12 @@ private fun StorageScreen(
     }
     SettingsSection("SONG CACHE")
     SettingsCard {
-        val cacheSteps = com.feishin.mobile.core.common.StorageLimits.cacheSteps(
-            com.feishin.mobile.core.common.CacheSizePolicy.streamStepBytes(), deviceMax,
-        )
+        // The rail is the whole supported range, up to 100 GB, NOT trimmed to
+        // the device's size: the user picks a limit, and the warning below
+        // says plainly when that limit is bigger than the phone can hold.
+        // Trimming it to the device is what kept the old 5 GB plateau in
+        // place, and it would hide the very choice the warning is about.
+        val cacheSteps = com.feishin.mobile.core.common.CacheSizePolicy.streamStepBytes()
         val cacheBytes = s.cacheSizeMb.toLong() * com.feishin.mobile.core.common.StorageLimits.MB
         val cacheIndex = com.feishin.mobile.core.common.StorageLimits.indexOf(cacheSteps, cacheBytes)
         InfoRow("Songs cached", st?.cachedSongs?.toString() ?: "…", showDivider = true)

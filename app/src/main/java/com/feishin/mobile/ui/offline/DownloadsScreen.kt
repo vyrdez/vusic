@@ -77,6 +77,7 @@ fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRep
     // View-only ordering, same rules as a playlist. Duration is not offered:
     // a download row carries no track duration, only a file size.
     val sort by vm.sort.collectAsStateWithLifecycle()
+    val waitingReason by vm.waitingReason.collectAsStateWithLifecycle()
     val query by vm.query.collectAsStateWithLifecycle()
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var showSortSheet by remember { mutableStateOf(false) }
@@ -192,11 +193,11 @@ fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRep
         }
         if (active.isNotEmpty()) {
             item { SectionLabel("Downloading (${active.size})") }
-            items(active, key = { "a${it.songId}" }) { row -> ActiveRow(row, vm) }
+            items(active, key = { "a${it.songId}" }) { row -> ActiveRow(row, vm, waitingReason) }
         }
         if (failed.isNotEmpty()) {
             item { SectionLabel("Failed (${failed.size})") }
-            items(failed, key = { "f${it.songId}" }) { row -> ActiveRow(row, vm) }
+            items(failed, key = { "f${it.songId}" }) { row -> ActiveRow(row, vm, waitingReason) }
         }
         // Sort + filter apply to the downloaded songs themselves; the
         // in-flight sections above are transient state, not a list to browse.
@@ -266,7 +267,7 @@ private fun StorageRow(label: String, value: String) {
 }
 
 @Composable
-private fun ActiveRow(row: DownloadRow, vm: DownloadsViewModel) {
+private fun ActiveRow(row: DownloadRow, vm: DownloadsViewModel, waitingReason: String?) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         ProgressThumb(row)
         Spacer(Modifier.width(12.dp))
@@ -275,7 +276,7 @@ private fun ActiveRow(row: DownloadRow, vm: DownloadsViewModel) {
             Text(
                 when (row.status) {
                     DownloadStatus.DOWNLOADING -> "${(row.progress * 100).toInt()}%"
-                    DownloadStatus.QUEUED -> "Queued"
+                    DownloadStatus.QUEUED -> waitingReason ?: "Queued"
                     DownloadStatus.PAUSED -> row.error?.let { "Paused — $it" } ?: "Paused"
                     DownloadStatus.FAILED -> row.error ?: "Failed"
                     else -> CacheSizePolicy.human(row.sizeBytes)

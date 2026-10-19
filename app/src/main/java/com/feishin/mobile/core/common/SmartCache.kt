@@ -58,9 +58,10 @@ object PrefetchWindow {
     fun stale(active: Set<Long>, window: List<Long>): Set<Long> =
         active - window.toSet()
 
-    /** True when a prefetch may run on this network class. */
-    fun allowedOnNetwork(network: NetworkClass, wifiOnly: Boolean): Boolean =
-        !wifiOnly || network != NetworkClass.MOBILE
+    // The "may this run on this network" rule used to live here and keyed off
+    // the transport name, which treated a metered Wi-Fi hotspot as unmetered.
+    // It is now MobileDataPolicy, which uses the real NOT_METERED capability
+    // and also refuses roaming.
 }
 
 /**

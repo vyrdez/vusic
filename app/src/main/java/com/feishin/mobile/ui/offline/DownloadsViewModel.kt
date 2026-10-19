@@ -47,9 +47,32 @@ data class DownloadsUi(
 class DownloadsViewModel @Inject constructor(
     private val repo: DownloadRepository,
     private val settings: com.feishin.mobile.data.settings.SettingsStore,
+    private val network: com.feishin.mobile.data.network.NetworkMonitor,
 ) : ViewModel() {
 
     private val coverBytes = kotlinx.coroutines.flow.MutableStateFlow(0L)
+
+    /**
+     * Why a queued download is not running right now, or null when it may run.
+     *
+     * A job blocked by the network constraint simply never starts, so the row
+     * stays QUEUED and the reason has to come from the network state rather
+     * than from the row. "Queued" on its own hides the fact that the phone is
+     * on mobile data and the user asked for Wi-Fi only.
+     */
+    val waitingReason: StateFlow<String?> = combine(
+        settings.flow,
+        network.isOnline,
+        network.unmetered,
+        network.roaming,
+    ) { s, online, unmetered, roaming ->
+        com.feishin.mobile.core.common.MobileDataPolicy.waitingReason(
+            online = online,
+            unmetered = unmetered,
+            roaming = roaming,
+            allowMobileData = !s.downloadWifiOnly,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Remembered per list, under the same key scheme as playlists. */
     private val _sort = kotlinx.coroutines.flow.MutableStateFlow(

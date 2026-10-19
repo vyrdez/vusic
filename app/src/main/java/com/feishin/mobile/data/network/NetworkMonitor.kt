@@ -29,6 +29,24 @@ class NetworkMonitor @Inject constructor(
     private val _networkClass = MutableStateFlow(computeClass())
     val networkClass: StateFlow<NetworkClass> = _networkClass.asStateFlow()
 
+    /**
+     * True when the active connection is NOT metered.
+     *
+     * This is the real `NET_CAPABILITY_NOT_METERED` capability, NOT "the
+     * transport is not cellular": a Wi-Fi hotspot that Android marks as metered
+     * is metered, and must be treated as mobile data.
+     */
+    private val _unmetered = MutableStateFlow(computeUnmetered())
+    val unmetered: StateFlow<Boolean> = _unmetered.asStateFlow()
+
+    /**
+     * True when the active connection is roaming. Android reports this cheaply
+     * (`NET_CAPABILITY_NOT_ROAMING`), and the app never spends mobile data
+     * while roaming.
+     */
+    private val _roaming = MutableStateFlow(computeRoaming())
+    val roaming: StateFlow<Boolean> = _roaming.asStateFlow()
+
     init {
         runCatching {
             cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
@@ -42,6 +60,8 @@ class NetworkMonitor @Inject constructor(
     private fun update() {
         _isOnline.value = computeOnline()
         _networkClass.value = computeClass()
+        _unmetered.value = computeUnmetered()
+        _roaming.value = computeRoaming()
     }
 
     private fun computeOnline(): Boolean {
@@ -60,6 +80,20 @@ class NetworkMonitor @Inject constructor(
         }
     }
 
+    /**
+     * The real metered check. A Wi-Fi hotspot Android marks as metered is
+     * metered; an Ethernet link can be metered too.
+     */
+    private fun computeUnmetered(): Boolean {
+        val caps = cm.activeNetwork?.let { cm.getNetworkCapabilities(it) } ?: return true
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    }
+
+    private fun computeRoaming(): Boolean {
+        val caps = cm.activeNetwork?.let { cm.getNetworkCapabilities(it) } ?: return false
+        return !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING)
+    }
+
     /** True when the current connection is unmetered (Wi-Fi / Ethernet). */
-    fun isUnmetered(): Boolean = computeClass() != NetworkClass.MOBILE
+    fun isUnmetered(): Boolean = _unmetered.value
 }

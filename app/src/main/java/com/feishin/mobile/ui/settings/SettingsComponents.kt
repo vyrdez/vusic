@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.VusicControlColors
@@ -262,9 +263,19 @@ fun SliderRow(
             }
             Slider(
                 value = index.toFloat().coerceIn(0f, maxIndex.toFloat()),
-                onValueChange = { onIndex(it.toInt().coerceIn(0, maxIndex)) },
+                // roundToInt, not toInt: the snapped position of the LAST step
+                // arrives as 15.999998, and truncating it made the last value
+                // on every rail unreachable (the song cache stopped at 75 GB
+                // instead of 100 GB).
+                onValueChange = { onIndex(it.roundToInt().coerceIn(0, maxIndex)) },
                 valueRange = 0f..maxIndex.toFloat(),
-                steps = (maxIndex - 1).coerceAtLeast(0),
+                // `steps` is the number of DISCRETE POSITIONS on the rail, and
+                // Compose spaces them evenly over the range. With one position
+                // too few, the rail had one position fewer than the list it
+                // indexes, the spacing was off, and one size per rail could
+                // not be picked at all: the old song-cache rail (256 MB ..
+                // 5 GB) skipped 2 GB, and the new one stopped at 75 GB.
+                steps = maxIndex.coerceAtLeast(0),
                 colors = VusicControlDefaults.sliderColors(),
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             )

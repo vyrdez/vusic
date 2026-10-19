@@ -44,6 +44,7 @@ class DownloadWorker @AssistedInject constructor(
     private val covers: com.feishin.mobile.data.db.CachedCoverDao,
     private val settings: SettingsStore,
     private val repo: DownloadRepository,
+    private val network: com.feishin.mobile.data.network.NetworkMonitor,
     @DownloadClient private val client: OkHttpClient,
 ) : CoroutineWorker(appContext, params) {
 
@@ -107,6 +108,21 @@ class DownloadWorker @AssistedInject constructor(
     private suspend fun transfer(row: DownloadEntity, root: File): Outcome {
         if (!DownloadStateMachine.canTransition(row.statusEnum, DownloadStatus.DOWNLOADING)) {
             return Outcome.DONE
+        }
+        // Roaming is never used for bulk transfers, whatever the "download over
+        // mobile data" switch says. WorkManager has no roaming constraint, so
+        // the check lives here: the row is PAUSED with a reason and resumes
+        // when the phone is back home. It is never marked failed.
+        // The metered case is WorkManager's job - the constraint is
+        // NetworkType.UNMETERED, which is Android's own NOT_METERED check, so
+        // a metered Wi-Fi hotspot already waits.
+        if (network.roaming.value) {
+            dao.setStatus(
+                row.songId,
+                DownloadStatus.PAUSED.name,
+                com.feishin.mobile.core.common.MobileDataPolicy.WAITING_FOR_WIFI,
+            )
+            return Outcome.PAUSED
         }
         dao.setStatus(row.songId, DownloadStatus.DOWNLOADING.name)
 

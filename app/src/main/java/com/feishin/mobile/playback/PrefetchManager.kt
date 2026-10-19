@@ -60,6 +60,18 @@ class PrefetchManager @Inject constructor(
     /** queueId -> in-flight fetch. Guarded by confinement to [scope]. */
     private val active = ConcurrentHashMap<Long, Job>()
 
+    init {
+        // The "auto-cache over mobile data" switch has to take effect while
+        // the app is running: a fetch that started under the old rule is
+        // dropped, so nothing half-caches on mobile data behind the user's
+        // back.
+        scope.launch {
+            settings.flow.collect { s ->
+                if (!allowedOnCurrentNetwork(s)) cancelAll()
+            }
+        }
+    }
+
     /**
      * Recomputes the prefetch window from the live queue. Called on track
      * transitions, queue edits, shuffle changes, radio appends and skip/seek —
@@ -76,7 +88,7 @@ class PrefetchManager @Inject constructor(
                 cancelAll()
                 return@launch
             }
-            if (!PrefetchWindow.allowedOnNetwork(network.networkClass.value, s.cacheWifiOnly)) {
+            if (!allowedOnCurrentNetwork(s)) {
                 cancelAll()
                 return@launch
             }
@@ -116,6 +128,23 @@ class PrefetchManager @Inject constructor(
     }
 
     /**
+     * Whether caching may run on the connection as it is right now.
+     *
+     * The decision is the shared [com.feishin.mobile.core.common.MobileDataPolicy]:
+     * metered is decided by `NET_CAPABILITY_NOT_METERED` (so a metered Wi-Fi
+     * hotspot counts as mobile data), roaming is always refused, and the user's
+     * "auto-cache over mobile data" switch decides the rest.
+     */
+    private fun allowedOnCurrentNetwork(
+        s: com.feishin.mobile.data.settings.SettingsStore.Settings,
+    ): Boolean = com.feishin.mobile.core.common.MobileDataPolicy.allows(
+        online = network.isOnline.value,
+        unmetered = network.unmetered.value,
+        roaming = network.roaming.value,
+        allowMobileData = !s.cacheWifiOnly,
+    )
+
+    /**
      * Ensures one specific song is fully cached (auto-cache-played path).
      * No-ops when it is already cached, stored locally, or in flight.
      */
@@ -123,7 +152,7 @@ class PrefetchManager @Inject constructor(
         scope.launch {
             val s = settings.flow.first()
             if (isOffline()) return@launch
-            if (!PrefetchWindow.allowedOnNetwork(network.networkClass.value, s.cacheWifiOnly)) return@launch
+            if (!allowedOnCurrentNetwork(s)) return@launch
             if (active.containsKey(queueId)) return@launch
             val credsNow = creds.state.value ?: return@launch
             if (downloads.localFile(track.id) != null) return@launch

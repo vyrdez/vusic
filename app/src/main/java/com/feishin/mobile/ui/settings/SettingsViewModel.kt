@@ -82,6 +82,7 @@ class SettingsViewModel @Inject constructor(
     private val cachedTracks: CachedTrackStore,
     private val streamCache: androidx.media3.datasource.cache.SimpleCache,
     private val cacheEvictor: com.feishin.mobile.data.cache.LiveLruCacheEvictor,
+    private val downloadScheduler: com.feishin.mobile.data.download.DownloadScheduler,
     private val imageLoader: coil.ImageLoader,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
@@ -141,7 +142,23 @@ class SettingsViewModel @Inject constructor(
     fun setPauseOnHeadphone(v: Boolean) = viewModelScope.launch { store.setPauseOnHeadphone(v) }
     fun setResumeOnFocusGain(v: Boolean) = viewModelScope.launch { store.setResumeOnFocusGain(v) }
     fun setOfflineMode(v: Boolean) = viewModelScope.launch { store.setOfflineMode(v) }
-    fun setDownloadWifiOnly(v: Boolean) = viewModelScope.launch { store.setDownloadWifiOnly(v) }
+    /**
+     * "Download over mobile data". Flipping it re-evaluates the queued work
+     * against the new constraint straight away: a download that was waiting
+     * for Wi-Fi starts on mobile data, and one that is running on mobile data
+     * is paused until Wi-Fi is back. The progress is kept - it lives in the
+     * database, not in the worker.
+     */
+    fun setDownloadOverMobileData(v: Boolean) = viewModelScope.launch {
+        store.setDownloadWifiOnly(!v)
+        runCatching { downloadScheduler.reEvaluate() }
+    }
+    /**
+     * "Auto-cache over mobile data". The prefetcher re-reads the setting on
+     * every pass, so the next pass picks it up; the in-flight ones are dropped
+     * so a cached song never half-arrives on the old rule.
+     */
+    fun setCacheOverMobileData(v: Boolean) = viewModelScope.launch { store.setCacheWifiOnly(!v) }
     fun setDownloadOriginal(v: Boolean) = viewModelScope.launch { store.setDownloadOriginal(v) }
     fun setDownloadBitrate(v: Int) = viewModelScope.launch { store.setDownloadBitrate(v) }
     fun setDownloadFormat(v: String) = viewModelScope.launch { store.setDownloadFormat(v) }
@@ -155,7 +172,6 @@ class SettingsViewModel @Inject constructor(
     fun setCacheUpcoming(v: Boolean) = viewModelScope.launch { store.setCacheUpcoming(v) }
     fun setTracksToCache(v: Int) = viewModelScope.launch { store.setTracksToCache(v) }
     fun setCachePlayedSongs(v: Boolean) = viewModelScope.launch { store.setCachePlayedSongs(v) }
-    fun setCacheWifiOnly(v: Boolean) = viewModelScope.launch { store.setCacheWifiOnly(v) }
     fun setMaxDownloadMb(v: Int) = viewModelScope.launch {
         store.setMaxDownloadMb(v)
         refreshStorageStats()
