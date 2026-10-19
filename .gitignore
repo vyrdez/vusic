@@ -41,6 +41,12 @@ nd_test.properties
 *.mp4
 !**/src/**/res/**
 
+# The README gallery is the one exception: it is published in the repository,
+# so those images have to be committed. Everything else under docs/ stays a
+# development artifact and remains ignored above.
+!/assets/gallery/
+!/assets/gallery/**
+
 # OS / editor noise
 Thumbs.db
 *.swp

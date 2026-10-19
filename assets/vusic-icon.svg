@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108" role="img" aria-label="Vusic app icon">
+  <title>Vusic</title>
+  <!--
+    The launcher icon, reproduced for the README.
+
+    Kept in sync with app/src/main/res/drawable/ic_launcher_foreground.xml and
+    mipmap-anydpi-v26/ic_launcher.xml: the same eighth note
+    (Material Icons "music_note", Apache-2.0) in white, on the black
+    ic_launcher_background, scaled 2.5x about the centre of the 108dp canvas
+    so the glyph's 24dp-viewport bounds (x 6..18, y 3..21) land at 30x45dp -
+    inside the 66dp safe zone, so no launcher mask clips it.
+
+    Regenerate this file if the drawable ever changes.
+  -->
+  <rect width="108" height="108" fill="#000000" />
+  <g transform="translate(24 24) scale(2.5)">
+    <path fill="#FFFFFF" d="M12,3v10.55c-0.59,-0.34 -1.27,-0.55 -2,-0.55 -2.21,0 -4,1.79 -4,4s1.79,4 4,4 4,-1.79 4,-4V7h4V3h-6z" />
+  </g>
+</svg>

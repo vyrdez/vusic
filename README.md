@@ -1,10 +1,22 @@
 # Vusic
 
+<img src="assets/vusic-icon.svg" width="72" align="right" alt="Vusic app icon">
+
 A personal Android music player for a self-hosted [Navidrome](https://www.navidrome.org/)
 server, spoken to over the Subsonic/OpenSubsonic API.
 
 Written in Kotlin with Jetpack Compose and Material 3. Dark by default, with
 System and Light themes.
+
+---
+
+## Screenshots
+
+| | | |
+|:---:|:---:|:---:|
+| <img src="assets/gallery/01-home.png" alt="Home with the speed dial, Listen again and the mini player"><br>**Home** | <img src="assets/gallery/02-library.png" alt="Library with playlist, album and artist tabs"><br>**Library** | <img src="assets/gallery/03-playlist.png" alt="A playlist page with shuffle, play and a sort button"><br>**Playlist** |
+| <img src="assets/gallery/04-now-playing.png" alt="Now Playing with artwork, transport controls and the progress bar"><br>**Now Playing** | <img src="assets/gallery/05-lyrics.png" alt="The lyrics view"><br>**Lyrics** | <img src="assets/gallery/06-queue.png" alt="The queue sheet with drag handles per track"><br>**Queue** |
+| | <img src="assets/gallery/07-storage.png" alt="Storage settings with the song cache size control"><br>**Storage** | |
 
 ---
 
