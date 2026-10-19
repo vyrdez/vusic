@@ -1239,3 +1239,37 @@ and short-flick cases.
   records render a clean empty hero (server data quirk, names can mismatch);
   similar-artist circles use placeholder art (last.fm provides none); Library SONGS
   tab is getRandomSongs(500) — Subsonic has no all-songs endpoint.
+## Phase 8.2 status: queue close at top, song cache limit, mobile-data option (1.1.2)
+
+Three sections, one commit each, version bumped to 1.1.2 / versionCode 5 in
+`0ea217b`.
+
+- **P8.2-A queue close at top** (`0ea217b`). A LazyColumn installs an
+  overscroll effect by default, and Compose hands the WHOLE drag to it the
+  moment the list is at its first item - the delta never enters the
+  nested-scroll chain, so the sheet's handoff callback received
+  `available.y == 0` on every frame (106 consecutive zero frames measured on
+  the emulator). The fix is a pass-through `OverscrollEffect` on the queue's
+  track list plus `QueueHandoff`, a pure function that decides whether the
+  list or the sheet owns a delta, taken in `onPreScroll` before the list
+  sees it. 16 unit tests.
+- **P8.2-B song cache limit** (`b395f73`). The 5 GB survived Phase 8 because
+  `CacheSizePolicy.STREAM_SIZES_MB` - the table the slider is derived from -
+  still ended at 5120 MB; the slider was never the thing holding the limit
+  down. The table now runs to 100 GB, the song-cache rail is the whole
+  range (not trimmed to the device), the slider warns when the choice is
+  bigger than the phone has, and the cache stops growing below 1 GB of free
+  space instead of deleting anything. 24 unit tests.
+- **P8.2-C mobile-data option** (`c7773e0`). Two switches in Settings >
+  Connectivity > MOBILE DATA, both off by default. The data layer already
+  had the gates; the download switch had no UI at all, the auto-cache gate
+  compared the transport NAME (a metered hotspot counted as free), and
+  nothing re-evaluated the queued work when a switch changed. The rule is
+  now `MobileDataPolicy`: the real `NET_CAPABILITY_NOT_METERED` capability,
+  never while offline, never while roaming. 17 unit tests.
+
+Also fixed on the way: the settings sliders had one discrete position too
+few, so one size per rail could not be picked at all (the old song-cache
+rail skipped 2 GB), and the last step of a rail was rounded down.
+
+Reference: `docs/reference/before-8.2/` and `docs/reference/after-8.2/`.

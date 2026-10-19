@@ -121,3 +121,51 @@ Subsonic/OpenSubsonic API.
   a fling the list consumed).
 - Touch feel, 120 Hz fling behaviour and real-device verification were not
   performed in this pass (only the emulator).
+
+## 1.1.2 - queue close at top, 100 GB song cache, mobile-data option
+
+### Queue
+- Dragging down the song list now closes the queue once the list reaches its
+  first song: the sheet follows your finger from that point and closes on
+  release, or springs back to fully open if you let go early. A drag that
+  starts with the list already at the top closes it the same way. The list
+  still scrolls first while it has somewhere to scroll, an upward drag still
+  only ever scrolls the list, and a fling the list consumed never closes the
+  sheet on its own.
+- The list no longer stretches at its top edge: that animation was swallowing
+  the drag before the sheet could see it.
+
+### Storage
+- The song cache limit now goes up to 100 GB, in sensible steps (256 MB and
+  512 MB, then 1 GB steps, coarser above 10 GB). The slider's full travel is
+  exactly 100 GB.
+- The slider says so when the size you picked is bigger than this phone can
+  hold ("Only 12 GB is free on this phone. The cache can't grow past what's
+  free."). The choice is still allowed - you may be about to free space.
+- Below 1 GB of free space the cache stops taking in new songs instead of
+  filling the phone up. Nothing is deleted, so a song that is playing right
+  now is never interrupted, and downloads are left alone.
+- Sizes saved by earlier versions still load, and every size on the rail can
+  now actually be picked.
+
+### Connectivity
+- Two new switches in Settings > Connectivity > MOBILE DATA, both off by
+  default: "Download over mobile data" and "Auto-cache over mobile data".
+  Each says that mobile data may be used and that extra data charges may
+  apply.
+- Turning one on applies straight away: a download that was waiting for
+  Wi-Fi starts on mobile data, and one that is running on mobile data is
+  interrupted and waits for Wi-Fi again. Progress is kept - it is resumed,
+  never restarted and never failed.
+- The download queue now says "Waiting for Wi-Fi" instead of the bare word
+  "Queued" when that is why nothing is happening.
+- A Wi-Fi hotspot that Android marks as metered is treated as metered, and
+  mobile data is never used while roaming.
+
+### Deliberate limitations
+- Roaming is refused for downloads and caching even when mobile data is
+  allowed; the app never spends data abroad.
+- The free-space warning does not stop the choice, and the cache limit
+  itself is not lowered automatically - only the growth is stopped.
+- Real mobile data, a real metered hotspot and real roaming need real
+  hardware; this pass was verified on an emulator with an emulated radio.
