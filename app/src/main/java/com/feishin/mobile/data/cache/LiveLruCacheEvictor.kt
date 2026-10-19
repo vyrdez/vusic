@@ -19,12 +19,28 @@ import com.feishin.mobile.core.common.LruSizer
  */
 class LiveLruCacheEvictor(
     private val maxBytesProvider: () -> Long,
+    /**
+     * Device free space, read on demand. When it drops below the reserve the
+     * cache stops GROWING (see [com.feishin.mobile.core.common.StorageLimits.effectiveCacheLimit])
+     * without deleting anything, so a full phone never gets worse and playback
+     * is untouched.
+     */
+    private val freeBytesProvider: () -> Long = { Long.MAX_VALUE },
 ) : CacheEvictor {
 
     private var cache: SimpleCache? = null
     private val sizer = LruSizer()
 
     fun maxBytes(): Long = maxBytesProvider().coerceAtLeast(0L)
+
+    /** The ceiling actually enforced right now, after the free-space reserve. */
+    fun effectiveMaxBytes(): Long = runCatching {
+        com.feishin.mobile.core.common.StorageLimits.effectiveCacheLimit(
+            limitBytes = maxBytes(),
+            usedBytes = sizer.size,
+            freeBytes = freeBytesProvider(),
+        )
+    }.getOrDefault(maxBytes())
 
     override fun requiresCacheSpanTouches(): Boolean = true
 
@@ -67,7 +83,7 @@ class LiveLruCacheEvictor(
 
     private fun evictToLimit() {
         val c = cache ?: return
-        val max = maxBytes()
+        val max = effectiveMaxBytes()
         if (max <= 0) return
         for (key in sizer.evictTo(max)) {
             runCatching { c.removeResource(key) }

@@ -61,7 +61,10 @@ class StorageLimitsTest {
         // 512 GB device: the rail must not reach past the cache's real ceiling.
         val steps = StorageLimits.cacheSteps(CacheSizePolicy.streamStepBytes(), 512L * gb)
         assertEquals(CacheSizePolicy.streamStepBytes(), steps)
-        assertEquals(5120L * mb, steps.last())
+        // The ceiling is 100 GB, not 5 GB: this is the plateau that Phase 8
+        // failed to break, because the rail was derived from the supported-size
+        // table and the table still ended at 5120 MB.
+        assertEquals(100L * gb, steps.last())
         // Every offered size survives the store's clamp untouched, which is the
         // whole reason the old plateau happened.
         for (step in steps) {
@@ -72,9 +75,12 @@ class StorageLimitsTest {
 
     @Test
     fun cacheSteps_areBoundedByASmallDevice() {
-        // A 4 GB device cannot hold a 5 GB cache: the top step drops to 2 GB.
+        // A 4 GB device cannot hold more than it has: the top step drops to 4 GB.
         val steps = StorageLimits.cacheSteps(CacheSizePolicy.streamStepBytes(), 4L * gb)
-        assertEquals(listOf(256L * mb, 512L * mb, 1L * gb, 2L * gb), steps)
+        assertEquals(
+            listOf(256L * mb, 512L * mb, 1L * gb, 2L * gb, 3L * gb, 4L * gb),
+            steps,
+        )
         assertTrue(steps.all { it <= 4L * gb })
     }
 

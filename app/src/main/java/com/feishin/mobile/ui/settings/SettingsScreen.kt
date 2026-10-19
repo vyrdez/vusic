@@ -810,6 +810,16 @@ private fun StorageScreen(
             steps = cacheSteps.map { com.feishin.mobile.core.common.StorageLimits.label(it) },
             onIndex = { vm.setCache((cacheSteps[it] / com.feishin.mobile.core.common.StorageLimits.MB).toInt()) },
             description = "Applies immediately; shrinking trims the cache now.",
+            // Free-space aware, same rule as the download cap: the choice stays
+            // allowed, but say plainly when it is bigger than the phone.
+            warning = if (st != null) {
+                com.feishin.mobile.core.common.StorageLimits.cacheSpaceWarning(
+                    limitBytes = cacheSteps[cacheIndex],
+                    usedBytes = st.streamCacheBytes,
+                    freeBytes = st.freeBytes,
+                    human = { com.feishin.mobile.core.common.CacheSizePolicy.human(it) },
+                )
+            } else null,
             showDivider = true,
         )
         ActionRow(

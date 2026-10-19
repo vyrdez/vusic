@@ -30,15 +30,20 @@ object PlayerModule {
     @Provides @Singleton
     fun provideCacheEvictor(
         settings: com.feishin.mobile.data.settings.SettingsStore,
-    ): LiveLruCacheEvictor = LiveLruCacheEvictor {
-        // Read live so a smaller limit trims the cache immediately.
-        runCatching {
-            runBlocking {
-                val s: com.feishin.mobile.data.settings.SettingsStore.Settings = settings.flow.first()
-                CacheSizePolicy.bytes(s.cacheSizeMb)
-            }
-        }.getOrDefault(CacheSizePolicy.bytes(CacheSizePolicy.DEFAULT_STREAM_MB))
-    }
+        downloads: com.feishin.mobile.data.download.DownloadRepository,
+    ): LiveLruCacheEvictor = LiveLruCacheEvictor(
+        maxBytesProvider = {
+            // Read live so a smaller limit trims the cache immediately.
+            runCatching {
+                runBlocking {
+                    val s: com.feishin.mobile.data.settings.SettingsStore.Settings = settings.flow.first()
+                    CacheSizePolicy.bytes(s.cacheSizeMb)
+                }
+            }.getOrDefault(CacheSizePolicy.bytes(CacheSizePolicy.DEFAULT_STREAM_MB))
+        },
+        // Real free space, so the cache stops growing before the phone is full.
+        freeBytesProvider = { downloads.freeBytes() },
+    )
 
     @androidx.media3.common.util.UnstableApi
     @Provides @Singleton

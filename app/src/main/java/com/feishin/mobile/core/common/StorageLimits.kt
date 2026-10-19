@@ -87,6 +87,41 @@ object StorageLimits {
     fun exceedsAvailable(limitBytes: Long, usedBytes: Long, freeBytes: Long): Boolean =
         usedBytes >= 0 && freeBytes >= 0 && limitBytes > usedBytes + freeBytes
 
+    /**
+     * The warning to show under the song-cache slider, or null when the choice
+     * fits. Pure so the decision is testable without a device.
+     *
+     * A limit larger than "what the cache already holds plus what is free" is
+     * asking for more disk than the phone has. The choice is still allowed -
+     * the user may be about to free space, and a hard block would be a worse
+     * failure than a useless setting.
+     */
+    fun cacheSpaceWarning(
+        limitBytes: Long,
+        usedBytes: Long,
+        freeBytes: Long,
+        human: (Long) -> String,
+    ): String? =
+        if (!exceedsAvailable(limitBytes, usedBytes, freeBytes)) null
+        else "Only ${human(freeBytes.coerceAtLeast(0L))} is free on this phone. " +
+            "The cache can't grow past what's free."
+
+    /**
+     * The ceiling the cache may actually reach, given real free space.
+     *
+     * Above [LOW_SPACE_BYTES] this is just the user's limit. Below it, the
+     * cache is held at the size it already is: new songs are no longer added,
+     * which is what keeps the phone from filling up. Nothing is deleted - not
+     * downloads, not even cached songs the user might be listening to right
+     * now - so playback is never interrupted. Downloads and prefetch have their
+     * own gates on the same reserve.
+     */
+    fun effectiveCacheLimit(limitBytes: Long, usedBytes: Long, freeBytes: Long): Long {
+        if (limitBytes <= 0L) return 0L
+        if (freeBytes >= LOW_SPACE_BYTES) return limitBytes
+        return minOf(limitBytes, usedBytes.coerceAtLeast(0L))
+    }
+
     /** Caching/prefetch are allowed only above the low-space floor. */
     fun cachingAllowed(freeBytes: Long): Boolean = freeBytes >= LOW_SPACE_BYTES
 

@@ -135,7 +135,9 @@ class CacheSizePolicyTest {
         assertEquals(256, CacheSizePolicy.normalizeStream(100))
         assertEquals(512, CacheSizePolicy.normalizeStream(512))
         assertEquals(1024, CacheSizePolicy.normalizeStream(900))
-        assertEquals(5120, CacheSizePolicy.normalizeStream(99999))
+        // The ceiling is 100 GB now, so a value past it snaps to the ceiling
+        // rather than to the old 5 GB.
+        assertEquals(CacheSizePolicy.MAX_STREAM_MB, CacheSizePolicy.normalizeStream(99999))
     }
 
     @Test
