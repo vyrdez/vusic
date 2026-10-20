@@ -1273,3 +1273,76 @@ few, so one size per rail could not be picked at all (the old song-cache
 rail skipped 2 GB), and the last step of a rail was rounded down.
 
 Reference: `docs/reference/before-8.2/` and `docs/reference/after-8.2/`.
+
+## Phase 8.3 status: offline hint placement, queue swipe-remove, queue restore, Library open time (1.1.3)
+
+Four sections, one commit each, version bumped to 1.1.3 / versionCode 6
+in a single prep commit for consistency.
+
+- **P8.3-A banner remnant behind the search bar** (OfflineBanner).
+  The Search screen emitted its offline hint `Text(...)` as a sibling *before*
+  `Column(Modifier.fillMaxSize())`, so it painted underneath the search pill at
+  the top of the NavHost content box — a half-clipped line behind the field.
+  Fix: shared `OfflineBanner(text)` component (`ui/components/OfflineBanner.kt`,
+  layout row, `clipToBounds`, real height) used by both the Nav banner and the
+  Search hint. The Search hint is placed *inside* the Column after
+  `FilterChipRow`, suppressed when `offlineBannerVisible` (passed from Nav.kt).
+  Banner states: (1) `offlineMode` on → shared banner (respects `showOfflineChip`);
+  (2) `autoOffline` on + network down → same shared banner; (3) both off +
+  network down → no shared banner, Search shows its own hint row; (4)
+  `showOfflineChip` off → no banner, no Search hint; (5) online → nothing.
+  Settings' `OfflineChip` is untouched. Root cause reproduced on device.
+- **P8.3-B queue swipe-remove** (QueueOps / PlayerManager / NowPlayingScreen).
+  Root cause reproduced on device: one swipe removed 6 songs (50 → 44) — the
+  dismiss `confirmValueChange` is remembered from the first composition of each
+  row (M3 `rememberSwipeToDismissBoxState`) plus per-row `remember(item.queueId)`
+  guard, so a swipe event replayed across settling recompositions removed more
+  than one row. Fix: positional removal replaced by removal by stable queue item
+  id (`QueueOps.removeById(queue, id, idOf, currentIndex)`, `PlayerManager.removeById`)
+  with `AtomicBoolean` per-row guard + `rememberUpdatedState`; idempotent under
+  repeated/rapid/during-settle dismiss; removing current/last/only works (single-item
+  removal has no Undo today — reported, not added). Unit tests appended to
+  `QueueOpsTest.kt`: remove by id with duplicates, double callback, remove current,
+  remove last, remove while another item moved. Reorder, queue styling and sheet
+  gestures untouched.
+- **P8.3-C paused queue/mini player lost after app kill** (PlayerManager,
+  QueueStore, PlayerService, DataStore).
+  Root cause: nothing persisted across process death; restore bailed permanently
+  when credentials were missing and stopped playback entirely on restart.
+  Fix: queue items (stable ids + song id, title, artist, album, duration, cover id,
+  download/cache flags), current item, position, repeat, shuffle state + original
+  order, "Playing from" label persisted to DataStore (`feishin_queue`, a single
+  small JSON blob — no queries, no Room migration needed; DataStore chosen over
+  Room because there are zero relational queries and QueueStore already existed).
+  Saved continuously and off-main: queue edits/pause/item change via `persist()`
+  (`Dispatchers.IO`, skips clearing when empty and not yet restored),
+  position every ~6 s (`savePosition`, side key `queue_position`), `onTaskRemoved`/
+  `onDestroy` via `saveBlocking(1_500)`. Restores PAUSED at the saved position
+  without foreground service, autoplay, audio focus or network (`setMediaItems` +
+  `seekTo`, no `prepare()`); first play press starts normally; drag-down dismiss and
+  "clear queue" clear persisted state; missing songs stay and are skipped by normal
+  error handling (never crash); 100+ songs restore with the current item first;
+  killed-while-playing also restores paused; 10 s credential await instead of
+  permanent bail. Unit tests in `QueueStoreTest.kt` (round trip with repeat/flags,
+  position-only write, position without snapshot, clear drops side key, save replaces
+  side position). Mini player look/gestures, scrobbling rules and queue sheet untouched.
+- **P8.3-D Library opens slowly on slow connections** (cache-first tabs).
+  Root cause: every Library tab waited for its network request before rendering
+  (`UiState.Loading` until the last of six requests answered; 4.3–4.7 s cold start,
+  11.9 s warm tab switch measured on GSM + 800 ms). Fix: existing `MetadataCache`
+  (Room, in the schema — no migration needed) now serves cache-first and decodes on
+  `Dispatchers.IO`; new `LibraryRefresh` singleton (policy, `refreshed`/`stale`
+  SharedFlows, `active` counter, `invalidateAll()`/`invalidate(key)`) and pure
+  `CachePolicy` (per-key throttle ~3 min, one-shot force per pull-to-refresh, a
+  failed attempt still consumes its window); `MusicRepository.cached()` is cache-first
+  with background revalidation; `NetworkModule` API client gets 5 s connect / 10 s
+  read / `retryOnConnectionFailure(false)`. LibraryViewModel + detail ViewModels
+  render cache, reload silently on `refreshed`, keep old data on error, force-refresh
+  after mutations; pull-to-refresh stays manual; optimistic local update after user
+  changes; offline/no-network uses the same instant local path; playlist/album/artist
+  pages cache-first; failed refresh keeps old data + small disappearing
+  "Couldn't refresh". Unit tests in `CachePolicyTest.kt` (7 tests).
+  Timings recorded in `docs/perf/library-8.3.md`; downloads logic, search, playback,
+  offline banner and Library sort/layout settings untouched.
+
+Reference: `docs/reference/before-8.3/` and `docs/reference/after-8.3/`.

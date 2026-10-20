@@ -1,6 +1,21 @@
 # Changelog
 
-## 1.1.0 — gesture fixes, playlist sort & search, new icon
+## 1.1.3 — 2026-10-20
+
+### Fixed
+- Search: the "offline — downloaded music only" hint no longer paints behind the
+  search bar. It is a real layout row inside the content column, clipped to its
+  bounds, and hidden when the app-wide offline banner already says it.
+- Queue: swiping a song away removes exactly that song, once — a fast swipe no
+  longer takes neighboring rows with it or leaves a blank gap.
+- Queue restore: a paused queue survives recents-swipe and force-stop — same
+  songs, same order, same position, same "Playing from", paused, shuffle/repeat
+  restored, nothing plays by itself.
+- Library: tabs open instantly from what is already stored and refresh quietly in
+  the background (at most once every few minutes); pull-to-refresh still forces a
+  full refresh. Failed refreshes keep the old list.
+
+## 1.1.0 - gesture fixes, playlist sort & search, new icon
 
 ### Playback & queue
 - Fixed the queue sheet: tapping or dragging the "Playing from" peel now opens
