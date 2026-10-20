@@ -17,16 +17,21 @@ import com.feishin.mobile.core.common.SortChoice
 import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.data.db.CachedTrackEntity
 import com.feishin.mobile.data.cache.CachedTrackStore
+import com.feishin.mobile.data.cache.LibraryRefresh
+import com.feishin.mobile.data.cache.MetadataCacheKeys
 import com.feishin.mobile.data.settings.LayoutMode
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.data.favorites.PlaylistEvent
 import com.feishin.mobile.data.favorites.PlaylistEvents
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -38,6 +43,7 @@ class LibraryViewModel @Inject constructor(
     private val playlistEvents: PlaylistEvents,
     private val settings: SettingsStore,
     private val cachedTracks: CachedTrackStore,
+    private val refresh: LibraryRefresh,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     private val handle: SavedStateHandle = savedStateHandle
@@ -128,6 +134,19 @@ class LibraryViewModel @Inject constructor(
     private val _songs = MutableStateFlow<UiState<List<Track>>>(UiState.Loading)
     val songs: StateFlow<UiState<List<Track>>> = _songs.asStateFlow()
 
+    /**
+     * True while a network refresh runs over data that is already on screen:
+     * drives the small inline indicator, never a full-screen spinner.
+     */
+    val refreshing: StateFlow<Boolean> = refresh.active
+        .map { it > 0 }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(2_000), false)
+
+    /** A background reload failed; old data stays and a small note appears. */
+    private val _refreshFailed = MutableStateFlow(false)
+    val refreshFailed: StateFlow<Boolean> = _refreshFailed.asStateFlow()
+    private var failedJob: Job? = null
+
     private var albumOffset = 0
     private val albumAccum = mutableListOf<Album>()
     private var albumEnd = false
@@ -137,15 +156,40 @@ class LibraryViewModel @Inject constructor(
     }
 
     init {
-        refresh()
+        loadAll()
+        // A background revalidation landed: read the entry back (instant, and
+        // throttled by the policy, so this cannot loop) and swap the list in
+        // place. Same payload = no visual change, so nothing jumps.
+        viewModelScope.launch {
+            refresh.refreshed.collect { key -> reloadFor(key) }
+        }
+        viewModelScope.launch {
+            refresh.stale.collect {
+                _refreshFailed.value = true
+                failedJob?.cancel()
+                failedJob = viewModelScope.launch {
+                    delay(3_000)
+                    _refreshFailed.value = false
+                }
+            }
+        }
         // Stay in sync: starring anywhere refreshes favorites, and adding
         // tracks to a playlist refreshes covers/counts.
         viewModelScope.launch {
             playlistEvents.events.collect { e ->
                 when (e) {
-                    is PlaylistEvent.FavoritesChanged -> loadFavs()
+                    is PlaylistEvent.FavoritesChanged -> {
+                        // The change is already local; make sure the read
+                        // behind it does not serve the pre-star payload.
+                        refresh.invalidate(MetadataCacheKeys.STARRED)
+                        loadFavs(silent = true)
+                    }
                     // Silent: adding tracks shouldn't flash the list to Loading.
-                    is PlaylistEvent.TracksAdded -> loadPlaylists(silent = true)
+                    is PlaylistEvent.TracksAdded -> {
+                        // Cover/count changed on the server; skip the stale copy.
+                        refresh.invalidate(MetadataCacheKeys.PLAYLISTS)
+                        loadPlaylists(silent = true)
+                    }
                 }
             }
         }
@@ -207,21 +251,48 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun refresh() {
-        loadAlbums(reset = true)
-        loadArtists()
-        refreshGenres()
-        loadPlaylists()
-        loadFavs()
-        loadSongs()
+        // Pull-to-refresh is the manual full refresh: the next pass bypasses
+        // the cache, and it runs silently so the lists that are already on
+        // screen never flash back to a spinner.
+        refresh.invalidateAll()
+        loadAll()
     }
 
-    fun loadAlbums(reset: Boolean = false) {
+    /**
+     * First paint: whatever the cache holds comes up at once, each tab then
+     * revalidates itself in the background. Nothing is forced here.
+     */
+    private fun loadAll() {
+        loadAlbums(reset = true, silent = true)
+        loadArtists(silent = true)
+        refreshGenres(silent = true)
+        loadPlaylists(silent = true)
+        loadFavs(silent = true)
+        loadSongs(silent = true)
+    }
+
+    /**
+     * One refreshed cache entry -> the matching tab. Read-back only, so it is
+     * instant; album paging is never thrown away for a first-page refresh.
+     */
+    private fun reloadFor(key: String) {
+        when {
+            key.startsWith("albums:") -> if (albumAccum.size <= 100) loadAlbums(reset = true, silent = true)
+            key == MetadataCacheKeys.ARTISTS -> loadArtists(silent = true)
+            key == MetadataCacheKeys.GENRES -> refreshGenres(silent = true)
+            key == MetadataCacheKeys.PLAYLISTS -> loadPlaylists(silent = true)
+            key == MetadataCacheKeys.STARRED -> loadFavs(silent = true)
+            key.startsWith("songs:") -> loadSongs(silent = true)
+        }
+    }
+
+    fun loadAlbums(reset: Boolean = false, silent: Boolean = false) {
         if (reset) {
             albumOffset = 0; albumAccum.clear(); albumEnd = false
         }
         if (albumEnd) return
         viewModelScope.launch {
-            if (reset) _albums.value = UiState.Loading
+            if (reset && !silent) _albums.value = UiState.Loading
             when (val r = repo.albumList("alphabeticalByName", 100, albumOffset)) {
                 is Result.Ok -> {
                     if (r.value.isEmpty()) albumEnd = true
@@ -229,7 +300,9 @@ class LibraryViewModel @Inject constructor(
                     albumAccum.addAll(r.value)
                     applyAlbumSort()
                 }
-                is Result.Err -> if (albumAccum.isEmpty()) _albums.value = UiState.Error(r.message)
+                is Result.Err -> if (albumAccum.isEmpty() && _albums.value !is UiState.Data) {
+                    _albums.value = UiState.Error(r.message)
+                }
             }
         }
     }
@@ -275,23 +348,23 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    private fun loadArtists() {
+    private fun loadArtists(silent: Boolean = false) {
         viewModelScope.launch {
-            _artists.value = UiState.Loading
+            if (!silent) _artists.value = UiState.Loading
             _artists.value = when (val r = repo.artists()) {
                 is Result.Ok -> if (r.value.isEmpty()) UiState.Empty
                 else UiState.Data(LibraryOrdering.sortArtists(r.value, sortFor(LibraryTab.ARTISTS)))
-                is Result.Err -> UiState.Error(r.message)
+                is Result.Err -> if (_artists.value is UiState.Data) _artists.value else UiState.Error(r.message)
             }
         }
     }
 
-    fun refreshGenres() {
+    fun refreshGenres(silent: Boolean = false) {
         viewModelScope.launch {
-            _genres.value = UiState.Loading
+            if (!silent) _genres.value = UiState.Loading
             _genres.value = when (val r = repo.genres()) {
                 is Result.Ok -> if (r.value.isEmpty()) UiState.Empty else UiState.Data(r.value)
-                is Result.Err -> UiState.Error(r.message)
+                is Result.Err -> if (_genres.value is UiState.Data) _genres.value else UiState.Error(r.message)
             }
         }
     }
@@ -302,31 +375,31 @@ class LibraryViewModel @Inject constructor(
             _playlists.value = when (val r = repo.playlists()) {
                 is Result.Ok -> if (r.value.isEmpty()) UiState.Empty
                 else UiState.Data(LibraryOrdering.sortPlaylists(r.value, sortFor(LibraryTab.PLAYLISTS)))
-                is Result.Err -> UiState.Error(r.message)
+                is Result.Err -> if (_playlists.value is UiState.Data) _playlists.value else UiState.Error(r.message)
             }
         }
     }
 
-    private fun loadFavs() {
+    private fun loadFavs(silent: Boolean = false) {
         viewModelScope.launch {
-            _favs.value = UiState.Loading
+            if (!silent) _favs.value = UiState.Loading
             _favs.value = when (val r = repo.starred()) {
                 is Result.Ok -> {
                     val v = r.value
                     if (v.artists.isEmpty() && v.albums.isEmpty() && v.tracks.isEmpty()) UiState.Empty else UiState.Data(v)
                 }
-                is Result.Err -> UiState.Error(r.message)
+                is Result.Err -> if (_favs.value is UiState.Data) _favs.value else UiState.Error(r.message)
             }
         }
     }
 
-    private fun loadSongs() {
+    private fun loadSongs(silent: Boolean = false) {
         viewModelScope.launch {
-            _songs.value = UiState.Loading
+            if (!silent) _songs.value = UiState.Loading
             _songs.value = when (val r = repo.randomSongs(500)) {
                 is Result.Ok -> if (r.value.isEmpty()) UiState.Empty
                 else UiState.Data(LibraryOrdering.sortSongs(r.value, sortFor(LibraryTab.SONGS)))
-                is Result.Err -> UiState.Error(r.message)
+                is Result.Err -> if (_songs.value is UiState.Data) _songs.value else UiState.Error(r.message)
             }
         }
     }

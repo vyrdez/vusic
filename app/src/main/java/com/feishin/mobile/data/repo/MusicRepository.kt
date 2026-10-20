@@ -29,6 +29,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Singleton
@@ -38,11 +40,17 @@ class MusicRepository @Inject constructor(
     private val creds: CredentialsStore,
     private val auth: AuthInterceptor,
     private val cache: com.feishin.mobile.data.cache.MetadataCache,
+    private val refresh: com.feishin.mobile.data.cache.LibraryRefresh,
     private val network: com.feishin.mobile.data.network.NetworkMonitor,
     private val settings: com.feishin.mobile.data.settings.SettingsStore,
     // Lazy breaks the cycle: the sync store replays through this repository.
     private val offlineSync: dagger.Lazy<com.feishin.mobile.data.download.OfflineSyncStore>,
 ) : MusicDataRepository {
+    /** Background revalidations outlive any one screen. */
+    private val cacheScope = kotlinx.coroutines.CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + com.feishin.mobile.core.common.CrashGuard.handler,
+    )
+
     private fun base(): String {
         val c = creds.state.value ?: throw IllegalStateException("Not logged in")
         // normalizeServerUrl keeps any path prefix and strips trailing slashes;
@@ -59,29 +67,95 @@ class MusicRepository @Inject constructor(
     }
 
     /**
-     * Stale-while-revalidate read:
-     *  - offline: serve the cached payload when present.
-     *  - online: fetch, store the payload on success; on failure fall back to the
-     *    cached payload so a dropped connection still renders the library.
+     * Stale-while-revalidate read.
+     *
+     *  - A stored payload is served IMMEDIATELY, whether the network is up or
+     *    not: opening a tab never waits for a request when there is something
+     *    to show. A background revalidation follows (throttled per key, see
+     *    [com.feishin.mobile.core.common.CachePolicy]).
+     *  - No stored payload: the read blocks on the network (the only case with
+     *    a spinner), and a timeout surfaces as an error with Retry.
+     *  - A failed refresh keeps the old payload and never becomes an error
+     *    screen; a failed *first* load still reports the error.
+     *  - Pull-to-refresh and post-edit reads bypass the cache via
+     *    [LibraryRefresh.invalidateAll] / [LibraryRefresh.invalidate].
      */
     private suspend fun <T> cached(
         key: String,
         serializer: kotlinx.serialization.KSerializer<T>,
         fetch: suspend () -> Result<T>,
     ): Result<T> {
+        // Offline: the cache is the whole library, and there is nothing to
+        // revalidate. Same instant path as online-cached.
         if (offline()) {
             val hit = cache.read(key, serializer)
             return if (hit != null) Result.Ok(hit) else Result.Err("You're offline")
         }
-        val result = fetch()
+        val forced = refresh.policy.consumeForced(key)
+        val hit = cache.read(key, serializer)
+        if (!forced && hit != null) {
+            revalidate(key, serializer, fetch)
+            return Result.Ok(hit)
+        }
+        // The indicator only runs when a refresh replaces something already on
+        // screen; a first load has its own spinner.
+        val result = if (hit != null) {
+            refresh.beginRefresh()
+            try {
+                fetch()
+            } finally {
+                refresh.endRefresh()
+            }
+        } else {
+            fetch()
+        }
         return when (result) {
             is Result.Ok -> {
                 cache.write(key, serializer, result.value)
+                refresh.emitRefreshed(key)
                 result
             }
             is Result.Err -> {
-                val hit = cache.read(key, serializer)
-                if (hit != null) Result.Ok(hit) else result
+                // A refresh that fails keeps what is on screen.
+                if (hit != null) {
+                    refresh.emitStale(key)
+                    Result.Ok(hit)
+                } else {
+                    result
+                }
+            }
+        }
+    }
+
+    /**
+     * Background refresh of one entry, at most once per policy window. Runs on
+     * its own scope: leaving the tab or the screen does not cancel it, and it
+     * never touches the caller's suspension.
+     */
+    private fun <T> revalidate(
+        key: String,
+        serializer: kotlinx.serialization.KSerializer<T>,
+        fetch: suspend () -> Result<T>,
+    ) {
+        if (!refresh.policy.shouldRefresh(key)) return
+        refresh.beginRefresh()
+        cacheScope.launch {
+            try {
+                val result = fetch()
+                if (result is Result.Ok) {
+                    cache.write(key, serializer, result.value)
+                    refresh.emitRefreshed(key)
+                } else {
+                    // Old data stays; the UI may show one small "couldn't
+                    // refresh" line and nothing else.
+                    refresh.emitStale(key)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                refresh.emitStale(key)
+            } finally {
+                refresh.endRefresh()
             }
         }
     }

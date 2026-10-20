@@ -45,6 +45,13 @@ object NetworkModule {
             }
             .addInterceptor(rewrite)
             .addInterceptor(auth)
+            // Library reads must fail visibly and fast on a bad network: the
+            // spinner turns into an error with Retry instead of hanging.
+            .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            // One attempt per call: a dead server must never multiply into a
+            // retry storm behind every tab and every revalidation.
+            .retryOnConnectionFailure(false)
             // Debug-only, credential-redacting (release: no logging at all).
             .addInterceptor(RedactingHttpLogger())
             .build()

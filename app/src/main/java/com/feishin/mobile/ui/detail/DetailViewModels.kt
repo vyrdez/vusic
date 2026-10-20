@@ -12,6 +12,8 @@ import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.data.favorites.FAVORITE_SONGS_PLAYLIST_ID
+import com.feishin.mobile.data.cache.LibraryRefresh
+import com.feishin.mobile.data.cache.MetadataCacheKeys
 import com.feishin.mobile.data.cache.toTrack
 import com.feishin.mobile.data.favorites.PlaylistEvent
 import com.feishin.mobile.data.favorites.PlaylistEvents
@@ -26,6 +28,7 @@ import kotlinx.coroutines.launch
 class AlbumDetailViewModel @Inject constructor(
     private val repo: MusicDataRepository,
     private val playlistEvents: PlaylistEvents,
+    private val libraryRefresh: LibraryRefresh,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     val id: String = savedStateHandle.get<String>("id") ?: ""
@@ -34,15 +37,25 @@ class AlbumDetailViewModel @Inject constructor(
     private val _ui = MutableStateFlow<UiState<AlbumDetail>>(UiState.Loading)
     val ui: StateFlow<UiState<AlbumDetail>> = _ui.asStateFlow()
 
-    init { refresh() }
+    init {
+        refresh()
+        // A background revalidation landed for this album: swap it in, keeping
+        // the page (and its scroll position) on screen the whole time.
+        viewModelScope.launch {
+            libraryRefresh.refreshed.collect { key ->
+                if (key == MetadataCacheKeys.album(id)) refresh()
+            }
+        }
+    }
 
     fun refresh() {
         viewModelScope.launch {
+            val previous = (_ui.value as? UiState.Data)?.value
             _refreshing.value = true
-            _ui.value = UiState.Loading
+            if (previous == null) _ui.value = UiState.Loading
             _ui.value = when (val r = repo.album(id)) {
                 is Result.Ok -> UiState.Data(r.value)
-                is Result.Err -> UiState.Error(r.message)
+                is Result.Err -> if (previous != null) UiState.Data(previous) else UiState.Error(r.message)
             }
             _refreshing.value = false
         }
@@ -65,6 +78,7 @@ class AlbumDetailViewModel @Inject constructor(
 class ArtistDetailViewModel @Inject constructor(
     private val repo: MusicDataRepository,
     private val playlistEvents: PlaylistEvents,
+    private val libraryRefresh: LibraryRefresh,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     val id: String = savedStateHandle.get<String>("id") ?: ""
@@ -73,15 +87,23 @@ class ArtistDetailViewModel @Inject constructor(
     private val _ui = MutableStateFlow<UiState<ArtistDetail>>(UiState.Loading)
     val ui: StateFlow<UiState<ArtistDetail>> = _ui.asStateFlow()
 
-    init { refresh() }
+    init {
+        refresh()
+        viewModelScope.launch {
+            libraryRefresh.refreshed.collect { key ->
+                if (key == MetadataCacheKeys.artist(id)) refresh()
+            }
+        }
+    }
 
     fun refresh() {
         viewModelScope.launch {
+            val previous = (_ui.value as? UiState.Data)?.value
             _refreshing.value = true
-            _ui.value = UiState.Loading
+            if (previous == null) _ui.value = UiState.Loading
             _ui.value = when (val r = repo.artist(id)) {
                 is Result.Ok -> UiState.Data(r.value)
-                is Result.Err -> UiState.Error(r.message)
+                is Result.Err -> if (previous != null) UiState.Data(previous) else UiState.Error(r.message)
             }
             _refreshing.value = false
         }
@@ -122,6 +144,7 @@ class PlaylistDetailViewModel @Inject constructor(
     private val playlistEvents: PlaylistEvents,
     private val cachedTracks: com.feishin.mobile.data.cache.CachedTrackStore,
     private val settings: com.feishin.mobile.data.settings.SettingsStore,
+    private val libraryRefresh: LibraryRefresh,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
     val id: String = savedStateHandle.get<String>("id") ?: ""
@@ -144,6 +167,18 @@ class PlaylistDetailViewModel @Inject constructor(
 
     init {
         refresh()
+        // Cache-first page: when the stored copy is revalidated, read it back
+        // instead of leaving a stale list up for the whole visit.
+        viewModelScope.launch {
+            libraryRefresh.refreshed.collect { key ->
+                val mine = when {
+                    isVirtualFavorites -> MetadataCacheKeys.STARRED
+                    isVirtualCached -> null
+                    else -> MetadataCacheKeys.playlist(id)
+                }
+                if (key == mine) refresh()
+            }
+        }
         viewModelScope.launch {
             settings.playlistSortFlow(id).collect { _sort.value = it }
         }
@@ -152,8 +187,16 @@ class PlaylistDetailViewModel @Inject constructor(
         viewModelScope.launch {
             playlistEvents.events.collect { e ->
                 when (e) {
-                    is PlaylistEvent.TracksAdded -> if (e.playlistId == id) refresh()
-                    is PlaylistEvent.FavoritesChanged -> if (isVirtualFavorites) refresh()
+                    is PlaylistEvent.TracksAdded -> if (e.playlistId == id) {
+                        // The change is already on the server: do not read the
+                        // pre-edit payload back from the cache.
+                        libraryRefresh.invalidate(MetadataCacheKeys.playlist(id))
+                        refresh()
+                    }
+                    is PlaylistEvent.FavoritesChanged -> if (isVirtualFavorites) {
+                        libraryRefresh.invalidate(MetadataCacheKeys.STARRED)
+                        refresh()
+                    }
                 }
             }
         }
@@ -171,8 +214,9 @@ class PlaylistDetailViewModel @Inject constructor(
 
     fun refresh() {
         viewModelScope.launch {
+            val previous = (_ui.value as? UiState.Data)?.value
             _refreshing.value = true
-            _ui.value = UiState.Loading
+            if (previous == null) _ui.value = UiState.Loading
             _ui.value = if (isVirtualCached) {
                 // Drop rows the LRU evictor already removed, then list newest first.
                 cachedTracks.pruneEvicted()
@@ -202,12 +246,12 @@ class PlaylistDetailViewModel @Inject constructor(
                             ),
                         )
                     }
-                    is Result.Err -> UiState.Error(r.message)
+                    is Result.Err -> if (previous != null) UiState.Data(previous) else UiState.Error(r.message)
                 }
             } else {
                 when (val r = repo.playlist(id)) {
                     is Result.Ok -> UiState.Data(r.value)
-                    is Result.Err -> UiState.Error(r.message)
+                    is Result.Err -> if (previous != null) UiState.Data(previous) else UiState.Error(r.message)
                 }
             }
             _refreshing.value = false
@@ -234,6 +278,9 @@ class PlaylistDetailViewModel @Inject constructor(
             // visible row back through the visible->source table), so a removal
             // under a sort or filter still hits the entry the user pointed at.
             repo.removeFromPlaylist(id, listOf(sourceIndex))
+            // Optimistic: the row is gone from the server, so the cached copy
+            // must not be served back over it.
+            libraryRefresh.invalidate(MetadataCacheKeys.playlist(id))
             refresh()
         }
     }

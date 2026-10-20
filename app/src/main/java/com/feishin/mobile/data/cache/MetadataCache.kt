@@ -21,22 +21,29 @@ class MetadataCache @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false; coerceInputValues = true }
 
-    suspend fun <T> read(key: String, serializer: KSerializer<T>): T? =
+    // Decoding a 500-track payload is not free, and the reads happen right
+    // before the list is published: never on the caller's thread, which for the
+    // library is the main thread.
+    private suspend fun <T> io(block: suspend () -> T): T =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { block() }
+
+    suspend fun <T> read(key: String, serializer: KSerializer<T>): T? = io {
         runCatching { dao.get(key)?.let { json.decodeFromString(serializer, it) } }.getOrNull()
+    }
 
     suspend fun <T> write(key: String, serializer: KSerializer<T>, value: T) {
-        runCatching { dao.put(CachedMetadataEntity(key, json.encodeToString(serializer, value))) }
+        io { runCatching { dao.put(CachedMetadataEntity(key, json.encodeToString(serializer, value))) } }
     }
 
     /** True when an entry exists (used to decide whether a miss should error). */
-    suspend fun has(key: String): Boolean = runCatching { dao.get(key) != null }.getOrDefault(false)
+    suspend fun has(key: String): Boolean = io { runCatching { dao.get(key) != null }.getOrDefault(false) }
 
     suspend fun remove(key: String) {
-        runCatching { dao.remove(key) }
+        io { runCatching { dao.remove(key) } }
     }
 
     suspend fun clear() {
-        runCatching { dao.clear() }
+        io { runCatching { dao.clear() } }
     }
 
     companion object

@@ -8,6 +8,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -759,9 +761,34 @@ private fun LibraryPullToRefresh(
         LibraryTab.FAVORITES -> favs is UiState.Loading
         LibraryTab.DOWNLOADS -> false
     }
+    // Cache hits never show Loading, so a background refresh needs its own
+    // signal. It is the same small pull indicator, never a full-screen spinner.
+    val networkRefreshing by vm.refreshing.collectAsStateWithLifecycle()
+    val failed by vm.refreshFailed.collectAsStateWithLifecycle()
     PullToRefreshBox(
-        isRefreshing = refreshing,
+        isRefreshing = refreshing || networkRefreshing,
         onRefresh = { vm.refresh() },
         modifier = Modifier.fillMaxSize(),
-    ) { content() }
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            content()
+            // At most one small line, and it takes itself away: a failed
+            // refresh keeps the old list on screen.
+            AnimatedVisibility(
+                visible = failed,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 6.dp),
+            ) {
+                Text(
+                    "Couldn't refresh",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(50))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+            }
+        }
+    }
 }

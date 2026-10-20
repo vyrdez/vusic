@@ -175,6 +175,7 @@ class ViewModelStateTest {
         PlaylistEvents(),
         settings(),
         com.feishin.mobile.data.cache.CachedTrackStore(FakeCachedTrackDao(), FakeCacheBytes()),
+        com.feishin.mobile.data.cache.LibraryRefresh(),
         handle,
     )
 
@@ -261,6 +262,7 @@ class ViewModelStateTest {
         val vm = LibraryViewModel(
             FakeMusicRepo(), PlaylistEvents(), store,
             com.feishin.mobile.data.cache.CachedTrackStore(FakeCachedTrackDao(), FakeCacheBytes()),
+            com.feishin.mobile.data.cache.LibraryRefresh(),
             SavedStateHandle(),
         )
         awaitLayout(vm, LibraryTab.ALBUMS, LayoutMode.GRID)
@@ -284,6 +286,7 @@ class ViewModelStateTest {
         val vm2 = LibraryViewModel(
             FakeMusicRepo(), PlaylistEvents(), store,
             com.feishin.mobile.data.cache.CachedTrackStore(FakeCachedTrackDao(), FakeCacheBytes()),
+            com.feishin.mobile.data.cache.LibraryRefresh(),
             SavedStateHandle(),
         )
         awaitLayout(vm2, LibraryTab.SONGS, LayoutMode.LIST)
