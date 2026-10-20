@@ -12,6 +12,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.feishin.mobile.core.common.QueueOps
+import com.feishin.mobile.core.common.VLog
 import com.feishin.mobile.core.common.RadioProgrammer
 import com.feishin.mobile.core.common.RadioTrigger
 import com.feishin.mobile.core.common.RadioMemory
@@ -47,6 +48,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.runBlocking
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.random.Random
@@ -82,6 +84,9 @@ class PlayerManager @Inject constructor(
     // thread. CrashGuard would swallow that and playback would silently never
     // start, so keep the dispatcher explicit and the handler beside it.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main + com.feishin.mobile.core.common.CrashGuard.handler)
+    private companion object {
+        const val TAG = "PlayerManager"
+    }
     private var queueSeq = 0L
     private var restored = false
 
@@ -182,8 +187,10 @@ class PlayerManager @Inject constructor(
                         }
                     }
                 }
-                // Persist position cheaply: every ~15s while playing.
-                if (c.isPlaying && ++ticks % 30 == 0) persist()
+                // Persist position cheaply: every ~6s while playing. A single
+                // long in its own DataStore key, so a long session never churns
+                // the whole queue JSON; it never resurrects a cleared queue.
+                if (c.isPlaying && ++ticks % 12 == 0) savePosition()
             }
         }
     }
@@ -350,8 +357,21 @@ class PlayerManager @Inject constructor(
      * shuffle toggle after restart behaves exactly as before the kill.
      */
     private suspend fun restoreFromSnapshot(c: MediaController) {
+        // Give the credentials up to 10s to arrive (first launch, slow disk);
+        // if they never do, keep the snapshot for the next launch instead of
+        // silently dropping it forever.
+        val credsReady = withTimeoutOrNull(10_000) { creds.state.first { it != null } } != null
+        if (restored) {
+            return
+        }
+        // Credentials not ready within 10s: don't permanently bail, leave the
+        // snapshot for the next launch (restored stays false so a reconnect
+        // retries).
+        if (!credsReady) {
+            return
+        }
         val snapshot = runCatching { queueStore.load() }.getOrNull()
-        if (restored || snapshot == null || creds.state.value == null) {
+        if (snapshot == null) {
             restored = true
             return
         }
@@ -374,15 +394,13 @@ class PlayerManager @Inject constructor(
             return
         }
         queueSeq = maxOf(queueSeq, maxId + 1)
+        // Publish the mirror + current item before touching the player, so the
+        // queue sheet / mini player show something immediately.
         _queue.value = entries
-        val items = built.map { it.second }
-        val index = snapshot.currentIndex.coerceIn(0, items.size - 1)
-        c.setMediaItems(items, index, snapshot.positionMs)
-        c.prepare()
-        c.pause()
-        _currentIndex.value = index
-        _current.value = entries.getOrNull(index)?.song
+        _currentIndex.value = snapshot.currentIndex.coerceIn(0, entries.size - 1)
+        _current.value = entries.getOrNull(_currentIndex.value)?.song
         _sourceName.value = snapshot.sourceName
+        _repeatMode.value = snapshot.repeatMode
         _radioActive.value = snapshot.radioActive
         _radioSeed.value = snapshot.radioSeedId?.let { id -> tracks.find { it.id == id } }
         _shuffle.value = snapshot.shuffleActive
@@ -394,11 +412,22 @@ class PlayerManager @Inject constructor(
         }
         _position.value = snapshot.positionMs
         _duration.value = c.duration.takeIf { it > 0 } ?: 0L
+        val items = built.map { it.second }
+        val index = _currentIndex.value
+        // setMediaItems seeds the session; seekTo lands at the saved position.
+        // No prepare(): nothing downloads, nothing buffers, nothing plays.
+        c.setMediaItems(items, index, snapshot.positionMs)
+        c.seekTo(snapshot.positionMs)
+        c.pause()
+        VLog.d(TAG, "restore: ${entries.size} items, index=$index pos=${snapshot.positionMs}")
         restored = true
     }
 
     private suspend fun persist() {
         val q = _queue.value
+        // A cold start shows an EMPTY mirror until the restore has run: never
+        // wipe a persisted snapshot because the mirror hasn't been filled yet.
+        if (q.isEmpty() && !restored) return
         if (q.isEmpty()) {
             runCatching { queueStore.clear() }
             return
@@ -421,6 +450,17 @@ class PlayerManager @Inject constructor(
 
     private fun persistAsync() {
         scope.launch { persist() }
+    }
+
+    /** Cheap position-only write (every few seconds while playing). */
+    private suspend fun savePosition() = queueStore.savePosition(_position.value)
+
+    /**
+     * Synchronous save used from the service lifecycle (onTaskRemoved / onDestroy),
+     * which are not coroutine contexts. Best effort, bounded by [timeoutMs].
+     */
+    fun saveBlocking(timeoutMs: Long = 1_500L) {
+        runBlocking { withTimeoutOrNull(timeoutMs) { persist() } }
     }
 
     private suspend fun streamParams(): Pair<Int, String> {

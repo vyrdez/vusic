@@ -212,12 +212,22 @@ class PlayerService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        // Last chance to keep the queue: the task may already be gone.
+        runCatching { playerManager.saveBlocking() }
         stopTicker()
         mediaSession?.release()
         mediaSession = null
         player?.release()
         player = null
         super.onDestroy()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Swiping the app out of recents tears the session down. The queue has
+        // to survive that moment, paused, so the mini player comes back on the
+        // next launch. Flushed before the service reports itself gone.
+        runCatching { playerManager.saveBlocking() }
+        super.onTaskRemoved(rootIntent)
     }
 
     /**

@@ -79,4 +79,83 @@ class QueueStoreTest {
         s.clear()
         assertNull(s.load())
     }
+
+    // ---- 8.3-C: the state the restore contract needs ----------------------
+
+    @Test
+    fun saveAndLoad_roundTripsRepeatShuffleSourceAndFlags() = runTest {
+        val s = store()
+        val tracks = listOf(track("1", "One"), track("2", "Two"))
+        s.save(
+            tracks,
+            currentIndex = 1,
+            positionMs = 12_345,
+            sourceName = "Playing from test",
+            radioActive = true,
+            radioSeedId = "2",
+            queueIds = listOf(7L, 9L),
+            shuffleActive = true,
+            shuffleOrder = listOf(9L, 7L),
+            queueSeq = 10L,
+            repeatMode = 2,
+            downloadedIds = setOf("1"),
+            cachedIds = setOf("2"),
+        )
+        val loaded = s.load()!!
+        assertEquals(1, loaded.currentIndex)
+        assertEquals(12_345L, loaded.positionMs)
+        assertEquals("Playing from test", loaded.sourceName)
+        assertTrue(loaded.radioActive)
+        assertEquals("2", loaded.radioSeedId)
+        assertEquals(listOf(7L, 9L), loaded.tracks.map { it.queueId })
+        assertTrue(loaded.shuffleActive)
+        assertEquals(listOf(9L, 7L), loaded.shuffleOrder)
+        assertEquals(10L, loaded.queueSeq)
+        assertEquals(2, loaded.repeatMode)
+        assertEquals(true, loaded.tracks[0].downloaded)
+        assertEquals(false, loaded.tracks[0].cached)
+        assertEquals(true, loaded.tracks[1].cached)
+        assertEquals(false, loaded.tracks[1].downloaded)
+    }
+
+    @Test
+    fun positionOnlyWrite_winsOverTheSnapshotPosition() = runTest {
+        val s = store()
+        s.save(listOf(track("1", "One")), 0, 1_000)
+        s.savePosition(9_000)
+        assertEquals(9_000L, s.load()?.positionMs)
+        // The queue itself is untouched by a position write.
+        assertEquals(1, s.loadTracks().size)
+    }
+
+    @Test
+    fun positionWriteWithoutSnapshot_doesNothing() = runTest {
+        val s = store()
+        s.savePosition(5_000)
+        assertNull(s.load())
+    }
+
+    @Test
+    fun clear_alsoDropsTheSidePositionKey() = runTest {
+        val s = store()
+        s.save(listOf(track("1", "One")), 0, 1_000)
+        s.savePosition(8_000)
+        s.clear()
+        assertNull(s.load())
+        // A later snapshot must not inherit the dead position.
+        s.save(listOf(track("2", "Two")), 0, 0)
+        assertEquals(0L, s.load()?.positionMs)
+    }
+
+    @Test
+    fun saveReplacesTheSidePosition_evenAfterAnOlderPositionWrite() = runTest {
+        val s = store()
+        s.save(listOf(track("1", "One"), track("2", "Two")), 0, 1_000)
+        s.savePosition(1_500)
+        // Track change: the snapshot and its position are written together.
+        s.save(listOf(track("1", "One"), track("2", "Two")), 1, 0, queueIds = listOf(1L, 2L))
+        val loaded = s.load()!!
+        assertEquals(1, loaded.currentIndex)
+        assertEquals(0L, loaded.positionMs)
+    }
 }
