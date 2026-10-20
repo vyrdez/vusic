@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
@@ -82,6 +81,7 @@ import com.feishin.mobile.ui.components.LocalMiniClearance
 import com.feishin.mobile.ui.components.MiniPlayer
 import com.feishin.mobile.ui.components.MiniPlayerHeight
 import com.feishin.mobile.ui.components.MiniPlayerNavGap
+import com.feishin.mobile.ui.components.OfflineBanner
 import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.detail.AlbumDetailScreen
 import com.feishin.mobile.ui.detail.ArtistDetailScreen
@@ -279,6 +279,10 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     val effectiveOffline = settingsState?.let { s ->
                         s.offlineMode || (s.autoOffline && !online)
                     } == true
+                    // The one place that decides whether the app-wide banner is
+                    // up. Screens that carry their own offline hint read this so
+                    // the two can never stack or contradict each other.
+                    val offlineBannerVisible = effectiveOffline && settingsState?.showOfflineChip != false
                     // The banner is a LAYOUT ROW, not an overlay: it used to be a
                     // sibling of the NavHost aligned TopCenter, so it painted on
                     // top of every screen's title and filter field instead of
@@ -286,13 +290,13 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     // once - no per-screen offset - and the height is animated so
                     // content glides instead of jumping.
                     AnimatedVisibility(
-                        visible = effectiveOffline && settingsState?.showOfflineChip != false,
+                        visible = offlineBannerVisible,
                         enter = expandVertically(expandFrom = androidx.compose.ui.Alignment.Top, animationSpec = Motion.layoutSize()) +
                             fadeIn(Motion.fade(Motion.Normal)),
                         exit = shrinkVertically(shrinkTowards = androidx.compose.ui.Alignment.Top, animationSpec = Motion.layoutSize()) +
                             fadeOut(Motion.fade(Motion.Normal)),
                     ) {
-                        OfflineBanner()
+                        OfflineBanner("You're offline — downloaded music only")
                     }
                     Box(Modifier.fillMaxWidth().weight(1f)) {
                     NavHost(
@@ -358,6 +362,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                             SearchScreen(
                                 player = main.player, repo = main.repo, messenger = main.messenger,
                                 settings = main.settings,
+                                offlineBannerVisible = offlineBannerVisible,
                                 onAlbum = { nav.navigate(Routes.album(it)) },
                                 onArtist = { nav.navigate(Routes.artist(it)) },
                                 onPlaylist = { nav.navigate(Routes.playlist(it)) },
@@ -539,29 +544,6 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun OfflineBanner(modifier: Modifier = Modifier) {
-    Row(
-        modifier
-            .fillMaxWidth()
-            .background(VusicColors.SurfaceHigh)
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-    ) {
-        Icon(
-            androidx.compose.material.icons.Icons.Default.CloudOff, null,
-            tint = VusicColors.SecondaryText,
-            modifier = Modifier.size(16.dp),
-        )
-        Spacer(Modifier.size(8.dp))
-        Text(
-            "You're offline — downloaded music only",
-            style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
-            color = VusicColors.SecondaryText,
-        )
     }
 }
 

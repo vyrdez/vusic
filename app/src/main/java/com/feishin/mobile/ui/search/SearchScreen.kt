@@ -58,6 +58,7 @@ import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.components.ActionTarget
 import com.feishin.mobile.ui.components.LocalMiniClearance
+import com.feishin.mobile.ui.components.OfflineBanner
 import com.feishin.mobile.ui.theme.VusicSpacing
 import com.feishin.mobile.ui.components.AlbumCard
 import com.feishin.mobile.ui.components.CoverImage
@@ -102,6 +103,8 @@ fun SearchScreen(
     repo: MusicDataRepository,
     settings: SettingsStore,
     messenger: UiMessenger,
+    /** True while the app-wide offline banner already occupies the top row. */
+    offlineBannerVisible: Boolean = false,
     onAlbum: (String) -> Unit,
     onArtist: (String) -> Unit,
     onPlaylist: (String) -> Unit,
@@ -124,14 +127,6 @@ fun SearchScreen(
     LaunchedEffect(Unit) { focus.requestFocus() }
     LaunchedEffect(ui) {
         if (ui is UiState.Data && q.isNotBlank()) settings.addRecentSearch(q)
-    }
-    if (offlineNotice && (ui is UiState.Data || ui is UiState.Empty)) {
-        Text(
-            "Offline — searching downloaded music",
-            style = MaterialTheme.typography.labelMedium,
-            color = VusicColors.SecondaryText,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-        )
     }
 
     // No navigationBarsPadding and no imePadding() anywhere here: the scaffold's
@@ -180,6 +175,15 @@ fun SearchScreen(
             selected = labelOf(filter),
             onSelect = { vm.onFilter(filterOf(it)) },
         )
+        // The "results came from downloads" hint is a LAYOUT ROW inside this
+        // screen, right above the results it describes. It used to be a sibling
+        // of this Column, which made it paint underneath the search pill at the
+        // top of the content box (a half-clipped line peeking out behind the
+        // field). It is skipped when the app-wide banner is already on screen:
+        // same message, so two bars would just repeat each other.
+        if (offlineNotice && !offlineBannerVisible && (ui is UiState.Data || ui is UiState.Empty)) {
+            OfflineBanner("Offline — searching downloaded music")
+        }
         when (val s = ui) {
             is UiState.Loading -> {
                 SkeletonLoader()
