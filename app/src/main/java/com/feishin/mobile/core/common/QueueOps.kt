@@ -33,6 +33,25 @@ object QueueOps {
         return next to adjusted
     }
 
+    /**
+     * Removes exactly one entry, chosen by its stable id and never by a
+     * position captured earlier. Entries keep their identity while the list
+     * shifts under them, so the same song queued twice still loses only the
+     * copy the user pointed at. An id that is already gone is a no-op, which
+     * is what makes a repeated dismiss (a settle that replays, a rapid swipe
+     * of a neighbour) harmless instead of a second removal.
+     */
+    fun <T> removeById(
+        queue: List<T>,
+        id: Long?,
+        idOf: (T) -> Long,
+        currentIndex: Int,
+    ): Pair<List<T>, Int> {
+        if (id == null) return queue to currentIndex
+        val index = queue.indexOfFirst { idOf(it) == id }
+        return removeAt(queue, index, currentIndex)
+    }
+
     /** Moves an entry and keeps the current index pointing at the same item. */
     fun <T> move(queue: List<T>, from: Int, to: Int, currentIndex: Int): Pair<List<T>, Int> {
         if (from !in queue.indices || to !in queue.indices) return queue to currentIndex

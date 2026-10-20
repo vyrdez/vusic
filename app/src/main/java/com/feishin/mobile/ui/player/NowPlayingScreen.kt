@@ -91,6 +91,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1005,7 +1006,8 @@ private fun QueueList(
     onMoveLocal: (Int, Int) -> Unit,
     onCommit: () -> Unit,
     onPlayAt: (Int) -> Unit,
-    onRemoveAt: (Int) -> Unit,
+    /** Dismiss = remove the entry with THIS queue key, never a slot. */
+    onRemove: (Long) -> Unit,
     onActions: (com.feishin.mobile.domain.model.Track) -> Unit,
     palette: NowPlayingPalette,
     modifier: Modifier = Modifier,
@@ -1058,10 +1060,25 @@ private fun QueueList(
                 // Drop = commit exactly once. The guard inside onCommit makes
                 // the initial (non-drag) composition a no-op.
                 LaunchedEffect(isDragging) { if (!isDragging) onCommit() }
+                // A dismissing row can replay confirmValueChange while the list
+                // is still settling. The player's removal is already idempotent
+                // by key; this keeps the replay from even reaching it, so one
+                // gesture can only ever mean one row.
+                val removed = remember(item.queueId) { java.util.concurrent.atomic.AtomicBoolean(false) }
+                // The lambdas below are remembered by the dismiss state, so a
+                // parameter read from them must not be a snapshot either.
+                val removeNow by rememberUpdatedState(onRemove)
                 val dismissState = rememberSwipeToDismissBoxState(
                     confirmValueChange = {
-                        if (it == SwipeToDismissBoxValue.EndToStart && idx >= 0) {
-                            onRemoveAt(idx)
+                        // Identity, never position. `idx` is a snapshot of this
+                        // row's slot from composition time; by the time the
+                        // dismiss settles an earlier swipe may have shifted it,
+                        // and this lambda is remembered with the first one. The
+                        // queue key belongs to the row for its whole life.
+                        if (it == SwipeToDismissBoxValue.EndToStart &&
+                            removed.compareAndSet(false, true)
+                        ) {
+                            removeNow(item.queueId)
                             true
                         } else false
                     },
@@ -1573,7 +1590,7 @@ private fun QueueSheet(
                 },
                 onCommit = { commitIfDirty() },
                 onPlayAt = { idx -> player.playAt(idx) },
-                onRemoveAt = { idx -> player.removeAt(idx) },
+                onRemove = { id -> player.removeById(id) },
                 onActions = onActions,
                 palette = palette,
                 modifier = Modifier.weight(1f),

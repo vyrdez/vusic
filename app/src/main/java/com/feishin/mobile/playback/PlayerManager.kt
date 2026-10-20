@@ -814,6 +814,20 @@ class PlayerManager @Inject constructor(
         persistAsync()
     }
 
+    /**
+     * Removes one entry by its queue key.
+     *
+     * The UI must never send a position: rows move (reorder, an earlier
+     * removal, shuffle) between the frame the gesture started on and the
+     * moment the dismiss settles, and a position captured earlier pointed at
+     * a different song by then. A key that is already gone is a no-op, so a
+     * settle that fires twice cannot take a second entry with it.
+     */
+    fun removeById(queueId: Long) {
+        val index = _queue.value.indexOfFirst { it.queueId == queueId }
+        if (index < 0) return
+        removeAt(index)
+    }
     fun move(from: Int, to: Int) {
         val c = controller ?: return
         val (next, adjusted) = QueueOps.move(_queue.value, from, to, _currentIndex.value)
