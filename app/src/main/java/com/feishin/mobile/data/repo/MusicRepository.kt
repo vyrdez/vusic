@@ -373,7 +373,10 @@ class MusicRepository @Inject constructor(
         // Add any remaining tracks in batches via updatePlaylist.
         for (batch in com.feishin.mobile.core.common.PlaylistBatch.remainingChunks(trackIds)) {
             val r2 = api.updatePlaylist(playlistId, songIdToAdd = batch).response
-            unwrap(r2.status, r2.error?.message) { }
+            when (val r = unwrap(r2.status, r2.error?.message) { }) {
+                is Result.Ok -> Unit
+                is Result.Err -> return@call r
+            }
         }
         Result.Ok(playlistId)
     }
@@ -383,7 +386,10 @@ class MusicRepository @Inject constructor(
         // large artist (500+ songs) fits in a single request per batch.
         for (batch in com.feishin.mobile.core.common.PlaylistBatch.chunks(trackIds)) {
             val r = api.updatePlaylist(playlistId, songIdToAdd = batch).response
-            unwrap(r.status, r.error?.message) { }
+            when (val res = unwrap(r.status, r.error?.message) { }) {
+                is Result.Ok -> Unit
+                is Result.Err -> return@call res
+            }
         }
         Result.Ok(Unit)
     }

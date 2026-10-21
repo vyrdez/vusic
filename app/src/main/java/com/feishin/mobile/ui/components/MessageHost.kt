@@ -47,7 +47,7 @@ fun MessageHost(
     val baseBottomDp = maxOf(navBottomDp, keyboardBottomDp)
     // Above the mini player only when it is visible and not covered by the keyboard.
     val miniExtraDp = if (miniPlayerVisible && keyboardBottomDp.value == 0f) {
-        MiniPlayerHeight - miniPlayerDragY.dp + MiniPlayerNavGap
+        (MiniPlayerHeight - miniPlayerDragY.dp + MiniPlayerNavGap).coerceAtLeast(0.dp)
     } else {
         0.dp
     }

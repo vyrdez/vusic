@@ -26,6 +26,10 @@ data class LoginUi(
     val message: String? = null,
     val isError: Boolean = false,
     val details: String? = null,
+    // Monotonic counter that changes on every failure, so the screen's
+    // LaunchedEffect re-fires (and re-shows the snackbar) even when two
+    // consecutive attempts produce the identical error message.
+    val failureNonce: Int = 0,
 )
 
 @HiltViewModel
@@ -48,10 +52,11 @@ class LoginViewModel @Inject constructor(
             _ui.value = when (result) {
                 // Navigation is driven by AuthRepository.loginState, not from here.
                 is Result.Ok -> LoginUi()
-                is Result.Err -> result.toFailureUi()
+                is Result.Err -> result.toFailureUi(_ui.value.failureNonce + 1)
                 null -> LoginUi(
                     message = LoginErrorMapper.TIMEOUT,
                     isError = true,
+                    failureNonce = _ui.value.failureNonce + 1,
                 )
             }
         }
@@ -66,10 +71,11 @@ class LoginViewModel @Inject constructor(
             }
             _ui.value = when (result) {
                 is Result.Ok -> LoginUi(message = "Connection OK")
-                is Result.Err -> result.toFailureUi()
+                is Result.Err -> result.toFailureUi(_ui.value.failureNonce + 1)
                 null -> LoginUi(
                     message = LoginErrorMapper.TIMEOUT,
                     isError = true,
+                    failureNonce = _ui.value.failureNonce + 1,
                 )
             }
         }
@@ -85,12 +91,13 @@ class LoginViewModel @Inject constructor(
         _ui.value = _ui.value.copy(message = null, details = null)
     }
 
-    private fun Result.Err.toFailureUi(): LoginUi {
+    private fun Result.Err.toFailureUi(nonce: Int): LoginUi {
         val failure = LoginErrorMapper.map(this)
         return LoginUi(
             message = failure.message,
             isError = true,
             details = failure.details,
+            failureNonce = nonce,
         )
     }
 }

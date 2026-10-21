@@ -400,6 +400,11 @@ fun MiniPlayer(
                                     dragY.snapTo(0f)
                                     fade.snapTo(1f)
                                     dragX.snapTo(0f)
+                                    // The card's internal dragY is reset above,
+                                    // but the parent (MessageHost) keeps the
+                                    // last reported travel and would keep
+                                    // inflating the message offset after an Undo.
+                                    onDragOffsetChanged(0f)
                                 }
                             }
                             MiniPlayerGesture.Action.PREVIOUS -> commitSkip(-1f)

@@ -104,7 +104,7 @@ fun LoginScreen(
 
     // The same failure is also raised as a snackbar through the section-A host,
     // so it stays visible above the mini player even once this screen scrolls.
-    LaunchedEffect(ui.message, ui.isError) {
+    LaunchedEffect(ui.failureNonce) {
         val text = ui.message
         if (text != null && ui.isError) messenger.show(text)
     }

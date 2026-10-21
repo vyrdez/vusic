@@ -28,8 +28,14 @@ class ProgressThrottle(
 
     @Synchronized
     fun shouldEmit(key: String, pct: Int, nowMs: Long): Boolean {
-        if (key == lastKey && pct - lastPct < minStepPct) return false
-        if (lastAt != Long.MIN_VALUE && nowMs - lastAt < minIntervalMs) return false
+        // A completed transfer must always publish, even if it lands inside
+        // the interval window after the last write: otherwise the final 100%
+        // can be dropped and the row never shows "done".
+        val forced = (pct == 100)
+        // Use the absolute step so a re-download that reports a lower
+        // percentage is not blocked by the monotonicity assumption.
+        if (key == lastKey && !forced && kotlin.math.abs(pct - lastPct) < minStepPct) return false
+        if (!forced && lastAt != Long.MIN_VALUE && nowMs - lastAt < minIntervalMs) return false
         lastAt = nowMs
         lastPct = pct
         lastKey = key

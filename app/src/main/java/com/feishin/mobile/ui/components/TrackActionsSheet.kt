@@ -488,9 +488,9 @@ private fun ArtistSheetContent(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var starred by remember(artist.id) { mutableStateOf(artist.starred) }
-    var gathering by remember { mutableStateOf(false) }
-    var artistTracksForPlaylist by remember { mutableStateOf<List<Track>?>(null) }
-    var showPicker by remember { mutableStateOf(false) }
+    var gathering by remember(artist.id) { mutableStateOf(false) }
+    var artistTracksForPlaylist by remember(artist.id) { mutableStateOf<List<Track>?>(null) }
+    var showPicker by remember(artist.id) { mutableStateOf(false) }
 
     /**
      * Every song by this artist, across all albums. Deduped by song id and

@@ -454,7 +454,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                         }
                     }
                 },
-                onVisibleChanged = { miniPlayerVisible = it },
+                onVisibleChanged = { miniPlayerVisible = it; if (!it) miniPlayerDragY = 0f },
                 onDragOffsetChanged = { miniPlayerDragY = it },
                 modifier = Modifier
                     .align(androidx.compose.ui.Alignment.BottomCenter)
