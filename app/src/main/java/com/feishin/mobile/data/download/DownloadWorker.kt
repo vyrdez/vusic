@@ -49,7 +49,11 @@ class DownloadWorker @AssistedInject constructor(
 ) : CoroutineWorker(appContext, params) {
 
     private val notifyLock = Mutex()
-    @Volatile private var lastNotified = 0
+    @Volatile private var lastNotified = 0L
+    @Volatile private var lastNotifiedPct = -1
+    /** Room writes are throttled: at most ~2/sec and only on a visible step. */
+    @Volatile private var lastProgressWrite = 0L
+    @Volatile private var lastProgressPct = -1
 
     override suspend fun doWork(): Result {
         DownloadNotifications.ensureChannel(applicationContext)
@@ -257,15 +261,26 @@ class DownloadWorker @AssistedInject constructor(
 
     private suspend fun publishProgress(songId: String, title: String, bytes: Long, expected: Long, partial: File) {
         val progress = DownloadStateMachine.progress(bytes, expected)
-        dao.setProgress(
-            songId, bytes, progress, partial.absolutePath,
-            DownloadStatus.DOWNLOADING.name,
-        )
         val pct = (progress * 100).toInt()
-        if (pct == lastNotified) return
+        val now = System.currentTimeMillis()
+        // Persist to Room at most ~2/sec and only when the percentage changes by
+        // a visible step. Every chunk write would invalidate observeAll() and
+        // recompose the whole UI for 89+ concurrent songs.
+        val shouldWrite = now - lastProgressWrite >= 500 || pct != lastProgressPct
+        if (shouldWrite) {
+            dao.setProgress(
+                songId, bytes, progress, partial.absolutePath,
+                DownloadStatus.DOWNLOADING.name,
+            )
+            lastProgressWrite = now
+            lastProgressPct = pct
+        }
+        // Update the foreground notification at most once per second.
+        if (pct == lastNotifiedPct && now - lastNotified < 1000) return
         notifyLock.withLock {
-            if (pct == lastNotified) return@withLock
-            lastNotified = pct
+            if (pct == lastNotifiedPct && now - lastNotified < 1000) return@withLock
+            lastNotified = now
+            lastNotifiedPct = pct
             val n = DownloadNotifications.build(
                 applicationContext,
                 "Downloading",
