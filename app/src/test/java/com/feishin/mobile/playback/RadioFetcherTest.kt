@@ -62,7 +62,7 @@ private class RadioFakeRepo(
     override suspend fun starTrack(id: String, starred: Boolean) = Result.Ok(Unit)
     override suspend fun starAlbum(id: String, starred: Boolean) = Result.Ok(Unit)
     override suspend fun starArtist(id: String, starred: Boolean) = Result.Ok(Unit)
-    override suspend fun createPlaylist(name: String, trackIds: List<String>) = Result.Ok(Unit)
+    override suspend fun createPlaylist(name: String, trackIds: List<String>) = Result.Ok("playlist-id")
     override suspend fun addToPlaylist(playlistId: String, trackIds: List<String>) = Result.Ok(Unit)
     override suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>) = Result.Ok(Unit)
     override suspend fun deletePlaylist(id: String) = Result.Ok(Unit)

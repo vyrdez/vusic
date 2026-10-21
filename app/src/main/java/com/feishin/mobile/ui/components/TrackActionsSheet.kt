@@ -489,17 +489,36 @@ private fun ArtistSheetContent(
     val context = LocalContext.current
     var starred by remember(artist.id) { mutableStateOf(artist.starred) }
     var gathering by remember { mutableStateOf(false) }
+    var artistTracksForPlaylist by remember { mutableStateOf<List<Track>?>(null) }
+    var showPicker by remember { mutableStateOf(false) }
 
+    /**
+     * Every song by this artist, across all albums. Deduped by song id and
+     * ordered by album year (newest first) then track number. Runs off the
+     * main thread and respects the repository's slow-network timeouts.
+     */
     suspend fun allTracks(): List<Track> {
         val detail = (repo.artist(artist.id) as? Result.Ok)?.value ?: return emptyList()
-        val out = ArrayList<Track>()
-        for (al in detail.albums) {
+        // Collect (track, albumYear) pairs so we can sort by album year then
+        // track number without mutating the Track data class.
+        val pairs = mutableListOf<Pair<Track, Int>>()
+        val seenIds = mutableSetOf<String>()
+        for (al in detail.albums.distinctBy { it.id }) {
             when (val r = repo.album(al.id)) {
-                is Result.Ok -> out += r.value.tracks
+                is Result.Ok -> {
+                    val year = al.year ?: 0
+                    for (t in r.value.tracks) {
+                        if (t.id in seenIds) continue
+                        seenIds += t.id
+                        pairs += Pair(t, year)
+                    }
+                }
                 is Result.Err -> Unit
             }
         }
-        return out
+        return pairs
+            .sortedWith(compareBy({ -it.second }, { it.first.trackNo ?: 0 }, { it.first.id }))
+            .map { it.first }
     }
 
     fun withTracks(action: suspend (List<Track>) -> Unit) {
@@ -536,7 +555,25 @@ private fun ArtistSheetContent(
     )
     ActionTiles(
         onPlayNext = { withTracks { player.playNextAll(it) } },
-        onSaveToPlaylist = { messenger.show("Open a song to save it to a playlist") },
+        onSaveToPlaylist = {
+            if (gathering) return@ActionTiles
+            gathering = true
+            artistTracksForPlaylist = null
+            messenger.show("Loading songs...")
+            scope.launch {
+                try {
+                    val tracks = allTracks()
+                    if (tracks.isEmpty()) {
+                        messenger.show("No tracks found for ${artist.name}")
+                    } else {
+                        artistTracksForPlaylist = tracks
+                        showPicker = true
+                    }
+                } finally {
+                    gathering = false
+                }
+            }
+        },
         onShare = {
             shareText(context, artist.name)
             onDismiss()
@@ -558,6 +595,15 @@ private fun ArtistSheetContent(
             }
         }
     })
+    if (showPicker) {
+        val tracks = artistTracksForPlaylist ?: emptyList()
+        PlaylistPickerSheet(
+            tracks = tracks,
+            title = artist.name,
+            onDismiss = { showPicker = false; artistTracksForPlaylist = null },
+            repo = repo, messenger = messenger, playlistEvents = playlistEvents,
+        )
+    }
 }
 
 // ---------- Playlist sheet ----------

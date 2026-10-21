@@ -364,14 +364,31 @@ class MusicRepository @Inject constructor(
         unwrap(r.status, r.error?.message) { }
     }
 
-    override suspend fun createPlaylist(name: String, trackIds: List<String>): Result<Unit> = call {
-        val r = api.createPlaylist(name, trackIds.ifEmpty { null }).response
-        unwrap(r.status, r.error?.message) { }
+    override suspend fun createPlaylist(name: String, trackIds: List<String>): Result<String> = call {
+        val batchSize = 100
+        val firstBatch = trackIds.take(batchSize).ifEmpty { null }
+        val r = api.createPlaylist(name, firstBatch).response
+        val playlistId = runCatching {
+            r.playlist?.id ?: throw IllegalStateException("no playlist id")
+        }.getOrNull()
+        if (playlistId == null) return@call Result.Err(r.error?.message ?: "Create failed")
+        // Add any remaining tracks in batches via updatePlaylist.
+        for (batch in trackIds.drop(batchSize).chunked(batchSize)) {
+            val r2 = api.updatePlaylist(playlistId, songIdToAdd = batch).response
+            unwrap(r2.status, r2.error?.message) { }
+        }
+        Result.Ok(playlistId)
     }
 
     override suspend fun addToPlaylist(playlistId: String, trackIds: List<String>): Result<Unit> = call {
-        val r = api.updatePlaylist(playlistId, songIdToAdd = trackIds).response
-        unwrap(r.status, r.error?.message) { }
+        // Subsonic GET URLs have practical length limits; add in batches so a
+        // large artist (500+ songs) fits in a single request per batch.
+        val batchSize = 100
+        for (batch in trackIds.chunked(batchSize)) {
+            val r = api.updatePlaylist(playlistId, songIdToAdd = batch).response
+            unwrap(r.status, r.error?.message) { }
+        }
+        Result.Ok(Unit)
     }
 
     override suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit> = call {

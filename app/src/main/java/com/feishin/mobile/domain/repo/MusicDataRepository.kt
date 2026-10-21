@@ -40,7 +40,7 @@ interface MusicDataRepository {
     suspend fun starTrack(id: String, starred: Boolean): Result<Unit>
     suspend fun starAlbum(id: String, starred: Boolean): Result<Unit>
     suspend fun starArtist(id: String, starred: Boolean): Result<Unit>
-    suspend fun createPlaylist(name: String, trackIds: List<String> = emptyList()): Result<Unit>
+    suspend fun createPlaylist(name: String, trackIds: List<String> = emptyList()): Result<String>
     suspend fun addToPlaylist(playlistId: String, trackIds: List<String>): Result<Unit>
     suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit>
     suspend fun deletePlaylist(id: String): Result<Unit>
