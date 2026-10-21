@@ -50,7 +50,7 @@ fun AppNav(main: MainViewModel = hiltViewModel()) {
     }
 
     NavHost(nav, startDestination = start) {
-        composable(AuthRoutes.LOGIN) { LoginScreen() }
+        composable(AuthRoutes.LOGIN) { LoginScreen(messenger = main.messenger) }
         composable(AuthRoutes.MAIN) { MainScaffold(main = main, onLogout = { auth.logout() }) }
     }
 }

@@ -5,6 +5,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
@@ -28,38 +30,41 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.feishin.mobile.data.settings.SettingsStore
+import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.VusicControlDefaults
 import com.feishin.mobile.ui.theme.VusicSpacing
 
-/** Corner radius shared by both login buttons. */
-private val ButtonShape = RoundedCornerShape(12.dp)
+/** Corner radius shared by login fields and buttons. */
+private val LoginShape = RoundedCornerShape(12.dp)
 
 @Composable
-fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
+fun LoginScreen(
+    vm: LoginViewModel = hiltViewModel(),
+    messenger: UiMessenger,
+) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val settings by vm.settings.flow.collectAsStateWithLifecycle(initialValue = null)
     // Survive rotation; the password is intentionally kept out of saved state so
@@ -69,12 +74,11 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
     var pass by remember { mutableStateOf("") }
     val selfSigned = settings?.allowSelfSigned == true
 
-    // A Surface is required, not cosmetic: this screen used to be a bare Column,
-    // so LocalContentColor kept Compose's default Color.Black and every Text
-    // without an explicit colour (the title, the subtitle and the self-signed
-    // switch's label) was drawn black on the black background — invisible. The
-    // field labels still showed because OutlinedTextField takes its colours from
-    // the scheme rather than from the content colour.
+    // Clear the inline error whenever the user edits a field.
+    val onUrlChange = { text: String -> url = text; vm.clearError() }
+    val onUserChange = { text: String -> user = text; vm.clearError() }
+    val onPassChange = { text: String -> pass = text; vm.clearError() }
+
     Surface(
         Modifier.fillMaxSize(),
         color = VusicColors.Background,
@@ -83,18 +87,11 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
         Column(
             Modifier
                 .fillMaxSize()
-                // Scrolls so the fields and both buttons stay reachable on a
-                // small screen with the keyboard open; imePadding keeps the
-                // buttons above the keyboard (this screen is outside the
-                // scaffold, so nothing has consumed the IME inset here).
                 .verticalScroll(rememberScrollState())
                 .imePadding()
                 .padding(horizontal = VusicSpacing.ScreenHorizontal * 1.5f),
             verticalArrangement = Arrangement.Center,
         ) {
-            // The app mark, matching the icon and the Home header: the eighth
-            // note followed by the wordmark, so the first screen a new user
-            // sees already carries the branding.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     Icons.Default.MusicNote,
@@ -115,38 +112,41 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
                 color = VusicColors.SecondaryText,
             )
             Spacer(Modifier.height(VusicSpacing.SectionBottom * 3))
+
+            // Filled, rounded fields matching the app's search field.
             OutlinedTextField(
-                value = url, onValueChange = { url = it },
-                label = { Text("Server URL (https://host:4533/music)") },
-                modifier = Modifier.fillMaxWidth(),
+                value = url,
+                onValueChange = onUrlChange,
+                label = { Text("Server URL") },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 singleLine = true,
             )
             Spacer(Modifier.height(VusicSpacing.CardGap / 2))
             OutlinedTextField(
-                value = user, onValueChange = { user = it },
+                value = user,
+                onValueChange = onUserChange,
                 label = { Text("Username") },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 singleLine = true,
             )
             Spacer(Modifier.height(VusicSpacing.CardGap / 2))
-            OutlinedTextField(
-                value = pass, onValueChange = { pass = it },
-                label = { Text("Password") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-            )
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                OutlinedTextField(
+                    value = pass,
+                    onValueChange = onPassChange,
+                    label = { Text("Password") },
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    singleLine = true,
+                )
+            }
             Spacer(Modifier.height(VusicSpacing.SectionBottom * 2))
 
-            // Full-width labelled row: title, one-line explanation, switch on the
-            // right, all vertically centred, 48dp minimum, whole row tappable and
-            // left-aligned with the fields above.
             val toggle = { on: Boolean -> vm.setAllowSelfSigned(on) }
             Row(
                 Modifier
                     .fillMaxWidth()
                     .heightIn(min = 56.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(LoginShape)
                     .clickable(
                         role = Role.Switch,
                         onClick = { toggle(!selfSigned) },
@@ -167,14 +167,13 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
                         maxLines = 2,
                     )
                 }
-                Switch(
+                androidx.compose.material3.Switch(
                     checked = selfSigned,
                     onCheckedChange = toggle,
                     colors = VusicControlDefaults.switchColors(),
                 )
             }
 
-            // Inline warning, animated in and out.
             AnimatedVisibility(
                 visible = selfSigned,
                 enter = fadeIn(Motion.fade(Motion.Fast)) +
@@ -190,13 +189,38 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
                 )
             }
 
-            ui.message?.let {
-                Text(
-                    it,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
+            // Inline error card: theme error colors, icon, dismissible,
+            // clears when the user edits a field.
+            ui.message?.let { message ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = VusicSpacing.ScreenHorizontal * 1.5f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f)),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            maxLines = 2,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(
+                            onClick = { vm.clearError() },
+                        ) {
+                            Text("Dismiss")
+                        }
+                    }
+                }
             }
             Spacer(Modifier.height(VusicSpacing.CardGap))
             if (ui.busy) {
@@ -205,27 +229,32 @@ fun LoginScreen(vm: LoginViewModel = hiltViewModel()) {
                 }
             } else {
                 val enabled = url.isNotBlank() && user.isNotBlank()
-                // Same height, corner radius and side padding for both, so the
-                // pair reads as one control.
                 Button(
                     onClick = { vm.testAndConnect(url, user, pass) },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     enabled = enabled,
-                    shape = ButtonShape,
+                    shape = CircleShape,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = VusicColors.Accent,
                         contentColor = VusicColors.OnAccent,
                     ),
                 ) { Text("Test & Connect") }
                 Spacer(Modifier.height(VusicSpacing.CardGap / 2))
-                OutlinedButton(
+                Button(
                     onClick = { vm.testOnly(url, user, pass) },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     enabled = enabled,
-                    shape = ButtonShape,
+                    shape = CircleShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
                 ) { Text("Test connection only") }
             }
             Spacer(Modifier.height(VusicSpacing.SectionBottom * 2))
         }
     }
+
+    // Snackbar (shared message host per section A) for the same error.
+    ui.message?.let { messenger.show(it) }
 }
