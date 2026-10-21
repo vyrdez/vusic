@@ -34,7 +34,6 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -46,6 +45,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,6 +81,7 @@ import com.feishin.mobile.ui.components.LocalMiniClearance
 import com.feishin.mobile.ui.components.MiniPlayer
 import com.feishin.mobile.ui.components.MiniPlayerHeight
 import com.feishin.mobile.ui.components.MiniPlayerNavGap
+import com.feishin.mobile.ui.components.MessageHost
 import com.feishin.mobile.ui.components.OfflineBanner
 import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.detail.AlbumDetailScreen
@@ -134,6 +135,11 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     val navScope = rememberCoroutineScope()
     val username by main.auth.loginState.collectAsStateWithLifecycle()
     val topBar = remember { TopBarController() }
+
+    // Mini player visibility + drag offset, so the shared message host can
+    // position itself above the card instead of behind it.
+    var miniPlayerVisible by remember { mutableStateOf(false) }
+    var miniPlayerDragY by remember { mutableFloatStateOf(0f) }
 
     // Widget cover tap (cold start or warm): open Now Playing once per nudge.
     val nudge by com.feishin.mobile.ui.components.NowPlayingNudge.requests.collectAsStateWithLifecycle()
@@ -206,8 +212,10 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
             // it from outside the scaffold's inset handling.
             var navBarHeightPx by remember { mutableIntStateOf(0) }
             val outerDensity = LocalDensity.current
+            val density = LocalDensity.current
+            val imeBottomPx = WindowInsets.ime.getBottom(density)
             Scaffold(
-                snackbarHost = { SnackbarHost(snackbar) },
+                snackbarHost = {},
                 containerColor = VusicColors.Background,
                 topBar = {
                     if (isDetail && !topBar.hideBar) {
@@ -233,7 +241,6 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 // IME inset once.
                 val density = LocalDensity.current
                 val layoutDirection = LocalLayoutDirection.current
-                val imeBottomPx = WindowInsets.ime.getBottom(density)
                 // Scaffold already lays the content out ABOVE the bottom bar, so
                 // the bar's height is not added again here (doing so double-counted
                 // it and pushed the floating card ~90dp off the nav bar).
@@ -447,9 +454,23 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                         }
                     }
                 },
+                onVisibleChanged = { miniPlayerVisible = it },
+                onDragOffsetChanged = { miniPlayerDragY = it },
                 modifier = Modifier
                     .align(androidx.compose.ui.Alignment.BottomCenter)
                     .padding(bottom = with(outerDensity) { navBarHeightPx.toDp() } + MiniPlayerNavGap),
+            )
+
+            // Shared message host: appears fully above the mini player (when
+            // visible) or the bottom bar, moves with the card while dragged,
+            // and clears the keyboard. Drawn after the mini player so its
+            // action buttons stay tappable.
+            MessageHost(
+                snackbar = snackbar,
+                miniPlayerVisible = miniPlayerVisible,
+                miniPlayerDragY = miniPlayerDragY,
+                navBarHeightPx = navBarHeightPx,
+                imeBottomPx = imeBottomPx,
             )
 
             // Overlays draw above the scaffold in z-order: full-screen player

@@ -53,6 +53,7 @@ import com.feishin.mobile.ui.theme.LocalPlayingColors
 import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.playingColor
+import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -126,10 +127,15 @@ fun MiniPlayer(
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
     onQueueCleared: (PlayerManager.ClearedQueue) -> Unit = {},
+    /** Reported whenever the card's visibility flips (queue gains/loses its first item). */
+    onVisibleChanged: (Boolean) -> Unit = {},
+    /** Reported during vertical drags, in dp of downward travel from the card's rest position. */
+    onDragOffsetChanged: (Float) -> Unit = {},
 ) {
     val queue by player.queue.collectAsStateWithLifecycle()
     val current by player.current.collectAsStateWithLifecycle()
     val isPlaying by player.isPlaying.collectAsStateWithLifecycle()
+    val density = LocalDensity.current
     // NOTE: position/duration are deliberately NOT collected as state. The
     // ring below samples them at ~4Hz in a coroutine and draws in the draw
     // phase, so position ticks never recompose the card.
@@ -148,6 +154,7 @@ fun MiniPlayer(
             targetValue = if (visible) 1f else 0f,
             animationSpec = if (visible) Motion.layoutSpring() else Motion.sheetSpring(),
         )
+        onVisibleChanged(visible)
     }
 
     val song = current
@@ -357,6 +364,7 @@ fun MiniPlayer(
                             }
                         } else {
                             scope.launch { dragY.snapTo(ty.coerceIn(0f, cardH * 1.4f)) }
+                            onDragOffsetChanged(ty / density.density)
                         }
                     },
                     onDragEnd = {
@@ -399,11 +407,15 @@ fun MiniPlayer(
                             MiniPlayerGesture.Action.OPEN -> {
                                 springBack()
                                 onOpen()
+                                onDragOffsetChanged(0f)
                             }
-                            MiniPlayerGesture.Action.NONE -> springBack()
+                            MiniPlayerGesture.Action.NONE -> {
+                                springBack()
+                                onDragOffsetChanged(0f)
+                            }
                         }
                     },
-                    onDragCancel = { springBack() },
+                    onDragCancel = { springBack(); onDragOffsetChanged(0f) },
                 )
             }
             .height(MiniPlayerHeight),
