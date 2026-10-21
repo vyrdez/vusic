@@ -1,6 +1,25 @@
 # Changelog
 
-## 1.1.3 — 2026-10-20
+## 1.1.4 - 2026-10-21
+
+### Fixed
+- In-app messages (snackbars, Undo, download progress) now appear fully above
+  the floating mini player and bottom navigation bar, move with the mini player
+  when it is dragged, and never sit behind the keyboard.
+- "Keep downloaded" on large playlists no longer freezes the app: Room progress
+  writes are throttled (~2/sec, visible steps only) and notifications update at
+  most once per second, so hundreds of concurrent downloads don't flood the UI.
+- Artist page: "Save to playlist" now saves all of the artist's songs (every
+  album, deduped, ordered by year then track), opening the existing playlist
+  picker with a "Loading songs..." progress message. Large artists are added in
+  batches of 100. Existing playlist entries are skipped.
+- Login: failed "Test & Connect" / "Test connection only" no longer resets the
+  form — fields keep their values, and a themed inline error card plus snackbar
+  shows a specific friendly message (wrong credentials, unreachable server,
+  invalid URL, untrusted certificate, etc.). Login screen restyled to match the
+  app (filled rounded fields, pill buttons, app logo).
+
+## 1.1.3 - 2026-10-20
 
 ### Fixed
 - Search: the "offline — downloaded music only" hint no longer paints behind the

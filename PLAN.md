@@ -1346,3 +1346,64 @@ in a single prep commit for consistency.
   offline banner and Library sort/layout settings untouched.
 
 Reference: `docs/reference/before-8.3/` and `docs/reference/after-8.3/`.
+
+## Phase 8.4 status: messages above mini player, download performance, save artist to playlist, login errors and restyle (1.1.4)
+
+Four sections, one commit each, version bumped to 1.1.4 / versionCode 7.
+
+- **P8.4-A in-app messages above the mini player** (Nav.kt, MessageHost, MiniPlayer).
+  Root cause reproduced on device: the `SnackbarHost` lives inside the Scaffold's
+  content slot while the floating mini player is hoisted above the scaffold in a
+  separate full-window `Box`, so snackbars paint underneath the card and their
+  text is cut off. Fix: the snackbar host is removed from the scaffold and a new
+  shared `MessageHost` composable is placed after the mini player in the NavHost
+  `Box` (correct z-order). It reads the mini player's measured bottom edge via
+  `onVisibleChanged` / `onDragOffsetChanged` callbacks from `MiniPlayer` and the
+  nav bar / IME insets measured in `Nav.kt`, then positions itself above the
+  card (or above the nav bar when the card is hidden, above the keyboard when
+  open) with an animated gap. Messages move smoothly as the card appears,
+  disappears, or is dragged. Mini player look/gestures untouched.
+- **P8.4-B download performance** (DownloadWorker).
+  Root cause measured on emulator: `publishProgress()` wrote to Room on every
+  64 KB chunk (~80 Room writes per 5 MB song), invalidating `observeAll()` and
+  recomposing the whole UI for every chunk of every concurrent song — 89-song
+  "keep downloaded" produced thousands of Room invalidations and visible jank.
+  Fix: Room progress writes are throttled to ~2/sec and only when the percentage
+  changes by a visible step (in-memory between writes, persisted on completion /
+  pause); notification updates are throttled to ~1/sec. Enqueue remains a single
+  `upsertAll` transaction. Already-downloaded songs are skipped.
+  Tests added for batch enqueue (one transaction, only missing songs), progress
+  throttling (a flood of updates yields few emissions), and resume-at-start.
+  Measurements saved in `docs/perf/downloads-8.4.md`.
+- **P8.4-C save all artist songs to a playlist** (TrackActionsSheet, MusicRepository).
+  The artist page's three-dot "Save to playlist" previously showed
+  "Open a song to save it to a playlist". Fix: it now gathers every song by the
+  artist across all albums (off-main, deduped by song id, ordered by album year
+  then track number), shows "Loading songs..." while gathering, and opens the
+  existing `PlaylistPickerSheet` with all tracks (default new playlist name =
+  artist name). `MusicRepository.addToPlaylist` and `createPlaylist` batch Subsonic
+  `updatePlaylist` / `createPlaylist` calls at 100 song IDs per request so large
+  artists (500+ songs) work. Existing playlist entries are skipped; the result
+  message says "Added N songs to <playlist>. M were already there." Offline
+  explains a connection is required. Artist page's other actions unchanged.
+  Unit tests for song gathering (duplicates, ordering, empty artist, one album),
+  batching, and already-in-playlist skip.
+- **P8.4-D login errors and restyle** (LoginScreen, LoginViewModel, AppNav).
+  Root cause: on failure the `LoginUi` state was replaced with a fresh
+  `LoginUi()` dropping `busy`/`message`, and the error text was just an inline
+  `Text` below the fields — no specific message, no snackbar, fields could lose
+  focus. Fix: a failed "Test & Connect" / "Test connection only" never resets
+  the form (URL, username, password all kept via `rememberSaveable`/`remember`),
+  shows an inline themed error card above the buttons (icon, 1–2 lines,
+  dismissible, clears on field edit) AND a snackbar per section A. Specific
+  friendly messages per failure class (wrong credentials, unreachable server,
+  invalid URL, untrusted certificate, non-Navidrome server, generic with details).
+  While testing: button shows progress indicator, fields disabled, 10 s timeout.
+  Restyle: filled rounded fields matching the app's search field, pill-shaped
+  primary/secondary buttons, app logo mark + "Vusic" title, self-signed switch as
+  a Settings-style row with the switch on the right. Works in Dark/Light/dynamic
+  color. IME Next/Done, password show/hide, autofill hints, TalkBack labels.
+  Authentication/token logic and credential storage unchanged.
+  Unit tests for error mapping (each case) and "failure keeps form state".
+
+Reference: `docs/reference/before-8.4/` and `docs/reference/after-8.4/`.
