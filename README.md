@@ -20,73 +20,40 @@ System and Light themes.
 
 ---
 
-## Features
+## What it does
 
-**Playback**
+Vusic streams and caches music from your own Navidrome server. The queue is
+gapless-capable ExoPlayer with a volume-ramp crossfade, ReplayGain (peak-limited,
+never clips), per-network quality for mobile and Wi-Fi, and a smart prefetch cache
+so transitions have no loading gap. There's a full-screen Now Playing with
+synced lyrics, a mini player you can drag to skip, clear, or open Now Playing,
+and a queue sheet with drag-reorder, swipe-to-remove, shuffle with order
+restore, save-as-playlist, radio, and undo after clearing.
 
-- Streaming and local playback through Media3/ExoPlayer, with gapless support.
-- Crossfade as a volume ramp between tracks (see *Limitations*).
-- ReplayGain using the server's OpenSubsonic gain/peak values, applied as a
-  peak-limited scale that cannot clip.
-- Per-network quality (bitrate and format) for mobile and Wi-Fi.
-- Smart prefetch cache: the next queue items are fetched ahead of time, so
-  transitions have no loading gap and a repeat play makes no network request.
-- Synced lyrics when the server provides them.
-- Sleep-timer-free by design (see *Limitations*).
+The library has Home (Listen again, New releases, Forgotten favorites, genre
+chips, mixes), Library tabs (playlists, downloads, albums, artists, songs) with
+per-tab sort and grid/list layouts, search with recent searches, artist and
+album pages, Favorites and a Cached collection. You can download songs or whole
+albums for offline playback, and offline scrobbles and stars are queued and
+replayed with their original timestamps when you reconnect.
 
-**Queue**
+It also ships an Android Auto service (Home, Library, Favorites, Downloads
+tabs, voice search, transport + shuffle/repeat/seek), a compact and large home
+screen widget with transport controls that survive the app process being killed,
+an artwork-tinted Now Playing and queue, System/Dark/Light themes with live
+switching, and a refresh-rate preference (Auto/Max/Standard 60 Hz).
 
-- Drag to reorder, swipe to remove, shuffle with order restore.
-- Save the queue as a playlist, add or remove individual tracks.
-- Start a radio station from any song.
-- Undo after clearing the queue, from the mini player or the queue screen.
-
-**Library and discovery**
-
-- Home: Listen again, New releases, Forgotten favorites, genre chips, mixes.
-- Library tabs for playlists, downloads, albums, artists and songs, each with
-  its own grid/list layout and sort order.
-- Search with result chips, "view more" and recent searches.
-- Artist and album pages, playlist pages.
-- Favorites and a Cached collection of fully downloaded-for-offline songs.
-
-**Offline**
-
-- Download songs or whole albums/collections.
-- Offline browsing, playback and radio; offline scrobbles and stars are queued
-  locally and replayed with their original timestamps once you reconnect.
-- Offline banner, Wi-Fi-only downloads, storage cap with live disk-usage display.
-
-**Everywhere else**
-
-- **Android Auto**: a Media3 `MediaLibraryService` with Home, Library, Favorites
-  and Downloads tabs, paged browsing, voice search, transport controls plus
-  shuffle/repeat/seek, and Favorite / Start-radio actions. The car and the phone
-  share one queue.
-- **Home screen widget**: compact and large layouts with cover art, title/artist
-  and previous/play-pause/next/favorite. Updates on track changes, and the
-  controls keep working even after the app process has been killed.
-- **Notification and lock screen**: artwork, transport, and a seek bar.
-- **Themes**: System, Dark and Light, switching live. Optional Dynamic Now
-  Playing colour derived from the artwork.
-- **Refresh rate**: Auto (peak rate while interacting, system lowers it when
-  idle), Max (hold the peak rate) or Standard 60 Hz. The setting hides itself on
-  devices that expose only one display mode.
-- **Accessibility**: content descriptions on icon buttons, 48dp minimum touch
-  targets, text that scales to 1.3x without clipping, TalkBack-navigable on the
-  main screens.
-
----
+Accessibility was built in from the start: content descriptions, 48dp touch
+targets, text that scales to 1.3x without clipping, full TalkBack navigation on
+the main screens.
 
 ## Requirements
 
-- **Android 8.0 (API 26) or newer.**
-- **A Navidrome server** reachable from the device. Any Subsonic-compatible
-  server that exposes the OpenSubsonic endpoints Vusic uses should also work.
+- Android 8.0 (API 26) or newer.
+- A Navidrome server reachable from the device. Any Subsonic-compatible server
+  exposing the OpenSubsonic endpoints Vusic uses should also work.
 - A Navidrome user account. Sign in from the login screen; credentials are
   stored in Android's `EncryptedSharedPreferences`.
-
----
 
 ## Installing a release
 
@@ -113,16 +80,11 @@ Official releases are signed with a certificate whose SHA-256 fingerprint is:
 Check it with `apksigner verify --print-certs` if you want to be sure the APK
 came from this project.
 
----
-
 ## Building from source
 
-Prerequisites:
-
-- **JDK 17**
-- Android SDK with **platform 34**, **build-tools 34.0.0** and **platform-tools**
-- Point `sdk.dir` at your SDK in `local.properties` (Android Studio writes this
-  for you), or set the `ANDROID_HOME` environment variable.
+Prerequisites: **JDK 17**, Android SDK with **platform 34**, **build-tools 34.0.0**
+and **platform-tools**. Point `sdk.dir` at your SDK in `local.properties` (Android
+Studio writes this for you), or set `ANDROID_HOME`.
 
 ```bash
 git clone https://github.com/vyrdez/vusic.git
@@ -174,38 +136,32 @@ keyPassword=your-key-password
 
 Both `keystore/` and `*.jks` are gitignored. Back your key up somewhere safe.
 
----
-
 ## Architecture
 
-Two Gradle modules:
-
-| Module            | Purpose                                                          |
-| ----------------- | ---------------------------------------------------------------- |
-| `app`             | The whole application.                                            |
-| `baselineprofile` | A hand-written Baseline Profile packaged into the release APK.     |
+Two Gradle modules: `app` (the whole application) and `baselineprofile` (a
+hand-written Baseline Profile packaged into the release APK).
 
 Inside `app/src/main/java/com/feishin/mobile`:
 
-| Package            | Responsibility                                                     |
-| ------------------ | ------------------------------------------------------------------ |
-| `core/common`      | Pure helpers: URL building, auth tokens, replay-gain math, row layout, lyrics cache. |
-| `core/network`     | Stream/cover-art URL providers and request signing.                 |
-| `core/ui`          | Framework-free UI logic, e.g. the refresh-rate mode selector.       |
-| `data/remote`      | Retrofit `SubsonicApi` and DTOs, the redacting HTTP logger.          |
-| `data/network`     | OkHttp setup, TLS trust for self-signed servers, host rewriting.     |
-| `data/db`          | Room database for offline scrobbles, stars and download bookkeeping.  |
-| `data/auth`        | Credential store (`EncryptedSharedPreferences`) and session state.   |
-| `data/cache`, `data/download` | Media3 caches and the WorkManager download pipeline.      |
+| Package | Responsibility |
+| --- | --- |
+| `core/common` | Pure helpers: URL building, auth tokens, replay-gain math, row layout, lyrics cache. |
+| `core/network` | Stream/cover-art URL providers and request signing. |
+| `core/ui` | Framework-free UI logic, e.g. the refresh-rate mode selector. |
+| `data/remote` | Retrofit `SubsonicApi` and DTOs, the redacting HTTP logger. |
+| `data/network` | OkHttp setup, TLS trust for self-signed servers, host rewriting. |
+| `data/db` | Room database for offline scrobbles, stars and download bookkeeping. |
+| `data/auth` | Credential store (`EncryptedSharedPreferences`) and session state. |
+| `data/cache`, `data/download` | Media3 caches and the WorkManager download pipeline. |
 | `data/settings`, `data/favorites`, `data/queue` | DataStore-backed settings, favourites, queue persistence. |
-| `data/repo`, `data/mapper` | Repositories and DTO → domain mapping.                  |
+| `data/repo`, `data/mapper` | Repositories and DTO → domain mapping. |
 | `domain/model`, `domain/repo` | Platform-independent models and repository interfaces. |
-| `di`               | Hilt modules wiring the graph.                                      |
-| `playback`         | `PlayerService` (Media3 `MediaLibraryService`), `PlayerManager`, prefetch, audio focus. |
-| `ui/`              | Compose screens: `home`, `library`, `player`, `search`, `detail`, `settings`, `login`, `offline`, plus `components`, `theme`, `navigation`. |
-| `widget`           | Glance home-screen widget and its action receiver.                  |
+| `di` | Hilt modules wiring the graph. |
+| `playback` | `PlayerService` (Media3 `MediaLibraryService`), `PlayerManager`, prefetch, audio focus. |
+| `ui/` | Compose screens: `home`, `library`, `player`, `search`, `detail`, `settings`, `login`, `offline`, plus `components`, `theme`, `navigation`. |
+| `widget` | Glance home-screen widget and its action receiver. |
 
-Key choices:
+A few choices worth calling out:
 
 - **One player.** A single Media3 `PlayerService` is the only playback engine.
   The queue, the mini player, the widget, Android Auto and the notification all
@@ -220,8 +176,6 @@ Key choices:
   emulators); English-only resources; all HTTP logging compiled out of release
   builds.
 
----
-
 ## Settings overview
 
 Settings is a single list of six sub-screens:
@@ -232,12 +186,11 @@ Settings is a single list of six sub-screens:
   colour, per-tab grid/list layout, per-tab sort order, mix length, refresh rate.
 - **Sound & Playback** — bitrate and format per network, crossfade, ReplayGain,
   gapless, headphone/volume/focus behaviour, playback cache size.
-- **Connectivity** — allow self-signed certificates, test connection.
+- **Connectivity** — allow self-signed certificates, test connection, mobile
+  data toggles for downloads and auto-caching.
 - **Storage** — disk usage, download queue and concurrency, song-cache size,
   download limits, clear-cache actions.
 - **About** — version and build number.
-
----
 
 ## Limitations
 
@@ -260,8 +213,6 @@ These are deliberate, not oversights:
   no per-server enforcement at runtime.
 - **English only.** Resources are packaged for `en` alone.
 
----
-
 ## Acknowledgements
 
 - Inspired by the open-source [Feishin](https://github.com/Feishin) project. No
@@ -272,8 +223,6 @@ These are deliberate, not oversights:
   servers.
 - The application id `com.feishin.mobile` was chosen early in development and is
   retained so existing installs keep receiving updates.
-
----
 
 ## Disclaimer
 
