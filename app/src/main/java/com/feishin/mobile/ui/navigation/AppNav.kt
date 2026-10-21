@@ -1,19 +1,25 @@
 package com.feishin.mobile.ui.navigation
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.feishin.mobile.ui.MainScaffold
 import com.feishin.mobile.ui.MainViewModel
+import com.feishin.mobile.ui.components.MessageHost
 import com.feishin.mobile.ui.login.LoginScreen
 
 object AuthRoutes {
@@ -50,7 +56,26 @@ fun AppNav(main: MainViewModel = hiltViewModel()) {
     }
 
     NavHost(nav, startDestination = start) {
-        composable(AuthRoutes.LOGIN) { LoginScreen(messenger = main.messenger) }
+        composable(AuthRoutes.LOGIN) {
+            // The login screen sits outside MainScaffold, so it needs its own
+            // collector + message host: the same section-A host, without a mini
+            // player or bottom bar, still above the keyboard.
+            val snackbar = remember { SnackbarHostState() }
+            LaunchedEffect(Unit) {
+                main.messenger.messages.collect { snackbar.showSnackbar(it) }
+            }
+            Box(Modifier.fillMaxSize()) {
+                LoginScreen(messenger = main.messenger)
+                val density = LocalDensity.current
+                MessageHost(
+                    snackbar = snackbar,
+                    miniPlayerVisible = false,
+                    miniPlayerDragY = 0f,
+                    navBarHeightPx = WindowInsets.navigationBars.getBottom(density),
+                    imeBottomPx = WindowInsets.ime.getBottom(density),
+                )
+            }
+        }
         composable(AuthRoutes.MAIN) { MainScaffold(main = main, onLogout = { auth.logout() }) }
     }
 }

@@ -499,26 +499,18 @@ private fun ArtistSheetContent(
      */
     suspend fun allTracks(): List<Track> {
         val detail = (repo.artist(artist.id) as? Result.Ok)?.value ?: return emptyList()
-        // Collect (track, albumYear) pairs so we can sort by album year then
-        // track number without mutating the Track data class.
-        val pairs = mutableListOf<Pair<Track, Int>>()
-        val seenIds = mutableSetOf<String>()
+        // Collect (albumYear, songs) pairs so the shared, pure ordering helper can
+        // dedupe by song id and sort by album year then track number off-main.
+        val albums = mutableListOf<Pair<Int, List<Track>>>()
         for (al in detail.albums.distinctBy { it.id }) {
             when (val r = repo.album(al.id)) {
-                is Result.Ok -> {
-                    val year = al.year ?: 0
-                    for (t in r.value.tracks) {
-                        if (t.id in seenIds) continue
-                        seenIds += t.id
-                        pairs += Pair(t, year)
-                    }
-                }
+                is Result.Ok -> albums += (al.year ?: 0) to r.value.tracks
                 is Result.Err -> Unit
             }
         }
-        return pairs
-            .sortedWith(compareBy({ -it.second }, { it.first.trackNo ?: 0 }, { it.first.id }))
-            .map { it.first }
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            com.feishin.mobile.core.common.ArtistTrackOrder.albumsToTracks(albums)
+        }
     }
 
     fun withTracks(action: suspend (List<Track>) -> Unit) {

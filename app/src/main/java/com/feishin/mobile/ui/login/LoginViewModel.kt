@@ -7,18 +7,25 @@ import com.feishin.mobile.data.auth.AuthRepository
 import com.feishin.mobile.data.settings.SettingsStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
+/**
+ * Login form state.
+ *
+ * [message] drives the inline card; [isError] picks the error colours, so a
+ * successful "Test connection only" is a plain confirmation, not a red error.
+ * Nothing here holds the typed URL/username/password: those live in the
+ * composable's own state, so a failed attempt can never reset them.
+ */
 data class LoginUi(
     val busy: Boolean = false,
     val message: String? = null,
-    val errorTitle: String? = null,
-    val errorDetails: String? = null,
+    val isError: Boolean = false,
+    val details: String? = null,
 )
 
 @HiltViewModel
@@ -39,16 +46,12 @@ class LoginViewModel @Inject constructor(
                 auth.connect(serverUrl, username, password)
             }
             _ui.value = when (result) {
+                // Navigation is driven by AuthRepository.loginState, not from here.
                 is Result.Ok -> LoginUi()
-                is Result.Err -> LoginUi(
-                    busy = false,
-                    message = mapConnectError(result),
-                    errorTitle = null,
-                    errorDetails = null,
-                )
+                is Result.Err -> result.toFailureUi()
                 null -> LoginUi(
-                    busy = false,
-                    message = "Couldn't reach the server. Check the address and your connection.",
+                    message = LoginErrorMapper.TIMEOUT,
+                    isError = true,
                 )
             }
         }
@@ -63,8 +66,11 @@ class LoginViewModel @Inject constructor(
             }
             _ui.value = when (result) {
                 is Result.Ok -> LoginUi(message = "Connection OK")
-                is Result.Err -> LoginUi(message = mapProbeError(result))
-                null -> LoginUi(message = "Couldn't reach the server. Check the address and your connection.")
+                is Result.Err -> result.toFailureUi()
+                null -> LoginUi(
+                    message = LoginErrorMapper.TIMEOUT,
+                    isError = true,
+                )
             }
         }
     }
@@ -75,54 +81,16 @@ class LoginViewModel @Inject constructor(
 
     /** Clear the error when the user edits a field. */
     fun clearError() {
-        _ui.value = _ui.value.copy(message = null, errorTitle = null, errorDetails = null)
+        if (_ui.value.message == null && _ui.value.details == null) return
+        _ui.value = _ui.value.copy(message = null, details = null)
     }
 
-    /** Map a connect error to a specific, friendly user message (no secrets). */
-    private fun mapConnectError(err: Result.Err): String {
-        return when {
-            err.message == "Invalid server URL." -> {
-                "That address doesn't look right. It should look like https://host:4533/music"
-            }
-            err.message == "Username is empty." -> "Please enter a username."
-            err.cause is java.net.UnknownHostException ->
-                "Couldn't reach the server. Check the address and your connection."
-            err.cause is java.net.SocketTimeoutException ->
-                "Couldn't reach the server. Check the address and your connection."
-            err.cause is javax.net.ssl.SSLHandshakeException ->
-                "The server's certificate isn't trusted. " +
-                    "If this is your own server, turn on 'Allow self-signed certificate'."
-            err.message.contains("40", ignoreCase = true) ||
-                err.message.contains("Wrong username or password", ignoreCase = true) ->
-                "Wrong username or password."
-            err.message.contains("certificate", ignoreCase = true) ||
-                err.message.contains("TLS", ignoreCase = true) ->
-                "The server's certificate isn't trusted. " +
-                    "If this is your own server, turn on 'Allow self-signed certificate'."
-            else -> {
-                err.message ?: "Connection failed."
-            }
-        }
-    }
-
-    /** Map a probe error to a specific, friendly user message (no secrets). */
-    private fun mapProbeError(err: Result.Err): String {
-        return when {
-            err.message == "Invalid server URL." -> {
-                "That address doesn't look right. It should look like https://host:4533/music"
-            }
-            err.message == "Username is empty." -> "Please enter a username."
-            err.cause is java.net.UnknownHostException ->
-                "Couldn't reach the server. Check the address and your connection."
-            err.cause is java.net.SocketTimeoutException ->
-                "Couldn't reach the server. Check the address and your connection."
-            err.cause is javax.net.ssl.SSLHandshakeException ->
-                "The server's certificate isn't trusted. " +
-                    "If this is your own server, turn on 'Allow self-signed certificate'."
-            err.message.contains("40", ignoreCase = true) ||
-                err.message.contains("Wrong username or password", ignoreCase = true) ->
-                "Wrong username or password."
-            else -> "Connection failed: ${err.message ?: "unknown error"}"
-        }
+    private fun Result.Err.toFailureUi(): LoginUi {
+        val failure = LoginErrorMapper.map(this)
+        return LoginUi(
+            message = failure.message,
+            isError = true,
+            details = failure.details,
+        )
     }
 }

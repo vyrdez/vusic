@@ -365,15 +365,13 @@ class MusicRepository @Inject constructor(
     }
 
     override suspend fun createPlaylist(name: String, trackIds: List<String>): Result<String> = call {
-        val batchSize = 100
-        val firstBatch = trackIds.take(batchSize).ifEmpty { null }
-        val r = api.createPlaylist(name, firstBatch).response
+        val r = api.createPlaylist(name, com.feishin.mobile.core.common.PlaylistBatch.firstCreateChunk(trackIds)).response
         val playlistId = runCatching {
             r.playlist?.id ?: throw IllegalStateException("no playlist id")
         }.getOrNull()
         if (playlistId == null) return@call Result.Err(r.error?.message ?: "Create failed")
         // Add any remaining tracks in batches via updatePlaylist.
-        for (batch in trackIds.drop(batchSize).chunked(batchSize)) {
+        for (batch in com.feishin.mobile.core.common.PlaylistBatch.remainingChunks(trackIds)) {
             val r2 = api.updatePlaylist(playlistId, songIdToAdd = batch).response
             unwrap(r2.status, r2.error?.message) { }
         }
@@ -383,8 +381,7 @@ class MusicRepository @Inject constructor(
     override suspend fun addToPlaylist(playlistId: String, trackIds: List<String>): Result<Unit> = call {
         // Subsonic GET URLs have practical length limits; add in batches so a
         // large artist (500+ songs) fits in a single request per batch.
-        val batchSize = 100
-        for (batch in trackIds.chunked(batchSize)) {
+        for (batch in com.feishin.mobile.core.common.PlaylistBatch.chunks(trackIds)) {
             val r = api.updatePlaylist(playlistId, songIdToAdd = batch).response
             unwrap(r.status, r.error?.message) { }
         }

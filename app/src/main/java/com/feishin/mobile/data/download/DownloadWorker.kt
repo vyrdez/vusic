@@ -23,7 +23,6 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -49,11 +48,14 @@ class DownloadWorker @AssistedInject constructor(
 ) : CoroutineWorker(appContext, params) {
 
     private val notifyLock = Mutex()
-    @Volatile private var lastNotified = 0L
-    @Volatile private var lastNotifiedPct = -1
-    /** Room writes are throttled: at most ~2/sec and only on a visible step. */
-    @Volatile private var lastProgressWrite = 0L
-    @Volatile private var lastProgressPct = -1
+    /**
+     * Room writes are throttled: at most ~2/sec and only on a visible step.
+     * Without this, every 64 KB chunk invalidated observeAll() and recomposed
+     * the UI for every concurrent song.
+     */
+    private val progressThrottle = com.feishin.mobile.core.common.ProgressThrottle(minIntervalMs = 500)
+    /** Foreground notification updates: at most ~1/sec. */
+    private val notifyThrottle = com.feishin.mobile.core.common.ProgressThrottle(minIntervalMs = 1000)
 
     override suspend fun doWork(): Result {
         DownloadNotifications.ensureChannel(applicationContext)
@@ -263,24 +265,21 @@ class DownloadWorker @AssistedInject constructor(
         val progress = DownloadStateMachine.progress(bytes, expected)
         val pct = (progress * 100).toInt()
         val now = System.currentTimeMillis()
-        // Persist to Room at most ~2/sec and only when the percentage changes by
-        // a visible step. Every chunk write would invalidate observeAll() and
-        // recompose the whole UI for 89+ concurrent songs.
-        val shouldWrite = now - lastProgressWrite >= 500 || pct != lastProgressPct
-        if (shouldWrite) {
+        // Persist to Room at most ~2/sec and only when the percentage moves by a
+        // visible step: every chunk write invalidated observeAll() and recomposed
+        // the whole UI for 89+ concurrent songs.
+        if (progressThrottle.shouldEmit(songId, pct, now)) {
             dao.setProgress(
                 songId, bytes, progress, partial.absolutePath,
                 DownloadStatus.DOWNLOADING.name,
             )
-            lastProgressWrite = now
-            lastProgressPct = pct
         }
-        // Update the foreground notification at most once per second.
-        if (pct == lastNotifiedPct && now - lastNotified < 1000) return
-        notifyLock.withLock {
-            if (pct == lastNotifiedPct && now - lastNotified < 1000) return@withLock
-            lastNotified = now
-            lastNotifiedPct = pct
+        // Update the foreground notification at most once per second, and never
+        // queue behind an in-flight update: skipping is cheaper than a backlog of
+        // stale percentages.
+        if (!notifyThrottle.shouldEmit(songId, pct, now)) return
+        if (!notifyLock.tryLock()) return
+        try {
             val n = DownloadNotifications.build(
                 applicationContext,
                 "Downloading",
@@ -289,6 +288,8 @@ class DownloadWorker @AssistedInject constructor(
                 indeterminate = false,
             )
             runCatching { setForegroundAsync(foregroundInfo(n)) }
+        } finally {
+            notifyLock.unlock()
         }
     }
 

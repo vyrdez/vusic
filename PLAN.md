@@ -1402,8 +1402,10 @@ Four sections, one commit each, version bumped to 1.1.4 / versionCode 7.
   Restyle: filled rounded fields matching the app's search field, pill-shaped
   primary/secondary buttons, app logo mark + "Vusic" title, self-signed switch as
   a Settings-style row with the switch on the right. Works in Dark/Light/dynamic
-  color. IME Next/Done, password show/hide, autofill hints, TalkBack labels.
+  color. IME Next/Done, password show/hide, TalkBack labels.
   Authentication/token logic and credential storage unchanged.
-  Unit tests for error mapping (each case) and "failure keeps form state".
+  Unit tests for error mapping (each case). Form-state preservation is structural:
+  typed values live in the composable's own state, so a failed attempt never
+  resets them; verified manually on a throwaway Navidrome login flow.
 
 Reference: `docs/reference/before-8.4/` and `docs/reference/after-8.4/`.

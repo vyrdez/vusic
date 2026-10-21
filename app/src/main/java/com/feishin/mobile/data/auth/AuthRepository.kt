@@ -9,8 +9,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -24,15 +27,28 @@ class AuthRepository @Inject constructor(
     private val store: CredentialsStore,
     private val api: SubsonicApi,
 ) {
-    /** Null = logged out, non-null = logged in. Populated by preload() before
-     *  `ready` flips, so the gated UI never sees the initial null: no launch
-     *  flicker. */
-    val loginState: StateFlow<Credentials?> = store.state
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + com.feishin.mobile.core.common.CrashGuard.handler)
+
+    private val verifying = MutableStateFlow(false)
+
+    /**
+     * Null = logged out, non-null = logged in. Populated by preload() before
+     * `ready` flips, so the gated UI never sees the initial null: no launch
+     * flicker.
+     *
+     * A connect/probe saves the candidate credentials before it can sign the
+     * ping, so [store] briefly holds them even when the attempt will fail.
+     * While that verification is in flight [loginState] reports "logged out",
+     * otherwise the gated UI would flash the main screen and come back — which
+     * recreates the login form and throws away everything the user typed.
+     */
+    val loginState: StateFlow<Credentials?> =
+        combine(store.state, verifying) { creds, isVerifying ->
+            if (isVerifying) null else creds
+        }.stateIn(scope, SharingStarted.Eagerly, store.state.value)
 
     private val _ready = MutableStateFlow(false)
     val ready: StateFlow<Boolean> = _ready.asStateFlow()
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + com.feishin.mobile.core.common.CrashGuard.handler)
 
     init {
         // Credentials disk read happens here on IO (StrictMode-clean), and
@@ -62,20 +78,28 @@ class AuthRepository @Inject constructor(
             if (user.isEmpty()) return@withContext Result.Err("Username is empty.")
             val host = normalized.removeSuffix("/rest/")
             val previous = store.state.value
-            // Save first so the auth interceptor can sign the ping, then verify.
-            store.save(host, user, password)
-            val mine = store.state.value
+            // Mark verification first: the credentials are about to be saved
+            // so the interceptor can sign the ping, and the UI must not treat
+            // that as a login until the ping says so.
+            verifying.value = true
             try {
-                val r = api.ping().response
-                if (r.status == "ok") {
-                    Result.Ok(Unit)
-                } else {
+                // Save first so the auth interceptor can sign the ping, then verify.
+                store.save(host, user, password)
+                val mine = store.state.value
+                try {
+                    val r = api.ping().response
+                    if (r.status == "ok") {
+                        Result.Ok(Unit)
+                    } else {
+                        restoreIfMine(previous, mine)
+                        Result.Err(SubsonicAuth.userMessage(r.error?.code, r.error?.message))
+                    }
+                } catch (e: Exception) {
                     restoreIfMine(previous, mine)
-                    Result.Err(SubsonicAuth.userMessage(r.error?.code, r.error?.message))
+                    Result.Err(SubsonicAuth.userMessage(null, null, e), e)
                 }
-            } catch (e: Exception) {
-                restoreIfMine(previous, mine)
-                Result.Err(SubsonicAuth.userMessage(null, null, e), e)
+            } finally {
+                verifying.value = false
             }
         }
 
@@ -88,16 +112,21 @@ class AuthRepository @Inject constructor(
                 return@withContext Result.Err("Invalid server URL.")
             }
             val previous = store.state.value
-            store.save(normalized.removeSuffix("/rest/"), username.trim(), password)
-            val mine = store.state.value
+            verifying.value = true
             try {
-                val r = api.ping().response
-                if (r.status == "ok") Result.Ok(Unit)
-                else Result.Err(SubsonicAuth.userMessage(r.error?.code, r.error?.message))
-            } catch (e: Exception) {
-                Result.Err(SubsonicAuth.userMessage(null, null, e), e)
+                store.save(normalized.removeSuffix("/rest/"), username.trim(), password)
+                val mine = store.state.value
+                try {
+                    val r = api.ping().response
+                    if (r.status == "ok") Result.Ok(Unit)
+                    else Result.Err(SubsonicAuth.userMessage(r.error?.code, r.error?.message))
+                } catch (e: Exception) {
+                    Result.Err(SubsonicAuth.userMessage(null, null, e), e)
+                } finally {
+                    restoreIfMine(previous, mine)
+                }
             } finally {
-                restoreIfMine(previous, mine)
+                verifying.value = false
             }
         }
 
