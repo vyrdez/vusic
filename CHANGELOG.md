@@ -1,6 +1,24 @@
 # Changelog
 
-## 1.1.4
+## 1.2.0
+
+### Added
+- **Synced Lyrics Engine (LRCLIB first, metadata fallback)**:
+  - Real-time line-by-line synced lyrics with active line enlargement, smooth 32-35% auto-scroll, drag-pause (3.5s auto-resume with floating "Sync" pill), instrumental gap notes ("♪"), and 3-dot intro countdowns.
+  - LRCLIB integration with smart candidate matching, fuzzy title cleaning, artist splitting, duration scoring, and rate-limited non-storm lookups.
+  - OpenSubsonic structured lyrics fallback (`getLyricsBySongId` with fallback to legacy `getLyrics`) and embedded local audio tags (ID3v2 USLT/SYLT, Vorbis/FLAC, MP4).
+  - Room `lyrics_cache` persistence with 7-day negative caching and manual "Search again" in the Lyrics menu.
+  - Comprehensive Lyrics settings in Appearance & Layout: online fetch toggle, priority selection (Online first / Song file first), text alignment (Left/Center), text size (Small/Normal/Large), auto-scroll, tap line to seek, word-by-word highlight, keep screen on, sync offset adjustment (-5000ms to +5000ms), show unsynced lyrics fallback, and "Clear lyrics cache" action.
+- **Device Files in Library**:
+  - Optional local device music playback integrated into the Library tab via a "View my" bottom sheet switcher with persistent state (`library_view_mode`).
+  - Native MediaStore integration with live `ContentObserver` updates, Songs, Albums, Artists tabs, and local Album / Artist detail views.
+  - Local album cover art resolver via MediaStore album art and `MediaMetadataRetriever`.
+  - Storage settings: "Show device files" switch with 3-state permission handling (`READ_MEDIA_AUDIO` / `READ_EXTERNAL_STORAGE`) and minimum track duration filter (Off, 15s, 30s, 60s) to exclude short notification/ringtone audio clips.
+  - Seamless mixed queues supporting both Navidrome server and local device tracks without scrobbling or starring local files.
+
+### Changed
+- Renamed "Dynamic Now Playing color" setting to "Dynamic Theme" in Settings > Appearance & Layout (preserving existing user preference).
+
 
 ### Fixed
 - In-app messages (snackbars, Undo, download progress) now appear fully above

@@ -381,7 +381,7 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
             onSelect = { vm.setTheme(ThemeMode.valueOf(it.uppercase())) },
             segmented = true,
         )
-        SwitchRow("Dynamic Now Playing color", s.dynamicNpColor, vm::setDynamicNpColor)
+        SwitchRow("Dynamic Theme", s.dynamicNpColor, vm::setDynamicNpColor)
     }
     SettingsSection("DISPLAY")
     SettingsCard {

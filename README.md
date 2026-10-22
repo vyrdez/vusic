@@ -22,26 +22,39 @@ System and Light themes.
 
 ## What it does
 
-Vusic streams and caches music from your own Navidrome server. The queue is
+Vusic streams and caches music from your own Navidrome server, with optional
+support for browsing and playing local device music files. The queue is
 gapless-capable ExoPlayer with a volume-ramp crossfade, ReplayGain (peak-limited,
 never clips), per-network quality for mobile and Wi-Fi, and a smart prefetch cache
 so transitions have no loading gap. There's a full-screen Now Playing with
-synced lyrics, a mini player you can drag to skip, clear, or open Now Playing,
+real-time synced lyrics (LRCLIB first with song-metadata and embedded tag fallback),
+a mini player you can drag to skip, clear, or open Now Playing,
 and a queue sheet with drag-reorder, swipe-to-remove, shuffle with order
 restore, save-as-playlist, radio, and undo after clearing.
 
 The library has Home (Listen again, New releases, Forgotten favorites, genre
 chips, mixes), Library tabs (playlists, downloads, albums, artists, songs) with
 per-tab sort and grid/list layouts, search with recent searches, artist and
-album pages, Favorites and a Cached collection. You can download songs or whole
+album pages, Favorites, a Cached collection, and an optional Device Files mode
+with Songs, Albums and Artists tabs for local music. You can download songs or whole
 albums for offline playback, and offline scrobbles and stars are queued and
 replayed with their original timestamps when you reconnect.
 
 It also ships an Android Auto service (Home, Library, Favorites, Downloads
 tabs, voice search, transport + shuffle/repeat/seek), a compact and large home
 screen widget with transport controls that survive the app process being killed,
-an artwork-tinted Now Playing and queue, System/Dark/Light themes with live
+an artwork-tinted Now Playing and queue ("Dynamic Theme"), System/Dark/Light themes with live
 switching, and a refresh-rate preference (Auto/Max/Standard 60 Hz).
+
+### Lyrics & Privacy
+
+When "Fetch lyrics online (LRCLIB)" is enabled, Vusic queries the public LRCLIB API
+for synced lyrics. To protect your privacy:
+- Vusic sends **only** the song's `title`, `artist`, `album` name, and `duration`.
+- Vusic **never** sends server URLs, usernames, internal song IDs, local file paths, or IP addresses.
+- Negative lookups are cached locally so repeated lookups are avoided.
+- Lyrics lookups are completely bypassed when in Offline mode or when disabled in Settings.
+
 
 Accessibility was built in from the start: content descriptions, 48dp touch
 targets, text that scales to 1.3x without clipping, full TalkBack navigation on

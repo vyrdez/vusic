@@ -1409,3 +1409,25 @@ Four sections, one commit each, version bumped to 1.1.4 / versionCode 7.
   resets them; verified manually on a throwaway Navidrome login flow.
 
 Reference: `docs/reference/before-8.4/` and `docs/reference/after-8.4/`.
+
+## Phase 9 (v1.2.0, versionCode 8)
+- **P9-A synced lyrics**:
+  - Full LRCLIB client with candidate scoring, multi-variant search, duration comparison, and fair-use caching.
+  - OpenSubsonic structured lyrics fallback (`getLyricsBySongId` with line start times) and embedded file tags (ID3v2 USLT/SYLT, Vorbis/FLAC, MP4).
+  - Room `lyrics_cache` table (migration 5 -> 6, verified by instrumented test `LyricsCacheMigrationTest`).
+  - Synced lyrics renderer in Now Playing: binary-search active line, auto-scroll to 32-35% viewport anchor, drag-to-browse with 3.5s resume timer and floating "Sync" pill, "♪" instrumental markers, 3-dot intro countdown, source footer, and "Search again" menu action.
+  - 11 lyrics settings in DataStore (`SettingsStore.kt`), `SettingsViewModel.kt`, and `SettingsScreen.kt`.
+  - Unit tests: `LrcParserTest`, `LyricsLookupTest`, `LyricsSelectionTest`, `LrclibMatcherTest`, `EmbeddedLyricsExtractorTest`, `LyricsRepositoryTest`.
+- **P9-B device files**:
+  - Manifest audio permissions (`READ_MEDIA_AUDIO` on API 33+, `READ_EXTERNAL_STORAGE` on API <=32).
+  - Pure filter and sort module `DeviceFilesFilter` with duration filter (0, 15s, 30s, 60s) and ringtone/alarm/notification exclusion.
+  - Custom Coil `LocalAudioCoverFetcher` decoding local album art and embedded picture bytes without blocking the main thread.
+  - ContentObserver live updates in `DeviceFilesViewModel` for automatic MediaStore sync.
+  - `DeviceFilesScreen` with Songs, Albums, Artists tabs, inline search, local album/artist detail views, and permission explanation card.
+  - "View my" bottom sheet dialog on the Library title with animated chevron and smooth crossfade between server and device music.
+  - Mixed queue support in `QueueStore`, `PlayerManager`, `PlayerService`, and `TrackActionsSheet` (server-only actions like scrobble, star, download, and remote playlists hidden for local tracks).
+  - Unit tests: `DeviceFilesFilterTest`, `QueueStoreTest` (mixed queue persistence).
+- **P9-C dynamic theme label**:
+  - Renamed "Dynamic Now Playing color" to "Dynamic Theme" in Settings > Appearance & Layout.
+  - Preserved DataStore preference key `dynamic_np_color`.
+  - Raised `versionCode` to 8 and `versionName` to `"1.2.0"`.
