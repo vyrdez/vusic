@@ -339,7 +339,8 @@ fun NowPlayingScreen(
     LaunchedEffect(palette.lightBackdrop) { NowPlayingBarTint.report(palette.lightBackdrop) }
     DisposableEffect(Unit) { onDispose { NowPlayingBarTint.clear() } }
 
-    var lyricsMode by remember { mutableStateOf(false) }
+    val npSettings by lyricsVm.settings.flow.collectAsStateWithLifecycle(initialValue = null)
+    val lyricsMode = npSettings?.nowPlayingLyricsMode ?: false
     var showPicker by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -385,7 +386,11 @@ fun NowPlayingScreen(
                     Icon(Icons.Default.KeyboardArrowDown, "Close", tint = content)
                 }
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    SongLyricsToggle(lyricsMode = lyricsMode, onSelect = { lyricsMode = it }, palette = palette)
+                    SongLyricsToggle(
+                        lyricsMode = lyricsMode,
+                        onSelect = { scope.launch { lyricsVm.settings.setNowPlayingLyricsMode(it) } },
+                        palette = palette,
+                    )
                 }
                 var showLyricsMenu by remember { mutableStateOf(false) }
                 IconButton(
@@ -1251,6 +1256,14 @@ private fun SyncedLyricsList(
         } else if (userScrolledAway) {
             delay(3500)
             userScrolledAway = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (activeIndex >= 0 && autoScroll) {
+            val viewportHeight = listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
+            val targetOffset = -(viewportHeight * 0.32f).toInt()
+            listState.scrollToItem(activeIndex, targetOffset)
         }
     }
 

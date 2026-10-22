@@ -99,6 +99,7 @@ class SettingsStore internal constructor(
         val lyricsRomanizeAutomatically = booleanPreferencesKey("lyrics_romanize_automatically")
         val lyricsRomanizedTrackIds = stringPreferencesKey("lyrics_romanized_track_ids")
         val lyricsDeRomanizedTrackIds = stringPreferencesKey("lyrics_deromanized_track_ids")
+        val nowPlayingLyricsMode = booleanPreferencesKey("now_playing_lyrics_mode")
         // Device files settings (P9-B)
         val showDeviceFiles = booleanPreferencesKey("show_device_files")
         val deviceFilesMinDurationSec = intPreferencesKey("device_files_min_duration_sec")
@@ -168,6 +169,7 @@ class SettingsStore internal constructor(
         val lyricsRomanizeAutomatically: Boolean = false,
         val lyricsRomanizedTrackIds: Set<String> = emptySet(),
         val lyricsDeRomanizedTrackIds: Set<String> = emptySet(),
+        val nowPlayingLyricsMode: Boolean = false,
         // Device files settings (P9-B)
         val showDeviceFiles: Boolean = false,
         val deviceFilesMinDurationSec: Int = 30,
@@ -251,6 +253,7 @@ class SettingsStore internal constructor(
             lyricsRomanizeAutomatically = p[K.lyricsRomanizeAutomatically] ?: false,
             lyricsRomanizedTrackIds = p[K.lyricsRomanizedTrackIds]?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
             lyricsDeRomanizedTrackIds = p[K.lyricsDeRomanizedTrackIds]?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
+            nowPlayingLyricsMode = p[K.nowPlayingLyricsMode] ?: false,
             showDeviceFiles = p[K.showDeviceFiles] ?: false,
             deviceFilesMinDurationSec = p[K.deviceFilesMinDurationSec] ?: 30,
             libraryViewMode = p[K.libraryViewMode] ?: "SERVER",
@@ -355,6 +358,7 @@ class SettingsStore internal constructor(
     suspend fun setLyricsPreferWordByWord(v: Boolean) = edit { it[K.lyricsPreferWordByWord] = v }
     suspend fun setLyricsRespectAgentPositioning(v: Boolean) = edit { it[K.lyricsRespectAgentPositioning] = v }
     suspend fun setLyricsShowIntervalIndicator(v: Boolean) = edit { it[K.lyricsShowIntervalIndicator] = v }
+    suspend fun setNowPlayingLyricsMode(v: Boolean) = edit { it[K.nowPlayingLyricsMode] = v }
     suspend fun setLyricsRomanizeAutomatically(v: Boolean) = edit { it[K.lyricsRomanizeAutomatically] = v }
     suspend fun toggleTrackRomanization(trackId: String, hasCjk: Boolean, autoRomanize: Boolean) = edit { p ->
         val romanized = p[K.lyricsRomanizedTrackIds]?.split(",")?.filter { it.isNotBlank() }?.toMutableSet() ?: mutableSetOf()

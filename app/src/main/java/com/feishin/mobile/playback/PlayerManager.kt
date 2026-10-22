@@ -994,6 +994,7 @@ class PlayerManager @Inject constructor(
         _position.value = 0
         _duration.value = 0
         persistAsync()
+        scope.launch { settings.setNowPlayingLyricsMode(false) }
     }
 
     fun playAt(index: Int) {
