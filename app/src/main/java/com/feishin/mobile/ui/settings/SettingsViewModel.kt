@@ -187,6 +187,10 @@ class SettingsViewModel @Inject constructor(
     fun setLyricsKeepScreenOn(v: Boolean) = viewModelScope.launch { store.setLyricsKeepScreenOn(v) }
     fun setLyricsSyncOffsetMs(v: Int) = viewModelScope.launch { store.setLyricsSyncOffsetMs(v) }
     fun setLyricsShowUnsynced(v: Boolean) = viewModelScope.launch { store.setLyricsShowUnsynced(v) }
+    fun setLyricsProviderOrder(order: List<String>) = viewModelScope.launch { store.setLyricsProviderOrder(order) }
+    fun setLyricsProviderEnabled(enabled: Set<String>) = viewModelScope.launch { store.setLyricsProviderEnabled(enabled) }
+    fun setLyricsPreferWordByWord(v: Boolean) = viewModelScope.launch { store.setLyricsPreferWordByWord(v) }
+    fun resetLyricsProviders() = viewModelScope.launch { store.resetLyricsProviders() }
     fun clearLyricsCache() = viewModelScope.launch { lyricsRepo.clearCache() }
     fun setShowDeviceFiles(v: Boolean) = viewModelScope.launch { store.setShowDeviceFiles(v) }
     fun setDeviceFilesMinDurationSec(v: Int) = viewModelScope.launch { store.setDeviceFilesMinDurationSec(v) }

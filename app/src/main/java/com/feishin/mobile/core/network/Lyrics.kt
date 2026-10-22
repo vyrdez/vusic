@@ -8,7 +8,12 @@ data class LyricWord(val startMs: Long, val text: String)
 
 /** One line of lyrics. [words] is non-empty only when word-level timing exists. */
 @Serializable
-data class LyricLine(val startMs: Long, val text: String, val words: List<LyricWord> = emptyList())
+data class LyricLine(
+    val startMs: Long,
+    val text: String,
+    val words: List<LyricWord> = emptyList(),
+    val agent: String? = null,
+)
 
 /** How the lyrics should be presented and synced. */
 @Serializable
@@ -30,6 +35,12 @@ enum class LyricsSource {
     CACHE,
     /** Fetched online from lrclib.net. */
     LRCLIB,
+    /** Fetched from BetterLyrics TTML API. */
+    BETTER_LYRICS,
+    /** Paxsenix API. */
+    PAXSENIX,
+    /** Fetched from KuGou. */
+    KUGOU,
     /** Fetched from OpenSubsonic server metadata (structuredLyrics or getLyrics). */
     SERVER_METADATA,
     /** Extracted directly from device audio file tags (ID3v2, Vorbis, MP4). */

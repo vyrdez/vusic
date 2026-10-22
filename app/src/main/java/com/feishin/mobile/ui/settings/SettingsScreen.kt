@@ -1,6 +1,7 @@
 package com.feishin.mobile.ui.settings
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import com.feishin.mobile.core.common.DeviceFilesFilter
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,6 +19,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
@@ -372,6 +375,7 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
     val settings by vm.store.flow.collectAsStateWithLifecycle(initialValue = null)
     val s = settings ?: return
     var showClearLyricsConfirm by androidx.compose.runtime.remember { mutableStateOf(false) }
+    var showLyricsSourcesDialog by androidx.compose.runtime.remember { mutableStateOf(false) }
     SettingsSection("THEME")
     SettingsCard {
         ChoiceRow(
@@ -390,18 +394,36 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
     SettingsSection("LYRICS")
     SettingsCard {
         SwitchRow(
-            "Fetch lyrics online (LRCLIB)",
+            "Fetch lyrics online",
             s.lyricsFetchOnline,
             vm::setLyricsFetchOnline,
-            description = "Searches lrclib.net using song title, artist, album and duration",
+            description = "Search online providers using title, artist, album and duration",
         )
-        ChoiceRow(
-            "Lyrics source priority",
-            if (s.lyricsSourcePriority == "SONG_FILE_FIRST") "Song file first" else "Online first",
-            listOf("Online first", "Song file first"),
-            onSelect = { vm.setLyricsSourcePriority(if (it == "Song file first") "SONG_FILE_FIRST" else "ONLINE_FIRST") },
-            segmented = true,
-            description = "Preferred source when multiple are available.",
+        val activeSourcesSummary = s.lyricsProviderOrder
+            .filter { it in s.lyricsProviderEnabled }
+            .map { id ->
+                when (id) {
+                    "LRCLIB" -> "LRCLIB"
+                    "BETTER_LYRICS" -> "BetterLyrics"
+                    "PAXSENIX" -> "Paxsenix"
+                    "KUGOU" -> "KuGou"
+                    "LOCAL_DATA" -> "Local data"
+                    else -> id
+                }
+            }
+            .joinToString(", ")
+            .ifEmpty { "None" }
+        ActionRow(
+            "Lyrics sources",
+            activeSourcesSummary,
+            buttonLabel = "Configure",
+            onClick = { showLyricsSourcesDialog = true },
+        )
+        SwitchRow(
+            "Prefer word-by-word lyrics",
+            s.lyricsPreferWordByWord,
+            vm::setLyricsPreferWordByWord,
+            description = "Word-timed lyrics beat line-synced lyrics across the chain.",
         )
         val alignOptions = listOf("Left", "Center", "Right")
         ChoiceRow(
@@ -479,6 +501,19 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
             dismissButton = {
                 TextButton(onClick = { showClearLyricsConfirm = false }) { Text("Cancel") }
             },
+        )
+    }
+    if (showLyricsSourcesDialog) {
+        LyricsSourcesDialog(
+            order = s.lyricsProviderOrder,
+            enabled = s.lyricsProviderEnabled,
+            onReorder = { vm.setLyricsProviderOrder(it) },
+            onToggle = { id, isEnabled ->
+                val newSet = if (isEnabled) s.lyricsProviderEnabled + id else s.lyricsProviderEnabled - id
+                vm.setLyricsProviderEnabled(newSet)
+            },
+            onReset = { vm.resetLyricsProviders() },
+            onDismiss = { showLyricsSourcesDialog = false },
         )
     }
     SettingsSection("LIBRARY LAYOUT")
@@ -1102,4 +1137,103 @@ private fun AboutScreen() {
         InfoRow("Hilt, Room, WorkManager", "Apache 2.0")
         InfoRow("Coil, OkHttp, Retrofit", "Apache 2.0 / MIT")
     }
+}
+
+@Composable
+private fun LyricsSourcesDialog(
+    order: List<String>,
+    enabled: Set<String>,
+    onReorder: (List<String>) -> Unit,
+    onToggle: (String, Boolean) -> Unit,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Lyrics sources") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    "Reorder priority and toggle sources. Sequential lookups fall back to the next enabled source.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VusicColors.SecondaryText,
+                )
+                order.forEachIndexed { index, id ->
+                    val isEnabled = id in enabled
+                    val title = when (id) {
+                        "LRCLIB" -> "LRCLIB"
+                        "BETTER_LYRICS" -> "BetterLyrics"
+                        "PAXSENIX" -> "Paxsenix"
+                        "KUGOU" -> "KuGou"
+                        "LOCAL_DATA" -> "Local data"
+                        else -> id
+                    }
+                    val subtitle = when (id) {
+                        "LRCLIB" -> "lrclib.net, line & word sync"
+                        "BETTER_LYRICS" -> "public TTML API, word sync"
+                        "PAXSENIX" -> "Disabled: Public endpoint is defunct and requires Apple Music track IDs"
+                        "KUGOU" -> "Unofficial, may stop working"
+                        "LOCAL_DATA" -> "Server lyrics & device file tags"
+                        else -> ""
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(VusicColors.SurfaceHigh, androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(title, style = MaterialTheme.typography.bodyMedium)
+                            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = VusicColors.SecondaryText)
+                        }
+                        IconButton(
+                            onClick = {
+                                if (index > 0) {
+                                    val mutable = order.toMutableList()
+                                    val item = mutable.removeAt(index)
+                                    mutable.add(index - 1, item)
+                                    onReorder(mutable)
+                                }
+                            },
+                            enabled = index > 0,
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move up", modifier = Modifier.size(20.dp))
+                        }
+                        IconButton(
+                            onClick = {
+                                if (index < order.lastIndex) {
+                                    val mutable = order.toMutableList()
+                                    val item = mutable.removeAt(index)
+                                    mutable.add(index + 1, item)
+                                    onReorder(mutable)
+                                }
+                            },
+                            enabled = index < order.lastIndex,
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move down", modifier = Modifier.size(20.dp))
+                        }
+                        Switch(
+                            checked = isEnabled,
+                            onCheckedChange = { onToggle(id, it) },
+                            enabled = id != "PAXSENIX",
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        },
+        dismissButton = {
+            TextButton(onClick = onReset) { Text("Reset to default") }
+        },
+    )
 }

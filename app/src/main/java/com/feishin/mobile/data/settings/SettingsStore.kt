@@ -91,6 +91,11 @@ class SettingsStore internal constructor(
         val lyricsKeepScreenOn = booleanPreferencesKey("lyrics_keep_screen_on")
         val lyricsSyncOffsetMs = intPreferencesKey("lyrics_sync_offset_ms")
         val lyricsShowUnsynced = booleanPreferencesKey("lyrics_show_unsynced")
+        val lyricsProviderOrder = stringPreferencesKey("lyrics_provider_order")
+        val lyricsProviderEnabled = stringPreferencesKey("lyrics_provider_enabled")
+        val lyricsPreferWordByWord = booleanPreferencesKey("lyrics_prefer_word_by_word")
+        val lyricsRespectAgentPositioning = booleanPreferencesKey("lyrics_respect_agent_positioning")
+        val lyricsShowIntervalIndicator = booleanPreferencesKey("lyrics_show_interval_indicator")
         // Device files settings (P9-B)
         val showDeviceFiles = booleanPreferencesKey("show_device_files")
         val deviceFilesMinDurationSec = intPreferencesKey("device_files_min_duration_sec")
@@ -152,6 +157,11 @@ class SettingsStore internal constructor(
         val lyricsKeepScreenOn: Boolean = false,
         val lyricsSyncOffsetMs: Int = 0,
         val lyricsShowUnsynced: Boolean = true,
+        val lyricsProviderOrder: List<String> = DEFAULT_LYRICS_PROVIDER_ORDER,
+        val lyricsProviderEnabled: Set<String> = DEFAULT_LYRICS_PROVIDER_ENABLED,
+        val lyricsPreferWordByWord: Boolean = true,
+        val lyricsRespectAgentPositioning: Boolean = false,
+        val lyricsShowIntervalIndicator: Boolean = true,
         // Device files settings (P9-B)
         val showDeviceFiles: Boolean = false,
         val deviceFilesMinDurationSec: Int = 30,
@@ -225,6 +235,13 @@ class SettingsStore internal constructor(
             lyricsKeepScreenOn = p[K.lyricsKeepScreenOn] ?: false,
             lyricsSyncOffsetMs = (p[K.lyricsSyncOffsetMs] ?: 0).coerceIn(-2000, 2000),
             lyricsShowUnsynced = p[K.lyricsShowUnsynced] ?: true,
+            lyricsProviderOrder = p[K.lyricsProviderOrder]?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+                ?: DEFAULT_LYRICS_PROVIDER_ORDER,
+            lyricsProviderEnabled = p[K.lyricsProviderEnabled]?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
+                ?: DEFAULT_LYRICS_PROVIDER_ENABLED,
+            lyricsPreferWordByWord = p[K.lyricsPreferWordByWord] ?: true,
+            lyricsRespectAgentPositioning = p[K.lyricsRespectAgentPositioning] ?: false,
+            lyricsShowIntervalIndicator = p[K.lyricsShowIntervalIndicator] ?: true,
             showDeviceFiles = p[K.showDeviceFiles] ?: false,
             deviceFilesMinDurationSec = p[K.deviceFilesMinDurationSec] ?: 30,
             libraryViewMode = p[K.libraryViewMode] ?: "SERVER",
@@ -258,6 +275,8 @@ class SettingsStore internal constructor(
         const val LAYOUT_PREFIX = "library_layout_"
         const val PLAYLIST_SORT_PREFIX = "playlist_sort_"
         val RADIO_BATCH_OPTIONS = listOf(10, 20, 30, 50)
+        val DEFAULT_LYRICS_PROVIDER_ORDER = listOf("LRCLIB", "BETTER_LYRICS", "PAXSENIX", "KUGOU", "LOCAL_DATA")
+        val DEFAULT_LYRICS_PROVIDER_ENABLED = setOf("LRCLIB", "BETTER_LYRICS", "KUGOU", "LOCAL_DATA")
     }
 
     suspend fun setTheme(v: ThemeMode) = edit { it[K.theme] = v.name }
@@ -305,6 +324,15 @@ class SettingsStore internal constructor(
     suspend fun setLyricsKeepScreenOn(v: Boolean) = edit { it[K.lyricsKeepScreenOn] = v }
     suspend fun setLyricsSyncOffsetMs(v: Int) = edit { it[K.lyricsSyncOffsetMs] = v.coerceIn(-2000, 2000) }
     suspend fun setLyricsShowUnsynced(v: Boolean) = edit { it[K.lyricsShowUnsynced] = v }
+    suspend fun setLyricsProviderOrder(order: List<String>) = edit { it[K.lyricsProviderOrder] = order.joinToString(",") }
+    suspend fun setLyricsProviderEnabled(enabled: Set<String>) = edit { it[K.lyricsProviderEnabled] = enabled.joinToString(",") }
+    suspend fun setLyricsPreferWordByWord(v: Boolean) = edit { it[K.lyricsPreferWordByWord] = v }
+    suspend fun setLyricsRespectAgentPositioning(v: Boolean) = edit { it[K.lyricsRespectAgentPositioning] = v }
+    suspend fun setLyricsShowIntervalIndicator(v: Boolean) = edit { it[K.lyricsShowIntervalIndicator] = v }
+    suspend fun resetLyricsProviders() = edit {
+        it[K.lyricsProviderOrder] = DEFAULT_LYRICS_PROVIDER_ORDER.joinToString(",")
+        it[K.lyricsProviderEnabled] = DEFAULT_LYRICS_PROVIDER_ENABLED.joinToString(",")
+    }
     // Device files setters (P9-B)
     suspend fun setShowDeviceFiles(v: Boolean) = edit { it[K.showDeviceFiles] = v }
     suspend fun setDeviceFilesMinDurationSec(v: Int) = edit { it[K.deviceFilesMinDurationSec] = v }

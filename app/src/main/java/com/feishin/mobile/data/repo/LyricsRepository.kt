@@ -7,14 +7,17 @@ import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.network.Lyrics
 import com.feishin.mobile.core.network.LyricsCacheKey
 import com.feishin.mobile.core.network.LyricsKind
-import com.feishin.mobile.core.network.LyricsPick
 import com.feishin.mobile.core.network.LyricsSource
 import com.feishin.mobile.data.db.LyricsCacheDao
 import com.feishin.mobile.data.db.LyricsCacheEntity
+import com.feishin.mobile.data.lyrics.BetterLyricsProvider
 import com.feishin.mobile.data.lyrics.FileTagLyricsProvider
+import com.feishin.mobile.data.lyrics.KuGouLyricsProvider
 import com.feishin.mobile.data.lyrics.LrclibLyricsProvider
+import com.feishin.mobile.data.lyrics.PaxsenixLyricsProvider
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.Track
+import com.feishin.mobile.domain.repo.LyricsProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -24,12 +27,16 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 
 @Singleton
 class LyricsRepository @Inject constructor(
     private val cache: LyricsCacheDao,
     private val lrclib: LrclibLyricsProvider,
+    private val betterLyrics: BetterLyricsProvider,
+    private val paxsenix: PaxsenixLyricsProvider,
+    private val kugou: KuGouLyricsProvider,
     private val navidrome: NavidromeLyricsProvider,
     private val fileTags: FileTagLyricsProvider,
     private val settingsStore: SettingsStore,
@@ -38,6 +45,12 @@ class LyricsRepository @Inject constructor(
 ) {
     /** 7-day TTL for negative cache entries ("nothing found"). */
     private val negativeTtlMs = 7 * 24 * 60 * 60 * 1000L
+
+    /** Total lookup budget per song across all providers before giving up. */
+    private val totalLookupBudgetMs = 15_000L
+
+    /** Global mutex to ensure requests across all providers are strictly sequential. */
+    private val globalLookupMutex = Mutex()
 
     /** Guard against multiple simultaneous lookups for the same song. */
     private val lookupLocks = ConcurrentHashMap<String, Mutex>()
@@ -66,11 +79,12 @@ class LyricsRepository @Inject constructor(
                         if (cachedLyrics.isNone) {
                             val age = System.currentTimeMillis() - cachedEntry.updatedAt
                             if (age < negativeTtlMs) {
-                                return@withContext Result.Ok(cachedLyrics.copy(source = LyricsSource.CACHE))
+                                return@withContext Result.Ok(cachedLyrics)
                             }
                             // Expired negative entry, fall through to re-query
                         } else {
-                            return@withContext Result.Ok(cachedLyrics.copy(source = LyricsSource.CACHE))
+                            // Preserve original provider source stored in cache
+                            return@withContext Result.Ok(cachedLyrics)
                         }
                     }
                 }
@@ -85,88 +99,34 @@ class LyricsRepository @Inject constructor(
                 !settings.offlineMode &&
                 isNetworkAvailable()
 
-            val metadataProvider = if (track.isLocal) fileTags else navidrome
-            val priority = settings.lyricsSourcePriority // "ONLINE_FIRST" or "SONG_FILE_FIRST"
+            val durationMs = track.durationSec.toLong() * 1000L
 
+            // Run sequential chain inside global mutex with total 15s budget
             var finalLyrics: Lyrics? = null
             var transientError: Result.Err? = null
 
-            val durationMs = track.durationSec.toLong() * 1000L
+            globalLookupMutex.withLock {
+                withTimeoutOrNull(totalLookupBudgetMs) {
+                    val enabledOrder = settings.lyricsProviderOrder.filter { it in settings.lyricsProviderEnabled }
+                    var bestSynced: Lyrics? = null
+                    var plainCandidate: Lyrics? = null
 
-            if (priority == "SONG_FILE_FIRST" || !isOnlineAllowed) {
-                // 1. Try metadata provider first
-                val metaResult = metadataProvider.lyricsForSong(
-                    songId = track.id,
-                    title = track.title,
-                    artist = track.artist,
-                    album = track.album,
-                    durationMs = durationMs,
-                    localUri = track.localUri,
-                    localModifiedSec = track.localModifiedSec,
-                )
-
-                when (metaResult) {
-                    is Result.Ok -> {
-                        if (!metaResult.value.isNone) {
-                            finalLyrics = metaResult.value
+                    for (providerId in enabledOrder) {
+                        val isOnlineProvider = providerId != "LOCAL_DATA"
+                        if (isOnlineProvider && !isOnlineAllowed) {
+                            continue
                         }
-                    }
-                    is Result.Err -> {
-                        transientError = metaResult
-                    }
-                }
 
-                // 2. If metadata had nothing and online is allowed, try LRCLIB
-                if (finalLyrics == null && isOnlineAllowed) {
-                    val lrclibResult = lrclib.lyricsForSong(
-                        songId = track.id,
-                        title = track.title,
-                        artist = track.artist,
-                        album = track.album,
-                        durationMs = durationMs,
-                        localUri = track.localUri,
-                        localModifiedSec = track.localModifiedSec,
-                    )
-                    when (lrclibResult) {
-                        is Result.Ok -> {
-                            if (!lrclibResult.value.isNone) {
-                                finalLyrics = lrclibResult.value
-                            }
+                        val provider: LyricsProvider = when (providerId) {
+                            "LRCLIB" -> lrclib
+                            "BETTER_LYRICS" -> betterLyrics
+                            "PAXSENIX" -> paxsenix
+                            "KUGOU" -> kugou
+                            "LOCAL_DATA" -> if (track.isLocal) fileTags else navidrome
+                            else -> continue
                         }
-                        is Result.Err -> {
-                            if (transientError == null) transientError = lrclibResult
-                        }
-                    }
-                }
-            } else {
-                // "ONLINE_FIRST":
-                // 1. Try LRCLIB
-                val lrclibResult = lrclib.lyricsForSong(
-                    songId = track.id,
-                    title = track.title,
-                    artist = track.artist,
-                    album = track.album,
-                    durationMs = durationMs,
-                    localUri = track.localUri,
-                    localModifiedSec = track.localModifiedSec,
-                )
 
-                var lrclibLyrics: Lyrics? = null
-                when (lrclibResult) {
-                    is Result.Ok -> {
-                        if (!lrclibResult.value.isNone) {
-                            lrclibLyrics = lrclibResult.value
-                        }
-                    }
-                    is Result.Err -> {
-                        transientError = lrclibResult
-                    }
-                }
-
-                if (lrclibLyrics != null) {
-                    // Upgrade rule: if LRCLIB returned PLAIN lyrics, check if metadata lyrics are SYNCED
-                    if (lrclibLyrics.isPlain) {
-                        val metaResult = metadataProvider.lyricsForSong(
+                        val result = provider.lyricsForSong(
                             songId = track.id,
                             title = track.title,
                             artist = track.artist,
@@ -175,45 +135,47 @@ class LyricsRepository @Inject constructor(
                             localUri = track.localUri,
                             localModifiedSec = track.localModifiedSec,
                         )
-                        finalLyrics = LyricsPick.upgrade(
-                            online = lrclibLyrics,
-                            metadata = (metaResult as? Result.Ok)?.value,
-                        )
-                    } else {
-                        finalLyrics = lrclibLyrics
-                    }
-                } else {
-                    // LRCLIB failed or returned NONE -> Fall back to metadata provider
-                    val metaResult = metadataProvider.lyricsForSong(
-                        songId = track.id,
-                        title = track.title,
-                        artist = track.artist,
-                        album = track.album,
-                        durationMs = durationMs,
-                        localUri = track.localUri,
-                        localModifiedSec = track.localModifiedSec,
-                    )
-                    when (metaResult) {
-                        is Result.Ok -> {
-                            if (!metaResult.value.isNone) {
-                                finalLyrics = metaResult.value
+
+                        when (result) {
+                            is Result.Ok -> {
+                                val lyrics = result.value
+                                if (lyrics.isSynced) {
+                                    val hasWords = lyrics.lines.any { it.words.isNotEmpty() }
+                                    if (settings.lyricsPreferWordByWord) {
+                                        if (bestSynced == null) {
+                                            bestSynced = lyrics
+                                            if (hasWords) break // Found word-timed lyrics, best possible
+                                        } else if (!bestSynced.lines.any { it.words.isNotEmpty() } && hasWords) {
+                                            bestSynced = lyrics
+                                            break // Upgraded line-synced to word-synced!
+                                        }
+                                    } else {
+                                        // First line-synced wins
+                                        bestSynced = lyrics
+                                        break
+                                    }
+                                } else if (lyrics.isPlain && plainCandidate == null) {
+                                    plainCandidate = lyrics
+                                }
+                            }
+                            is Result.Err -> {
+                                if (transientError == null) transientError = result
                             }
                         }
-                        is Result.Err -> {
-                            if (transientError == null) transientError = metaResult
-                        }
                     }
+
+                    finalLyrics = bestSynced ?: plainCandidate
                 }
             }
 
             // Persist & Return
-            if (finalLyrics != null && !finalLyrics.isNone) {
+            if (finalLyrics != null && !finalLyrics!!.isNone) {
                 sessionFailedKeys.remove(key)
                 runCatching {
-                    val encoded = json.encodeToString(Lyrics.serializer(), finalLyrics)
+                    val encoded = json.encodeToString(Lyrics.serializer(), finalLyrics!!)
                     cache.put(LyricsCacheEntity(key, encoded, System.currentTimeMillis()))
                 }
-                return@withContext Result.Ok(finalLyrics)
+                return@withContext Result.Ok(finalLyrics!!)
             } else if (transientError != null) {
                 // Do NOT cache transient errors negatively in Room; remember in session guard
                 sessionFailedKeys.add(key)
@@ -235,9 +197,20 @@ class LyricsRepository @Inject constructor(
         if (!isUnmeteredConnection()) return@withContext
         val key = cacheKeyForTrack(track)
         if (sessionFailedKeys.contains(key)) return@withContext
-        // getLyrics is cache-first and honours the negative TTL, so an expired
-        // "nothing found" row is refreshed here too.
         getLyrics(track, bypassCache = false)
+    }
+
+    suspend fun saveCustomLyrics(track: Track, lyrics: Lyrics) = withContext(Dispatchers.IO) {
+        val key = cacheKeyForTrack(track)
+        sessionFailedKeys.remove(key)
+        val encoded = json.encodeToString(Lyrics.serializer(), lyrics)
+        cache.put(LyricsCacheEntity(key, encoded, System.currentTimeMillis()))
+    }
+
+    suspend fun removeCached(track: Track) = withContext(Dispatchers.IO) {
+        val key = cacheKeyForTrack(track)
+        cache.remove(key)
+        sessionFailedKeys.remove(key)
     }
 
     suspend fun clearCache() = withContext(Dispatchers.IO) {

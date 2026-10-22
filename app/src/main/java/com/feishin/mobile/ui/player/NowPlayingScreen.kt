@@ -1004,8 +1004,11 @@ private fun SourceFooter(
 ) {
     val text = when (source) {
         com.feishin.mobile.core.network.LyricsSource.LRCLIB -> "Lyrics from LRCLIB"
-        com.feishin.mobile.core.network.LyricsSource.SERVER_METADATA,
-        com.feishin.mobile.core.network.LyricsSource.FILE_TAGS -> "Lyrics from the song file"
+        com.feishin.mobile.core.network.LyricsSource.BETTER_LYRICS -> "Lyrics from BetterLyrics"
+        com.feishin.mobile.core.network.LyricsSource.PAXSENIX -> "Lyrics from Paxsenix"
+        com.feishin.mobile.core.network.LyricsSource.KUGOU -> "Lyrics from KuGou"
+        com.feishin.mobile.core.network.LyricsSource.SERVER_METADATA -> "Lyrics from server"
+        com.feishin.mobile.core.network.LyricsSource.FILE_TAGS -> "Lyrics from file tags"
         com.feishin.mobile.core.network.LyricsSource.CACHE -> "Lyrics cached"
     }
     Text(
