@@ -2,6 +2,7 @@ package com.feishin.mobile.di
 
 import android.content.Context
 import androidx.room.Room
+import com.feishin.mobile.data.db.MIGRATION_5_6
 import com.feishin.mobile.data.db.MusicDatabase
 import dagger.Module
 import dagger.Provides
@@ -16,7 +17,7 @@ object DbModule {
     @Provides @Singleton
     fun provideDb(@ApplicationContext ctx: Context): MusicDatabase =
         Room.databaseBuilder(ctx, MusicDatabase::class.java, "feishin.db")
-            .fallbackToDestructiveMigration()
+            .addMigrations(MIGRATION_5_6)
             .build()
 
     @Provides fun provideDownloadDao(db: MusicDatabase) = db.downloadDao()
@@ -25,4 +26,5 @@ object DbModule {
     @Provides fun provideCachedCoverDao(db: MusicDatabase) = db.cachedCoverDao()
     @Provides fun providePendingActionDao(db: MusicDatabase) = db.pendingActionDao()
     @Provides fun provideCachedTrackDao(db: MusicDatabase) = db.cachedTrackDao()
+    @Provides fun provideLyricsCacheDao(db: MusicDatabase) = db.lyricsCacheDao()
 }

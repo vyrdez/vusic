@@ -279,6 +279,46 @@ interface CachedTrackDao {
     suspend fun count(): Int
 }
 
+/** Cached lyrics for a song, keyed by song id (or local URI key), so they open instantly offline. */
+@Entity(tableName = "lyrics_cache")
+data class LyricsCacheEntity(
+    @PrimaryKey val songId: String,
+    val json: String,
+    val updatedAt: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface LyricsCacheDao {
+    @Query("SELECT * FROM lyrics_cache WHERE songId = :id LIMIT 1")
+    suspend fun getEntry(id: String): LyricsCacheEntity?
+
+    @Query("SELECT json FROM lyrics_cache WHERE songId = :id LIMIT 1")
+    suspend fun get(id: String): String?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun put(entry: LyricsCacheEntity)
+
+    @Query("DELETE FROM lyrics_cache WHERE songId = :id")
+    suspend fun remove(id: String)
+
+    @Query("DELETE FROM lyrics_cache")
+    suspend fun clear()
+}
+
+/** 5 -> 6: adds the lyrics_cache table for instant offline lyrics. */
+val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS lyrics_cache (
+                songId TEXT NOT NULL,
+                json TEXT NOT NULL,
+                updatedAt INTEGER NOT NULL,
+                PRIMARY KEY (songId)
+            )
+        """.trimIndent())
+    }
+}
+
 @androidx.room.Database(
     entities = [
         DownloadEntity::class,
@@ -287,8 +327,9 @@ interface CachedTrackDao {
         CachedCoverEntity::class,
         PendingActionEntity::class,
         CachedTrackEntity::class,
+        LyricsCacheEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class MusicDatabase : RoomDatabase() {
@@ -298,4 +339,5 @@ abstract class MusicDatabase : RoomDatabase() {
     abstract fun cachedCoverDao(): CachedCoverDao
     abstract fun pendingActionDao(): PendingActionDao
     abstract fun cachedTrackDao(): CachedTrackDao
+    abstract fun lyricsCacheDao(): LyricsCacheDao
 }

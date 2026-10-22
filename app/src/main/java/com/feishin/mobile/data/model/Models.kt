@@ -252,7 +252,23 @@ data class LyricsDto(val artist: String = "", val title: String = "", val value:
 data class LyricsListDto(
     val syncedLyrics: SyncedLyricsDto? = null,
     val plainLyrics: PlainLyricsDto? = null,
+    @Serializable(with = StructuredLyricsDtoListSerializer::class)
+    val structuredLyrics: List<StructuredLyricsDto> = emptyList(),
 )
+
+/** OpenSubsonic structured lyrics track (`getLyricsBySongId`). */
+@Serializable
+data class StructuredLyricsDto(
+    val displayArtist: String = "",
+    val displayTitle: String = "",
+    val lang: String = "",
+    val offset: Long = 0,
+    @Serializable(with = SyncedLineDtoListSerializer::class)
+    val line: List<SyncedLineDto> = emptyList(),
+    val synced: Boolean = false,
+)
+
+object StructuredLyricsDtoListSerializer : SingleOrListSerializer<StructuredLyricsDto>(StructuredLyricsDto.serializer())
 
 @Serializable
 data class SyncedLyricsDto(

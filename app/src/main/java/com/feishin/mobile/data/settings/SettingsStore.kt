@@ -80,6 +80,21 @@ class SettingsStore internal constructor(
         val cachePlayedSongs = booleanPreferencesKey("cache_played_songs")
         val cacheWifiOnly = booleanPreferencesKey("cache_wifi_only")
         val maxDownloadMb = intPreferencesKey("max_download_mb")
+        // Lyrics settings (P9-A)
+        val lyricsFetchOnline = booleanPreferencesKey("lyrics_fetch_online")
+        val lyricsSourcePriority = stringPreferencesKey("lyrics_source_priority")
+        val lyricsAlignment = stringPreferencesKey("lyrics_alignment")
+        val lyricsTextSize = stringPreferencesKey("lyrics_text_size")
+        val lyricsAutoScroll = booleanPreferencesKey("lyrics_auto_scroll")
+        val lyricsTapToSeek = booleanPreferencesKey("lyrics_tap_to_seek")
+        val lyricsWordHighlight = booleanPreferencesKey("lyrics_word_highlight")
+        val lyricsKeepScreenOn = booleanPreferencesKey("lyrics_keep_screen_on")
+        val lyricsSyncOffsetMs = intPreferencesKey("lyrics_sync_offset_ms")
+        val lyricsShowUnsynced = booleanPreferencesKey("lyrics_show_unsynced")
+        // Device files settings (P9-B)
+        val showDeviceFiles = booleanPreferencesKey("show_device_files")
+        val deviceFilesMinDurationSec = intPreferencesKey("device_files_min_duration_sec")
+        val libraryViewMode = stringPreferencesKey("library_view_mode")
     }
 
     data class Settings(
@@ -126,6 +141,21 @@ class SettingsStore internal constructor(
         val cacheWifiOnly: Boolean = true,
         /** Download storage cap in MB. 0 = unlimited. */
         val maxDownloadMb: Int = 0,
+        // Lyrics settings (P9-A)
+        val lyricsFetchOnline: Boolean = true,
+        val lyricsSourcePriority: String = "ONLINE_FIRST",
+        val lyricsAlignment: String = "CENTER",
+        val lyricsTextSize: String = "MEDIUM",
+        val lyricsAutoScroll: Boolean = true,
+        val lyricsTapToSeek: Boolean = true,
+        val lyricsWordHighlight: Boolean = true,
+        val lyricsKeepScreenOn: Boolean = false,
+        val lyricsSyncOffsetMs: Int = 0,
+        val lyricsShowUnsynced: Boolean = true,
+        // Device files settings (P9-B)
+        val showDeviceFiles: Boolean = false,
+        val deviceFilesMinDurationSec: Int = 30,
+        val libraryViewMode: String = "SERVER",
         /** Per-tab sort choices, keyed by tab name. */
         val librarySorts: Map<String, com.feishin.mobile.core.common.SortChoice> = emptyMap(),
         /** Per-tab grid/list layout, keyed by tab name. */
@@ -185,6 +215,19 @@ class SettingsStore internal constructor(
             cachePlayedSongs = p[K.cachePlayedSongs] ?: false,
             cacheWifiOnly = p[K.cacheWifiOnly] ?: true,
             maxDownloadMb = (p[K.maxDownloadMb] ?: 0).coerceAtLeast(0),
+            lyricsFetchOnline = p[K.lyricsFetchOnline] ?: true,
+            lyricsSourcePriority = p[K.lyricsSourcePriority] ?: "ONLINE_FIRST",
+            lyricsAlignment = p[K.lyricsAlignment] ?: "CENTER",
+            lyricsTextSize = p[K.lyricsTextSize] ?: "MEDIUM",
+            lyricsAutoScroll = p[K.lyricsAutoScroll] ?: true,
+            lyricsTapToSeek = p[K.lyricsTapToSeek] ?: true,
+            lyricsWordHighlight = p[K.lyricsWordHighlight] ?: true,
+            lyricsKeepScreenOn = p[K.lyricsKeepScreenOn] ?: false,
+            lyricsSyncOffsetMs = (p[K.lyricsSyncOffsetMs] ?: 0).coerceIn(-2000, 2000),
+            lyricsShowUnsynced = p[K.lyricsShowUnsynced] ?: true,
+            showDeviceFiles = p[K.showDeviceFiles] ?: false,
+            deviceFilesMinDurationSec = p[K.deviceFilesMinDurationSec] ?: 30,
+            libraryViewMode = p[K.libraryViewMode] ?: "SERVER",
             librarySorts = p.asMap()
                 .filterKeys { it.name.startsWith(SORT_PREFIX) }
                 .mapNotNull { (k, v) ->
@@ -251,6 +294,21 @@ class SettingsStore internal constructor(
     suspend fun setCachePlayedSongs(v: Boolean) = edit { it[K.cachePlayedSongs] = v }
     suspend fun setCacheWifiOnly(v: Boolean) = edit { it[K.cacheWifiOnly] = v }
     suspend fun setMaxDownloadMb(v: Int) = edit { it[K.maxDownloadMb] = v.coerceAtLeast(0) }
+    // Lyrics setters (P9-A)
+    suspend fun setLyricsFetchOnline(v: Boolean) = edit { it[K.lyricsFetchOnline] = v }
+    suspend fun setLyricsSourcePriority(v: String) = edit { it[K.lyricsSourcePriority] = v }
+    suspend fun setLyricsAlignment(v: String) = edit { it[K.lyricsAlignment] = v }
+    suspend fun setLyricsTextSize(v: String) = edit { it[K.lyricsTextSize] = v }
+    suspend fun setLyricsAutoScroll(v: Boolean) = edit { it[K.lyricsAutoScroll] = v }
+    suspend fun setLyricsTapToSeek(v: Boolean) = edit { it[K.lyricsTapToSeek] = v }
+    suspend fun setLyricsWordHighlight(v: Boolean) = edit { it[K.lyricsWordHighlight] = v }
+    suspend fun setLyricsKeepScreenOn(v: Boolean) = edit { it[K.lyricsKeepScreenOn] = v }
+    suspend fun setLyricsSyncOffsetMs(v: Int) = edit { it[K.lyricsSyncOffsetMs] = v.coerceIn(-2000, 2000) }
+    suspend fun setLyricsShowUnsynced(v: Boolean) = edit { it[K.lyricsShowUnsynced] = v }
+    // Device files setters (P9-B)
+    suspend fun setShowDeviceFiles(v: Boolean) = edit { it[K.showDeviceFiles] = v }
+    suspend fun setDeviceFilesMinDurationSec(v: Int) = edit { it[K.deviceFilesMinDurationSec] = v }
+    suspend fun setLibraryViewMode(v: String) = edit { it[K.libraryViewMode] = v }
 
     /** Per-tab sort choice, e.g. tab = "ALBUMS". */
     suspend fun setLibrarySort(tab: String, choice: com.feishin.mobile.core.common.SortChoice) =

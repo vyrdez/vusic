@@ -61,7 +61,13 @@ data class Track(
     val replayGainTrack: Double? = null,
     val replayGainAlbum: Double? = null,
     val replayGainPeak: Double? = null,
-)
+    /** Local device file content URI (e.g. content://media/external/audio/media/123), null for server songs. */
+    val localUri: String? = null,
+    /** Modification timestamp in epoch seconds for local device files, 0 for server songs. */
+    val localModifiedSec: Long = 0L,
+) {
+    val isLocal: Boolean get() = !localUri.isNullOrBlank()
+}
 
 @Serializable
 data class Artist(

@@ -3,9 +3,11 @@ package com.feishin.mobile.ui.player
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feishin.mobile.core.common.Result
-import com.feishin.mobile.core.network.SyncedLyrics
+import com.feishin.mobile.core.network.Lyrics
+import com.feishin.mobile.core.network.LyricsSource
+import com.feishin.mobile.data.repo.LyricsRepository
+import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.Track
-import com.feishin.mobile.domain.repo.MusicDataRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
@@ -16,65 +18,82 @@ import kotlinx.coroutines.launch
 
 sealed interface LyricsUi {
     data object Loading : LyricsUi
-    data class Synced(val lyrics: SyncedLyrics) : LyricsUi
-    data class Plain(val text: String) : LyricsUi
+    data class Synced(val lyrics: Lyrics) : LyricsUi
+    data class Plain(val text: String, val source: LyricsSource = LyricsSource.LRCLIB) : LyricsUi
+    data class Instrumental(val source: LyricsSource = LyricsSource.LRCLIB) : LyricsUi
     data object None : LyricsUi
 }
 
-/**
- * Loads lyrics per track with an in-memory cache. Failures degrade to [LyricsUi.None]
- * and never affect playback.
- */
 @HiltViewModel
 class LyricsViewModel @Inject constructor(
-    private val repo: MusicDataRepository,
+    private val repository: LyricsRepository,
+    val settings: SettingsStore,
 ) : ViewModel() {
-    private val cache = object : LinkedHashMap<String, LyricsUi>(64, 0.75f, true) {
-        // Bounded: lyrics are a few KB each and only the current track's
-        // matters; 64 recent entries is plenty and the map can never grow
-        // without bound over a long session.
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, LyricsUi>): Boolean =
-            size > 64
-    }
+
     private val _ui = MutableStateFlow<LyricsUi>(LyricsUi.None)
     val ui: StateFlow<LyricsUi> = _ui.asStateFlow()
-    private var job: Job? = null
-    private var lastId: String? = null
+
+    private var currentJob: Job? = null
+    private var currentKey: String? = null
 
     fun load(track: Track?) {
-        val id = track?.id
-        if (id == null) {
-            job?.cancel()
-            lastId = null
+        if (track == null) {
+            currentJob?.cancel()
+            currentKey = null
             _ui.value = LyricsUi.None
             return
         }
-        if (id == lastId) return
-        lastId = id
-        job?.cancel()
-        cache[id]?.let {
-            _ui.value = it
-            return
-        }
-        job = viewModelScope.launch {
+
+        val key = repository.cacheKeyForTrack(track)
+        if (key == currentKey) return
+        currentKey = key
+
+        currentJob?.cancel()
+        currentJob = viewModelScope.launch {
             _ui.value = LyricsUi.Loading
-            val next = when (val r = repo.lyricsForTrack(id, track.artist, track.title)) {
-                is Result.Ok -> {
-                    val parsed = r.value
-                    when {
-                        parsed.isEmpty -> LyricsUi.None
-                        // A single "synced" line at 0 is plain text in practice.
-                        parsed.lines.size == 1 -> LyricsUi.Plain(parsed.lines[0].text)
-                        else -> LyricsUi.Synced(parsed)
-                    }
+
+            val result = repository.getLyrics(track, bypassCache = false)
+            if (currentKey == key) {
+                when (result) {
+                    is Result.Ok -> _ui.value = toUi(result.value)
+                    is Result.Err -> _ui.value = LyricsUi.None
                 }
-                is Result.Err -> LyricsUi.None
-            }
-            if (lastId == id) {
-                cache[id] = next
-                if (cache.size > 64) cache.remove(cache.keys.first())
-                _ui.value = next
             }
         }
+    }
+
+    /** Manually triggers a fresh lookup ignoring any cached results for this song. */
+    fun searchAgain(track: Track?) {
+        if (track == null) return
+        val key = repository.cacheKeyForTrack(track)
+        currentJob?.cancel()
+        currentJob = viewModelScope.launch {
+            _ui.value = LyricsUi.Loading
+            val result = repository.getLyrics(track, bypassCache = true)
+            if (currentKey == key) {
+                when (result) {
+                    is Result.Ok -> _ui.value = toUi(result.value)
+                    is Result.Err -> _ui.value = LyricsUi.None
+                }
+            }
+        }
+    }
+
+    /** Prefetches lyrics for the upcoming track when conditions permit. */
+    fun prefetchNext(track: Track?) {
+        if (track == null) return
+        viewModelScope.launch {
+            repository.prefetch(track)
+        }
+    }
+
+    private fun toUi(lyrics: Lyrics): LyricsUi = when {
+        lyrics.isInstrumental -> LyricsUi.Instrumental(lyrics.source)
+        lyrics.isPlain -> LyricsUi.Plain(
+            text = lyrics.plainText.ifBlank { lyrics.lines.joinToString("\n") { it.text } },
+            source = lyrics.source,
+        )
+        lyrics.isSynced -> LyricsUi.Synced(lyrics)
+        else -> LyricsUi.None
     }
 }

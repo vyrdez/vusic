@@ -370,6 +370,7 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
 private fun AppearanceScreen(vm: SettingsViewModel) {
     val settings by vm.store.flow.collectAsStateWithLifecycle(initialValue = null)
     val s = settings ?: return
+    var showClearLyricsConfirm by androidx.compose.runtime.remember { mutableStateOf(false) }
     SettingsSection("THEME")
     SettingsCard {
         ChoiceRow(
@@ -384,6 +385,100 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
     SettingsSection("DISPLAY")
     SettingsCard {
         RefreshRateRow(vm, s.refreshRateMode)
+    }
+    SettingsSection("LYRICS")
+    SettingsCard {
+        SwitchRow(
+            "Fetch lyrics online (LRCLIB)",
+            s.lyricsFetchOnline,
+            vm::setLyricsFetchOnline,
+            description = "Searches lrclib.net using song title, artist, album and duration",
+        )
+        ChoiceRow(
+            "Lyrics source priority",
+            if (s.lyricsSourcePriority == "SONG_FILE_FIRST") "Song file first" else "Online first",
+            listOf("Online first", "Song file first"),
+            onSelect = { vm.setLyricsSourcePriority(if (it == "Song file first") "SONG_FILE_FIRST" else "ONLINE_FIRST") },
+            segmented = true,
+            description = "Preferred source when multiple are available.",
+        )
+        val alignOptions = listOf("Left", "Center", "Right")
+        ChoiceRow(
+            "Lyrics text alignment",
+            s.lyricsAlignment.lowercase().replaceFirstChar(Char::uppercase),
+            alignOptions,
+            onSelect = { vm.setLyricsAlignment(it.uppercase()) },
+            segmented = true,
+            description = "How lines are aligned on the Lyrics tab.",
+        )
+        val sizeOptions = listOf("Small", "Medium", "Large")
+        ChoiceRow(
+            "Lyrics text size",
+            s.lyricsTextSize.lowercase().replaceFirstChar(Char::uppercase),
+            sizeOptions,
+            onSelect = { vm.setLyricsTextSize(it.uppercase()) },
+            segmented = true,
+        )
+        SwitchRow(
+            "Auto-scroll lyrics",
+            s.lyricsAutoScroll,
+            vm::setLyricsAutoScroll,
+            description = "Follows the current line.",
+        )
+        SwitchRow(
+            "Tap a line to seek",
+            s.lyricsTapToSeek,
+            vm::setLyricsTapToSeek,
+            description = "Tapping a line jumps playback to that line.",
+        )
+        SwitchRow(
+            "Highlight word by word",
+            s.lyricsWordHighlight,
+            vm::setLyricsWordHighlight,
+            description = "Only when word timing is available.",
+        )
+        SwitchRow(
+            "Keep screen on",
+            s.lyricsKeepScreenOn,
+            vm::setLyricsKeepScreenOn,
+            description = "While the Lyrics tab is open.",
+        )
+        SwitchRow(
+            "Show unsynced lyrics",
+            s.lyricsShowUnsynced,
+            vm::setLyricsShowUnsynced,
+            description = "Otherwise songs without synced lyrics show the no-lyrics state.",
+        )
+        // Offset stepper: -2000..+2000 in 50 ms steps
+        val offsetSteps = (-40..40).map { (it * 50).toString() }
+        val offsetIndex = offsetSteps.map { kotlin.math.abs(it.toInt() - s.lyricsSyncOffsetMs) }
+            .withIndex().minByOrNull { it.value }?.index ?: 40
+        SliderRow(
+            "Lyrics sync offset",
+            "${s.lyricsSyncOffsetMs} ms",
+            index = offsetIndex,
+            steps = offsetSteps,
+            onIndex = { vm.setLyricsSyncOffsetMs(offsetSteps[it].toInt()) },
+            description = "Use this if lyrics are early or late.",
+        )
+        ActionRow("Reset sync offset", buttonLabel = "Reset", onClick = { vm.setLyricsSyncOffsetMs(0) })
+        ActionRow("Clear lyrics cache", buttonLabel = "Clear", onClick = { showClearLyricsConfirm = true })
+    }
+    if (showClearLyricsConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearLyricsConfirm = false },
+            title = { Text("Clear lyrics cache?") },
+            text = { Text("All cached lyrics and negative lookup results will be removed.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearLyricsConfirm = false
+                    vm.clearLyricsCache()
+                }) { Text("Clear") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearLyricsConfirm = false }) { Text("Cancel") }
+            },
+        )
     }
     SettingsSection("LIBRARY LAYOUT")
     SettingsCard {

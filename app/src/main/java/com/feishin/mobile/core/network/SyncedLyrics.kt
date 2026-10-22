@@ -4,8 +4,6 @@ package com.feishin.mobile.core.network
  * Parsed synced lyrics. Pure logic (no Android) so line lookup and parsing are
  * unit-testable.
  */
-data class LyricLine(val startMs: Long, val text: String)
-
 class SyncedLyrics private constructor(
     val lines: List<LyricLine>,
     val offsetMs: Long,

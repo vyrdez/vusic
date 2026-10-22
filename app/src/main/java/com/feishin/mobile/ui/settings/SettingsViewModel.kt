@@ -84,6 +84,7 @@ class SettingsViewModel @Inject constructor(
     private val cacheEvictor: com.feishin.mobile.data.cache.LiveLruCacheEvictor,
     private val downloadScheduler: com.feishin.mobile.data.download.DownloadScheduler,
     private val imageLoader: coil.ImageLoader,
+    private val lyricsRepo: com.feishin.mobile.data.repo.LyricsRepository,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -176,6 +177,17 @@ class SettingsViewModel @Inject constructor(
         store.setMaxDownloadMb(v)
         refreshStorageStats()
     }
+    fun setLyricsFetchOnline(v: Boolean) = viewModelScope.launch { store.setLyricsFetchOnline(v) }
+    fun setLyricsSourcePriority(v: String) = viewModelScope.launch { store.setLyricsSourcePriority(v) }
+    fun setLyricsAlignment(v: String) = viewModelScope.launch { store.setLyricsAlignment(v) }
+    fun setLyricsTextSize(v: String) = viewModelScope.launch { store.setLyricsTextSize(v) }
+    fun setLyricsAutoScroll(v: Boolean) = viewModelScope.launch { store.setLyricsAutoScroll(v) }
+    fun setLyricsTapToSeek(v: Boolean) = viewModelScope.launch { store.setLyricsTapToSeek(v) }
+    fun setLyricsWordHighlight(v: Boolean) = viewModelScope.launch { store.setLyricsWordHighlight(v) }
+    fun setLyricsKeepScreenOn(v: Boolean) = viewModelScope.launch { store.setLyricsKeepScreenOn(v) }
+    fun setLyricsSyncOffsetMs(v: Int) = viewModelScope.launch { store.setLyricsSyncOffsetMs(v) }
+    fun setLyricsShowUnsynced(v: Boolean) = viewModelScope.launch { store.setLyricsShowUnsynced(v) }
+    fun clearLyricsCache() = viewModelScope.launch { lyricsRepo.clearCache() }
 
     /** Device total storage for the slider maxima (StatFs on the data dir). */
     fun deviceMaxBytes(): Long = com.feishin.mobile.core.common.StorageLimits.deviceMaxBytes {
