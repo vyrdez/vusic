@@ -514,6 +514,12 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
             vm::setLyricsShowUnsynced,
             description = "Otherwise songs without synced lyrics show the no-lyrics state.",
         )
+        SwitchRow(
+            "Romanize lyrics automatically",
+            s.lyricsRomanizeAutomatically,
+            vm::setLyricsRomanizeAutomatically,
+            description = "Automatically romanize Japanese, Korean, and Chinese lyrics without touching the lyrics menu.",
+        )
         // Offset stepper: -2000..+2000 in 50 ms steps
         val offsetSteps = (-40..40).map { (it * 50).toString() }
         val offsetIndex = offsetSteps.map { kotlin.math.abs(it.toInt() - s.lyricsSyncOffsetMs) }

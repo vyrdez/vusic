@@ -19,6 +19,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 sealed interface LyricsUi {
@@ -136,9 +137,11 @@ class LyricsViewModel @Inject constructor(
         }
     }
 
-    fun toggleRomanize(trackId: String) {
-        val current = _romanizedTracks.value
-        _romanizedTracks.value = if (trackId in current) current - trackId else current + trackId
+    fun toggleRomanize(trackId: String, hasCjk: Boolean = true) {
+        viewModelScope.launch {
+            val s = settings.flow.first()
+            settings.toggleTrackRomanization(trackId, hasCjk, s.lyricsRomanizeAutomatically)
+        }
     }
 
     /** Prefetches lyrics for the upcoming track when conditions permit. */

@@ -3,6 +3,7 @@ package com.feishin.mobile.ui.player
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -1117,6 +1118,16 @@ private fun LyricsPanel(
                         "RIGHT" -> TextAlign.End
                         else -> TextAlign.Center
                     }
+                    val plainTrack by player.current.collectAsStateWithLifecycle()
+                    val plainTrackId = plainTrack?.id.orEmpty()
+                    val plainHasCjk = remember(state.text) {
+                        com.feishin.mobile.data.lyrics.Romanizer.hasRomanizableScript(state.text)
+                    }
+                    val isPlainRomanized = remember(plainTrackId, plainHasCjk, s) {
+                        if (s != null) {
+                            com.feishin.mobile.data.settings.SettingsStore.isTrackRomanized(plainTrackId, plainHasCjk, s)
+                        } else false
+                    }
                     val pct = com.feishin.mobile.data.settings.SettingsStore.parseLyricsTextSizePercent(s?.lyricsTextSize ?: "100%")
                     val scale = pct / 100f
                     val textStyle = MaterialTheme.typography.bodyMedium.copy(
@@ -1135,13 +1146,35 @@ private fun LyricsPanel(
                             style = MaterialTheme.typography.labelMedium,
                             modifier = Modifier.padding(bottom = 12.dp),
                         )
-                        Text(
-                            state.text,
-                            color = content,
-                            style = textStyle,
-                            textAlign = alignment,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        val plainLines = remember(state.text) { state.text.lines() }
+                        plainLines.forEach { pLine ->
+                            if (pLine.isBlank()) {
+                                Spacer(Modifier.height(12.dp))
+                            } else {
+                                Text(
+                                    pLine,
+                                    color = content,
+                                    style = textStyle,
+                                    textAlign = alignment,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                if (isPlainRomanized) {
+                                    val rom = remember(pLine) { com.feishin.mobile.data.lyrics.Romanizer.romanizeLine(pLine) }
+                                    if (!rom.isNullOrBlank()) {
+                                        Text(
+                                            rom,
+                                            color = dim.copy(alpha = 0.7f),
+                                            style = textStyle.copy(
+                                                fontSize = (16f * scale * 0.75f).sp,
+                                                lineHeight = (22f * scale * 0.75f).sp,
+                                            ),
+                                            textAlign = alignment,
+                                            modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         Spacer(Modifier.height(24.dp))
                         SourceFooter(state.source, dim)
                         Spacer(Modifier.height(64.dp))
@@ -1189,6 +1222,17 @@ private fun SyncedLyricsList(
         lineHeight = (28f * scale).sp,
         fontWeight = FontWeight.Bold,
     )
+
+    val track by player.current.collectAsStateWithLifecycle()
+    val trackId = track?.id.orEmpty()
+    val hasCjk = remember(lyrics) {
+        lyrics.lines.any { !it.romanizedText.isNullOrBlank() || com.feishin.mobile.data.lyrics.Romanizer.hasRomanizableScript(it.text) }
+    }
+    val isRomanized = remember(trackId, hasCjk, settings) {
+        if (settings != null) {
+            com.feishin.mobile.data.settings.SettingsStore.isTrackRomanized(trackId, hasCjk, settings)
+        } else false
+    }
 
     val autoScroll = settings?.lyricsAutoScroll != false
     val wordHighlight = settings?.lyricsWordHighlight != false
@@ -1281,16 +1325,48 @@ private fun SyncedLyricsList(
                     androidx.compose.ui.text.AnnotatedString(displayText)
                 }
 
-                Text(
-                    text = textAnnotated,
-                    color = lineColor,
-                    style = if (active) activeStyle else inactiveStyle,
-                    textAlign = lineAlignment,
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onSeek(line.startMs + lyrics.offsetMs) }
-                        .padding(vertical = 8.dp),
-                )
+                        .padding(vertical = 8.dp)
+                        .animateContentSize(
+                            animationSpec = androidx.compose.animation.core.tween(250)
+                        ),
+                    horizontalAlignment = when (lineAlignment) {
+                        TextAlign.Start -> Alignment.Start
+                        TextAlign.End -> Alignment.End
+                        else -> Alignment.CenterHorizontally
+                    },
+                ) {
+                    Text(
+                        text = textAnnotated,
+                        color = lineColor,
+                        style = if (active) activeStyle else inactiveStyle,
+                        textAlign = lineAlignment,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (isRomanized && !line.romanizedText.isNullOrBlank()) {
+                        val romColor by animateColorAsState(
+                            targetValue = if (active) content.copy(alpha = 0.82f) else dim.copy(alpha = 0.65f),
+                            animationSpec = androidx.compose.animation.core.tween(300),
+                            label = "rom-color",
+                        )
+                        Text(
+                            text = line.romanizedText,
+                            color = romColor,
+                            style = (if (active) activeStyle else inactiveStyle).copy(
+                                fontSize = ((if (active) 21f else 16f) * scale * 0.75f).sp,
+                                lineHeight = ((if (active) 28f else 22f) * scale * 0.75f).sp,
+                                fontWeight = FontWeight.Normal,
+                            ),
+                            textAlign = lineAlignment,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 2.dp),
+                        )
+                    }
+                }
             }
 
             item(key = "footer") {

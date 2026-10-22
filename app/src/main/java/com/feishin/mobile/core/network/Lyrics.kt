@@ -13,6 +13,7 @@ data class LyricLine(
     val text: String,
     val words: List<LyricWord> = emptyList(),
     val agent: String? = null,
+    val romanizedText: String? = null,
 )
 
 /** How the lyrics should be presented and synced. */

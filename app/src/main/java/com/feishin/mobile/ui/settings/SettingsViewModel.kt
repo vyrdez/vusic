@@ -190,6 +190,7 @@ class SettingsViewModel @Inject constructor(
     fun setLyricsProviderOrder(order: List<String>) = viewModelScope.launch { store.setLyricsProviderOrder(order) }
     fun setLyricsProviderEnabled(enabled: Set<String>) = viewModelScope.launch { store.setLyricsProviderEnabled(enabled) }
     fun setLyricsPreferWordByWord(v: Boolean) = viewModelScope.launch { store.setLyricsPreferWordByWord(v) }
+    fun setLyricsRomanizeAutomatically(v: Boolean) = viewModelScope.launch { store.setLyricsRomanizeAutomatically(v) }
     fun resetLyricsProviders() = viewModelScope.launch { store.resetLyricsProviders() }
     fun clearLyricsCache() = viewModelScope.launch { lyricsRepo.clearCache() }
     fun setShowDeviceFiles(v: Boolean) = viewModelScope.launch { store.setShowDeviceFiles(v) }

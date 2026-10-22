@@ -84,7 +84,9 @@ class LyricsRepository @Inject constructor(
                             // Expired negative entry, fall through to re-query
                         } else {
                             // Preserve original provider source stored in cache
-                            return@withContext Result.Ok(cachedLyrics)
+                            val needsRomanize = cachedLyrics.lines.any { it.romanizedText == null && com.feishin.mobile.data.lyrics.Romanizer.hasRomanizableScript(it.text) }
+                            val resolved = if (needsRomanize) com.feishin.mobile.data.lyrics.Romanizer.romanizeLyrics(cachedLyrics) else cachedLyrics
+                            return@withContext Result.Ok(resolved)
                         }
                     }
                 }
@@ -171,11 +173,12 @@ class LyricsRepository @Inject constructor(
             // Persist & Return
             if (finalLyrics != null && !finalLyrics!!.isNone) {
                 sessionFailedKeys.remove(key)
+                val processed = com.feishin.mobile.data.lyrics.Romanizer.romanizeLyrics(finalLyrics!!)
                 runCatching {
-                    val encoded = json.encodeToString(Lyrics.serializer(), finalLyrics!!)
+                    val encoded = json.encodeToString(Lyrics.serializer(), processed)
                     cache.put(LyricsCacheEntity(key, encoded, System.currentTimeMillis()))
                 }
-                return@withContext Result.Ok(finalLyrics!!)
+                return@withContext Result.Ok(processed)
             } else if (transientError != null) {
                 // Do NOT cache transient errors negatively in Room; remember in session guard
                 sessionFailedKeys.add(key)
@@ -203,7 +206,8 @@ class LyricsRepository @Inject constructor(
     suspend fun saveCustomLyrics(track: Track, lyrics: Lyrics) = withContext(Dispatchers.IO) {
         val key = cacheKeyForTrack(track)
         sessionFailedKeys.remove(key)
-        val encoded = json.encodeToString(Lyrics.serializer(), lyrics)
+        val processed = com.feishin.mobile.data.lyrics.Romanizer.romanizeLyrics(lyrics)
+        val encoded = json.encodeToString(Lyrics.serializer(), processed)
         cache.put(LyricsCacheEntity(key, encoded, System.currentTimeMillis()))
     }
 

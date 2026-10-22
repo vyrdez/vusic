@@ -96,6 +96,9 @@ class SettingsStore internal constructor(
         val lyricsPreferWordByWord = booleanPreferencesKey("lyrics_prefer_word_by_word")
         val lyricsRespectAgentPositioning = booleanPreferencesKey("lyrics_respect_agent_positioning")
         val lyricsShowIntervalIndicator = booleanPreferencesKey("lyrics_show_interval_indicator")
+        val lyricsRomanizeAutomatically = booleanPreferencesKey("lyrics_romanize_automatically")
+        val lyricsRomanizedTrackIds = stringPreferencesKey("lyrics_romanized_track_ids")
+        val lyricsDeRomanizedTrackIds = stringPreferencesKey("lyrics_deromanized_track_ids")
         // Device files settings (P9-B)
         val showDeviceFiles = booleanPreferencesKey("show_device_files")
         val deviceFilesMinDurationSec = intPreferencesKey("device_files_min_duration_sec")
@@ -162,6 +165,9 @@ class SettingsStore internal constructor(
         val lyricsPreferWordByWord: Boolean = true,
         val lyricsRespectAgentPositioning: Boolean = false,
         val lyricsShowIntervalIndicator: Boolean = true,
+        val lyricsRomanizeAutomatically: Boolean = false,
+        val lyricsRomanizedTrackIds: Set<String> = emptySet(),
+        val lyricsDeRomanizedTrackIds: Set<String> = emptySet(),
         // Device files settings (P9-B)
         val showDeviceFiles: Boolean = false,
         val deviceFilesMinDurationSec: Int = 30,
@@ -242,6 +248,9 @@ class SettingsStore internal constructor(
             lyricsPreferWordByWord = p[K.lyricsPreferWordByWord] ?: true,
             lyricsRespectAgentPositioning = p[K.lyricsRespectAgentPositioning] ?: false,
             lyricsShowIntervalIndicator = p[K.lyricsShowIntervalIndicator] ?: true,
+            lyricsRomanizeAutomatically = p[K.lyricsRomanizeAutomatically] ?: false,
+            lyricsRomanizedTrackIds = p[K.lyricsRomanizedTrackIds]?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
+            lyricsDeRomanizedTrackIds = p[K.lyricsDeRomanizedTrackIds]?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet(),
             showDeviceFiles = p[K.showDeviceFiles] ?: false,
             deviceFilesMinDurationSec = p[K.deviceFilesMinDurationSec] ?: 30,
             libraryViewMode = p[K.libraryViewMode] ?: "SERVER",
@@ -287,6 +296,12 @@ class SettingsStore internal constructor(
                 "LARGE" -> 125
                 else -> 100
             }
+        }
+
+        fun isTrackRomanized(trackId: String, hasCjk: Boolean, settings: Settings): Boolean {
+            if (trackId in settings.lyricsRomanizedTrackIds) return true
+            if (trackId in settings.lyricsDeRomanizedTrackIds) return false
+            return settings.lyricsRomanizeAutomatically && hasCjk
         }
     }
 
@@ -340,6 +355,23 @@ class SettingsStore internal constructor(
     suspend fun setLyricsPreferWordByWord(v: Boolean) = edit { it[K.lyricsPreferWordByWord] = v }
     suspend fun setLyricsRespectAgentPositioning(v: Boolean) = edit { it[K.lyricsRespectAgentPositioning] = v }
     suspend fun setLyricsShowIntervalIndicator(v: Boolean) = edit { it[K.lyricsShowIntervalIndicator] = v }
+    suspend fun setLyricsRomanizeAutomatically(v: Boolean) = edit { it[K.lyricsRomanizeAutomatically] = v }
+    suspend fun toggleTrackRomanization(trackId: String, hasCjk: Boolean, autoRomanize: Boolean) = edit { p ->
+        val romanized = p[K.lyricsRomanizedTrackIds]?.split(",")?.filter { it.isNotBlank() }?.toMutableSet() ?: mutableSetOf()
+        val deRomanized = p[K.lyricsDeRomanizedTrackIds]?.split(",")?.filter { it.isNotBlank() }?.toMutableSet() ?: mutableSetOf()
+        val isCurrentlyRomanized = if (trackId in romanized) true else if (trackId in deRomanized) false else (autoRomanize && hasCjk)
+        if (isCurrentlyRomanized) {
+            romanized.remove(trackId)
+            if (autoRomanize && hasCjk) {
+                deRomanized.add(trackId)
+            }
+        } else {
+            deRomanized.remove(trackId)
+            romanized.add(trackId)
+        }
+        p[K.lyricsRomanizedTrackIds] = romanized.joinToString(",")
+        p[K.lyricsDeRomanizedTrackIds] = deRomanized.joinToString(",")
+    }
     suspend fun resetLyricsProviders() = edit {
         it[K.lyricsProviderOrder] = DEFAULT_LYRICS_PROVIDER_ORDER.joinToString(",")
         it[K.lyricsProviderEnabled] = DEFAULT_LYRICS_PROVIDER_ENABLED.joinToString(",")

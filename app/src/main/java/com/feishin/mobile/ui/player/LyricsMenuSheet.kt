@@ -181,12 +181,15 @@ fun LyricsMenuSheet(
             }
 
             // Option 4: Romanize current track
-            val isRomanized = track.id in (lyricsVm.romanizedTracks.value)
+            val hasCjk = remember(currentLyrics) {
+                currentLyrics?.lines?.any { !it.romanizedText.isNullOrBlank() || com.feishin.mobile.data.lyrics.Romanizer.hasRomanizableScript(it.text) } ?: false
+            }
+            val isRomanized = SettingsStore.isTrackRomanized(track.id, hasCjk, settings)
             MenuSwitchRow(
                 title = "Romanize current track",
                 description = "Show romanized pronunciation below non-Latin lines",
                 checked = isRomanized,
-                onCheckedChange = { lyricsVm.toggleRomanize(track.id) },
+                onCheckedChange = { lyricsVm.toggleRomanize(track.id, hasCjk) },
             )
 
             // Option 5: Text size stepper
