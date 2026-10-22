@@ -27,7 +27,7 @@ support for browsing and playing local device music files. The queue is
 gapless-capable ExoPlayer with a volume-ramp crossfade, ReplayGain (peak-limited,
 never clips), per-network quality for mobile and Wi-Fi, and a smart prefetch cache
 so transitions have no loading gap. There's a full-screen Now Playing with
-real-time synced lyrics (LRCLIB first with song-metadata and embedded tag fallback),
+real-time synced lyrics (multi-provider chain: LRCLIB, BetterLyrics, Paxsenix, KuGou, and local metadata fallback),
 a mini player you can drag to skip, clear, or open Now Playing,
 and a queue sheet with drag-reorder, swipe-to-remove, shuffle with order
 restore, save-as-playlist, radio, and undo after clearing.
@@ -48,12 +48,12 @@ switching, and a refresh-rate preference (Auto/Max/Standard 60 Hz).
 
 ### Lyrics & Privacy
 
-When "Fetch lyrics online (LRCLIB)" is enabled, Vusic asks the public LRCLIB API
-for synced lyrics. A lookup sends only the song's title, artist, album name and
-duration. Your server URL, username, internal song IDs and local file paths are
-never sent. As with any HTTP request, LRCLIB sees the IP address the request
-comes from. Negative lookups are cached locally, and lookups are skipped
-entirely in Offline mode or when the setting is off.
+When online lyrics sources (LRCLIB, BetterLyrics, Paxsenix, KuGou) are enabled, Vusic queries
+the enabled providers sequentially for synced lyrics. A lookup sends only the song's title, artist, album name,
+and duration. Your server URL, username, internal song IDs, and local file paths are never sent.
+As with any HTTP request, external providers see the IP address the request originates from.
+Negative lookups are cached locally with expiry, and online lookups are skipped entirely in Offline
+mode or when all online providers are disabled. KuGou is an unofficial service marked in settings.
 
 Accessibility was built in from the start: content descriptions, 48dp touch
 targets, text that scales to 1.3x without clipping, full TalkBack navigation on
