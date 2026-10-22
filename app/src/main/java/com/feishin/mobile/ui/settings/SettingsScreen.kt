@@ -16,11 +16,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
@@ -434,14 +437,53 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
             segmented = true,
             description = "How lines are aligned on the Lyrics tab.",
         )
-        val sizeOptions = listOf("Small", "Medium", "Large")
-        ChoiceRow(
-            "Lyrics text size",
-            s.lyricsTextSize.lowercase().replaceFirstChar(Char::uppercase),
-            sizeOptions,
-            onSelect = { vm.setLyricsTextSize(it.uppercase()) },
-            segmented = true,
-        )
+        val currentSizePct = com.feishin.mobile.data.settings.SettingsStore.parseLyricsTextSizePercent(s.lyricsTextSize)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                Text("Lyrics text size", style = MaterialTheme.typography.bodyLarge)
+                Text("Adjust lyrics line text scaling (80% to 220%)", style = MaterialTheme.typography.bodySmall, color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText)
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                IconButton(
+                    onClick = {
+                        val newPct = (currentSizePct - 10).coerceIn(80, 220)
+                        vm.setLyricsTextSize("${newPct}%")
+                    },
+                    enabled = currentSizePct > 80,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(com.feishin.mobile.ui.theme.VusicColors.SurfaceHigh, CircleShape),
+                ) {
+                    Icon(Icons.Default.Remove, contentDescription = "Decrease text size", modifier = Modifier.size(18.dp))
+                }
+                Text(
+                    text = "$currentSizePct%",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+                IconButton(
+                    onClick = {
+                        val newPct = (currentSizePct + 10).coerceIn(80, 220)
+                        vm.setLyricsTextSize("${newPct}%")
+                    },
+                    enabled = currentSizePct < 220,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(com.feishin.mobile.ui.theme.VusicColors.SurfaceHigh, CircleShape),
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Increase text size", modifier = Modifier.size(18.dp))
+                }
+            }
+        }
         SwitchRow(
             "Auto-scroll lyrics",
             s.lyricsAutoScroll,

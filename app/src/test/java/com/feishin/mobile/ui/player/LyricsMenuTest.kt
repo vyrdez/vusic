@@ -4,6 +4,7 @@ import com.feishin.mobile.core.network.LyricLine
 import com.feishin.mobile.core.network.Lyrics
 import com.feishin.mobile.core.network.LyricsKind
 import com.feishin.mobile.core.network.LyricsSource
+import com.feishin.mobile.data.settings.SettingsStore
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -11,14 +12,14 @@ class LyricsMenuTest {
 
     @Test
     fun parseTextSizeToPercent_handlesLegacyAndPercentages() {
-        assertEquals(85, parseTextSizeToPercent("SMALL"))
-        assertEquals(100, parseTextSizeToPercent("MEDIUM"))
-        assertEquals(125, parseTextSizeToPercent("LARGE"))
+        assertEquals(85, SettingsStore.parseLyricsTextSizePercent("SMALL"))
+        assertEquals(100, SettingsStore.parseLyricsTextSizePercent("MEDIUM"))
+        assertEquals(125, SettingsStore.parseLyricsTextSizePercent("LARGE"))
 
-        assertEquals(100, parseTextSizeToPercent("100%"))
-        assertEquals(150, parseTextSizeToPercent("150%"))
-        assertEquals(80, parseTextSizeToPercent("70%")) // clamped min 80
-        assertEquals(220, parseTextSizeToPercent("250%")) // clamped max 220
+        assertEquals(100, SettingsStore.parseLyricsTextSizePercent("100%"))
+        assertEquals(150, SettingsStore.parseLyricsTextSizePercent("150%"))
+        assertEquals(80, SettingsStore.parseLyricsTextSizePercent("70%")) // clamped min 80
+        assertEquals(220, SettingsStore.parseLyricsTextSizePercent("250%")) // clamped max 220
     }
 
     @Test

@@ -150,7 +150,7 @@ class SettingsStore internal constructor(
         val lyricsFetchOnline: Boolean = true,
         val lyricsSourcePriority: String = "ONLINE_FIRST",
         val lyricsAlignment: String = "CENTER",
-        val lyricsTextSize: String = "MEDIUM",
+        val lyricsTextSize: String = "100%",
         val lyricsAutoScroll: Boolean = true,
         val lyricsTapToSeek: Boolean = true,
         val lyricsWordHighlight: Boolean = true,
@@ -228,7 +228,7 @@ class SettingsStore internal constructor(
             lyricsFetchOnline = p[K.lyricsFetchOnline] ?: true,
             lyricsSourcePriority = p[K.lyricsSourcePriority] ?: "ONLINE_FIRST",
             lyricsAlignment = p[K.lyricsAlignment] ?: "CENTER",
-            lyricsTextSize = p[K.lyricsTextSize] ?: "MEDIUM",
+            lyricsTextSize = parseLyricsTextSizePercent(p[K.lyricsTextSize] ?: "100%").let { "${it}%" },
             lyricsAutoScroll = p[K.lyricsAutoScroll] ?: true,
             lyricsTapToSeek = p[K.lyricsTapToSeek] ?: true,
             lyricsWordHighlight = p[K.lyricsWordHighlight] ?: true,
@@ -277,6 +277,17 @@ class SettingsStore internal constructor(
         val RADIO_BATCH_OPTIONS = listOf(10, 20, 30, 50)
         val DEFAULT_LYRICS_PROVIDER_ORDER = listOf("LRCLIB", "BETTER_LYRICS", "PAXSENIX", "KUGOU", "LOCAL_DATA")
         val DEFAULT_LYRICS_PROVIDER_ENABLED = setOf("LRCLIB", "BETTER_LYRICS", "KUGOU", "LOCAL_DATA")
+
+        fun parseLyricsTextSizePercent(raw: String): Int {
+            val clean = raw.trim().removeSuffix("%")
+            val num = clean.toIntOrNull()
+            if (num != null) return num.coerceIn(80, 220)
+            return when (raw.uppercase()) {
+                "SMALL" -> 85
+                "LARGE" -> 125
+                else -> 100
+            }
+        }
     }
 
     suspend fun setTheme(v: ThemeMode) = edit { it[K.theme] = v.name }

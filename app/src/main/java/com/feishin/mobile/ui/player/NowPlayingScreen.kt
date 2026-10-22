@@ -1117,11 +1117,12 @@ private fun LyricsPanel(
                         "RIGHT" -> TextAlign.End
                         else -> TextAlign.Center
                     }
-                    val textStyle = when (s?.lyricsTextSize) {
-                        "SMALL" -> MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp, lineHeight = 20.sp)
-                        "LARGE" -> MaterialTheme.typography.bodyLarge.copy(fontSize = 20.sp, lineHeight = 28.sp)
-                        else -> MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp, lineHeight = 22.sp)
-                    }
+                    val pct = com.feishin.mobile.data.settings.SettingsStore.parseLyricsTextSizePercent(s?.lyricsTextSize ?: "100%")
+                    val scale = pct / 100f
+                    val textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = (16f * scale).sp,
+                        lineHeight = (22f * scale).sp,
+                    )
                     Column(
                         Modifier
                             .fillMaxSize()
@@ -1177,14 +1178,17 @@ private fun SyncedLyricsList(
         else -> TextAlign.Center
     }
 
-    val (inactiveStyle, activeStyle) = when (settings?.lyricsTextSize) {
-        "SMALL" -> MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp, lineHeight = 20.sp) to
-            MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold)
-        "LARGE" -> MaterialTheme.typography.bodyLarge.copy(fontSize = 20.sp, lineHeight = 28.sp) to
-            MaterialTheme.typography.headlineSmall.copy(fontSize = 26.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold)
-        else -> MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp, lineHeight = 22.sp) to
-            MaterialTheme.typography.titleLarge.copy(fontSize = 21.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold)
-    }
+    val pct = com.feishin.mobile.data.settings.SettingsStore.parseLyricsTextSizePercent(settings?.lyricsTextSize ?: "100%")
+    val scale = pct / 100f
+    val inactiveStyle = MaterialTheme.typography.bodyMedium.copy(
+        fontSize = (16f * scale).sp,
+        lineHeight = (22f * scale).sp,
+    )
+    val activeStyle = MaterialTheme.typography.titleLarge.copy(
+        fontSize = (21f * scale).sp,
+        lineHeight = (28f * scale).sp,
+        fontWeight = FontWeight.Bold,
+    )
 
     val autoScroll = settings?.lyricsAutoScroll != false
     val wordHighlight = settings?.lyricsWordHighlight != false

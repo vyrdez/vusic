@@ -584,13 +584,5 @@ private fun formatToLrc(lyrics: Lyrics): String {
 }
 
 /** Parses legacy and percentage text size values into an Int percentage. */
-fun parseTextSizeToPercent(raw: String): Int {
-    val clean = raw.trim().removeSuffix("%")
-    val num = clean.toIntOrNull()
-    if (num != null) return num.coerceIn(80, 220)
-    return when (raw.uppercase()) {
-        "SMALL" -> 85
-        "LARGE" -> 125
-        else -> 100
-    }
-}
+fun parseTextSizeToPercent(raw: String): Int =
+    SettingsStore.parseLyricsTextSizePercent(raw)
