@@ -32,15 +32,34 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import com.feishin.mobile.ui.theme.VusicColors
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -90,6 +109,7 @@ private fun tabLabel(t: LibraryTab) = when (t) {
     LibraryTab.DOWNLOADS -> "Downloads"
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
     initialTab: LibraryTab? = null,
@@ -120,64 +140,126 @@ fun LibraryScreen(
     val scope = rememberCoroutineScope()
     val query = queries[tab].orEmpty()
 
+    val settings by vm.settingsFlow.collectAsStateWithLifecycle(initialValue = null)
+    val showDeviceFiles = settings?.showDeviceFiles == true
+    val isDeviceMode = showDeviceFiles && settings?.libraryViewMode == "DEVICE"
+    val currentTitle = if (isDeviceMode) "Device files" else "Library"
+    var showViewMySheet by remember { mutableStateOf(false) }
+
     // The nav arg is authoritative only the first time each value is seen
     // (Explore pills); a back re-entry must not reset the user's tab.
     LaunchedEffect(initialTab) { vm.applyNavTab(initialTab) }
 
     Column(Modifier.fillMaxSize()) {
-        // Same title row as Settings: one shared component, identical spacing.
-        com.feishin.mobile.ui.components.ScreenTitleRow(title = "Library") {
-            IconButton(onClick = { searchOpen = !searchOpen }, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Default.Search, contentDescription = "Search library")
-            }
-            IconButton(onClick = { vm.toggleLayout(tab) }, modifier = Modifier.size(48.dp)) {
-                Icon(
-                    if (grid) Icons.Default.ViewList else Icons.Default.GridView,
-                    contentDescription = "Toggle view",
-                )
-            }
-            IconButton(onClick = { showSortSheet = true }, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Default.Sort, contentDescription = "Sort")
-            }
-        }
-        // Inline search: filters the current tab locally, query kept in memory
-        // while the tab is open. It used to be a bare `if`, so the row popped in
-        // and the chips below it jumped. Animating the height inside the layout
-        // flow makes the chips glide, and the field only takes focus once the
-        // reveal is under way so the keyboard does not cover the animation.
-        AnimatedVisibility(
-            visible = searchOpen,
-            enter = expandVertically(
-                expandFrom = androidx.compose.ui.Alignment.Top,
-                animationSpec = com.feishin.mobile.ui.theme.Motion.layoutTween(),
-            ) + fadeIn(com.feishin.mobile.ui.theme.Motion.fade()),
-            exit = shrinkVertically(
-                shrinkTowards = androidx.compose.ui.Alignment.Top,
-                animationSpec = com.feishin.mobile.ui.theme.Motion.layoutTween(),
-            ) + fadeOut(com.feishin.mobile.ui.theme.Motion.fade()),
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(com.feishin.mobile.ui.components.TopLevelTitleBar.RowHeight)
+                .padding(start = VusicSpacing.ScreenHorizontal, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            LibrarySearchField(
-                query = query,
-                onQuery = { vm.setQuery(tab, it) },
-                onClose = { searchOpen = false; vm.clearQuery(tab) },
-                autoFocus = true,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = if (showDeviceFiles) {
+                    Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { showViewMySheet = true }
+                        .padding(vertical = 4.dp, horizontal = 4.dp)
+                } else Modifier,
+            ) {
+                Text(
+                    currentTitle,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = VusicColors.Accent,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.semantics { heading() },
+                )
+                if (showDeviceFiles) {
+                    Spacer(Modifier.width(8.dp))
+                    val chevronRotation by animateFloatAsState(
+                        targetValue = if (showViewMySheet) 180f else 0f,
+                        animationSpec = tween(250),
+                        label = "chevron",
+                    )
+                    Box(
+                        Modifier
+                            .size(26.dp)
+                            .clip(CircleShape)
+                            .background(VusicColors.SurfaceHigh),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Switch library source",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .graphicsLayer { rotationZ = chevronRotation },
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            if (!isDeviceMode) {
+                IconButton(onClick = { searchOpen = !searchOpen }, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.Search, contentDescription = "Search library")
+                }
+                IconButton(onClick = { vm.toggleLayout(tab) }, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        if (grid) Icons.Default.ViewList else Icons.Default.GridView,
+                        contentDescription = "Toggle view",
+                    )
+                }
+                IconButton(onClick = { showSortSheet = true }, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Default.Sort, contentDescription = "Sort")
+                }
+            }
         }
-        // Chips own their line and scroll on their own.
-        FilterChipRow(
-            options = LibraryTab.entries.map(::tabLabel),
-            selected = tabLabel(tab),
-            onSelect = { label -> vm.selectTab(LibraryTab.entries.first { tabLabel(it) == label }) },
-        )
-        if (showSortSheet) {
-            SortBottomSheet(
-                tabName = tab.name,
-                current = sorts[tab] ?: com.feishin.mobile.core.common.LibrarySorts.default(tab.name),
-                onSelect = { vm.setSort(tab, it) },
-                onDismiss = { showSortSheet = false },
-            )
-        }
-        LibraryPullToRefresh(vm, tab) {
+
+        Crossfade(
+            targetState = isDeviceMode,
+            animationSpec = tween(250),
+            label = "library_source_crossfade",
+        ) { deviceMode ->
+            if (deviceMode) {
+                DeviceFilesScreen(player = player, onActions = onActions)
+            } else {
+                Column(Modifier.fillMaxSize()) {
+                    // Inline search
+                    AnimatedVisibility(
+                        visible = searchOpen,
+                        enter = expandVertically(
+                            expandFrom = androidx.compose.ui.Alignment.Top,
+                            animationSpec = com.feishin.mobile.ui.theme.Motion.layoutTween(),
+                        ) + fadeIn(com.feishin.mobile.ui.theme.Motion.fade()),
+                        exit = shrinkVertically(
+                            shrinkTowards = androidx.compose.ui.Alignment.Top,
+                            animationSpec = com.feishin.mobile.ui.theme.Motion.layoutTween(),
+                        ) + fadeOut(com.feishin.mobile.ui.theme.Motion.fade()),
+                    ) {
+                        LibrarySearchField(
+                            query = query,
+                            onQuery = { vm.setQuery(tab, it) },
+                            onClose = { searchOpen = false; vm.clearQuery(tab) },
+                            autoFocus = true,
+                        )
+                    }
+                    // Chips own their line and scroll on their own.
+                    FilterChipRow(
+                        options = LibraryTab.entries.map(::tabLabel),
+                        selected = tabLabel(tab),
+                        onSelect = { label -> vm.selectTab(LibraryTab.entries.first { tabLabel(it) == label }) },
+                    )
+                    if (showSortSheet) {
+                        SortBottomSheet(
+                            tabName = tab.name,
+                            current = sorts[tab] ?: com.feishin.mobile.core.common.LibrarySorts.default(tab.name),
+                            onSelect = { vm.setSort(tab, it) },
+                            onDismiss = { showSortSheet = false },
+                        )
+                    }
+                    LibraryPullToRefresh(vm, tab) {
             when (tab) {
                 LibraryTab.ALBUMS -> {
                     val ui by vm.albums.collectAsStateWithLifecycle()
@@ -535,6 +617,104 @@ fun LibraryScreen(
                         onManage = onOpenDownloads,
                         onActions = onActions,
                     )
+                }
+            }
+        }
+    }
+}
+        }
+    }
+
+    if (showViewMySheet) {
+        val serverUrl by vm.serverUrl.collectAsStateWithLifecycle()
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showViewMySheet = false },
+            sheetState = sheetState,
+            containerColor = VusicColors.SurfaceHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 32.dp),
+            ) {
+                Text(
+                    "View my",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 16.dp),
+                )
+                val serverSubtitle = serverUrl.takeIf { it.isNotBlank() } ?: "Server music"
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            vm.setLibraryViewMode("SERVER")
+                            scope.launch { sheetState.hide() }.invokeOnCompletion { showViewMySheet = false }
+                        }
+                        .padding(vertical = 12.dp, horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Library",
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                            color = if (!isDeviceMode) com.feishin.mobile.ui.theme.VusicColors.Accent else MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            serverSubtitle,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (!isDeviceMode) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = "Active",
+                            tint = com.feishin.mobile.ui.theme.VusicColors.Accent,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            vm.setLibraryViewMode("DEVICE")
+                            scope.launch { sheetState.hide() }.invokeOnCompletion { showViewMySheet = false }
+                        }
+                        .padding(vertical = 12.dp, horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Device files",
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                            color = if (isDeviceMode) com.feishin.mobile.ui.theme.VusicColors.Accent else MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            "Music stored on this device",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (isDeviceMode) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = "Active",
+                            tint = com.feishin.mobile.ui.theme.VusicColors.Accent,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
                 }
             }
         }

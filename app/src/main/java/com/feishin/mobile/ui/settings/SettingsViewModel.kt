@@ -188,6 +188,9 @@ class SettingsViewModel @Inject constructor(
     fun setLyricsSyncOffsetMs(v: Int) = viewModelScope.launch { store.setLyricsSyncOffsetMs(v) }
     fun setLyricsShowUnsynced(v: Boolean) = viewModelScope.launch { store.setLyricsShowUnsynced(v) }
     fun clearLyricsCache() = viewModelScope.launch { lyricsRepo.clearCache() }
+    fun setShowDeviceFiles(v: Boolean) = viewModelScope.launch { store.setShowDeviceFiles(v) }
+    fun setDeviceFilesMinDurationSec(v: Int) = viewModelScope.launch { store.setDeviceFilesMinDurationSec(v) }
+    fun setLibraryViewMode(v: String) = viewModelScope.launch { store.setLibraryViewMode(v) }
 
     /** Device total storage for the slider maxima (StatFs on the data dir). */
     fun deviceMaxBytes(): Long = com.feishin.mobile.core.common.StorageLimits.deviceMaxBytes {

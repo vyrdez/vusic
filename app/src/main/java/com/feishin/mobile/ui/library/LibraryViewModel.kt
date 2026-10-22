@@ -45,6 +45,7 @@ class LibraryViewModel @Inject constructor(
     private val cachedTracks: CachedTrackStore,
     private val refresh: LibraryRefresh,
     savedStateHandle: SavedStateHandle,
+    private val creds: com.feishin.mobile.data.auth.CredentialsStore? = null,
 ) : ViewModel() {
     private val handle: SavedStateHandle = savedStateHandle
 
@@ -83,6 +84,16 @@ class LibraryViewModel @Inject constructor(
      * user-driven selection untouched on re-entry.
      */
     private val appliedNavTabs = mutableSetOf<LibraryTab>()
+
+    val settingsFlow = settings.flow
+
+    val serverUrl: StateFlow<String> = (creds?.state ?: MutableStateFlow(null))
+        .map { it?.serverUrl.orEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    fun setLibraryViewMode(mode: String) = viewModelScope.launch {
+        settings.setLibraryViewMode(mode)
+    }
 
     /** Cached songs for the pinned Cached collection row. */
     val cached: StateFlow<List<CachedTrackEntity>> = cachedTracks.tracks

@@ -457,6 +457,10 @@ class MusicRepository @Inject constructor(
     }
 
     override fun coverArtUrl(coverArtId: String?, size: Int): String? {
+        if (coverArtId.isNullOrBlank()) return null
+        if (coverArtId.startsWith("content://") || coverArtId.startsWith("file://")) {
+            return coverArtId
+        }
         val c = creds.state.value ?: return null
         // Stable salt per cover so Coil's disk/memory cache can hit.
         return CoverArtUrlProvider.build(c.serverUrl, c.username, c.password, coverArtId, size)

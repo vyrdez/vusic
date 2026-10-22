@@ -485,9 +485,10 @@ class PlayerManager @Inject constructor(
     }
 
     private suspend fun toMediaItem(track: Track, queueId: Long? = null): MediaItem? {
+        val deviceUri = track.localUri
         // Offline files win over the network so downloads play with no connection.
-        val local = downloads.localFile(track.id)
-        val localUri = local?.let { PlaybackSource.localUri(it.absolutePath) }
+        val local = if (deviceUri == null) downloads.localFile(track.id) else null
+        val localUri = deviceUri ?: local?.let { PlaybackSource.localUri(it.absolutePath) }
         val streamUrl = if (localUri == null) streamUrlFor(track) else null
         if (localUri == null && streamUrl == null) return null
         return TrackMediaItems.toMediaItem(
@@ -545,6 +546,10 @@ class PlayerManager @Inject constructor(
     }
 
     fun coverArtUrl(coverArtId: String?, size: Int = 600): String? {
+        if (coverArtId.isNullOrBlank()) return null
+        if (coverArtId.startsWith("content://") || coverArtId.startsWith("file://")) {
+            return coverArtId
+        }
         val c = creds.state.value ?: return null
         return CoverArtUrlProvider.build(
             c.serverUrl, c.username, c.password, coverArtId, size,

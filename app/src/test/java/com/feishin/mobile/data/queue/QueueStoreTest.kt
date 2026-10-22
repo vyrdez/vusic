@@ -158,4 +158,26 @@ class QueueStoreTest {
         assertEquals(1, loaded.currentIndex)
         assertEquals(0L, loaded.positionMs)
     }
+
+    @Test
+    fun saveAndLoad_preservesLocalUriAndModifiedSecForDeviceFiles() = runTest {
+        val s = store()
+        val serverTrack = track("srv_1", "Server Song")
+        val localTrack = track("loc_2", "Local Song").copy(
+            localUri = "content://media/external/audio/media/42",
+            localModifiedSec = 1700000000L,
+        )
+        s.save(listOf(serverTrack, localTrack), currentIndex = 1, positionMs = 5000L)
+
+        val loaded = s.load()!!
+        assertEquals(2, loaded.tracks.size)
+
+        val loadedServer = loaded.tracks[0].toDomain()
+        assertNull(loadedServer.localUri)
+        assertEquals(0L, loadedServer.localModifiedSec)
+
+        val loadedLocal = loaded.tracks[1].toDomain()
+        assertEquals("content://media/external/audio/media/42", loadedLocal.localUri)
+        assertEquals(1700000000L, loadedLocal.localModifiedSec)
+    }
 }

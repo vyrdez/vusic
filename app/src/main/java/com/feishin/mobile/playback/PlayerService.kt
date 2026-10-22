@@ -164,16 +164,19 @@ class PlayerService : MediaLibraryService() {
         exo.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val id = mediaItem?.mediaId ?: return
-                // "Now playing" scrobble + reset the submission rule for the new track.
-                scope.launch { repo.scrobble(id, submission = false) }
+                // "Now playing" scrobble + reset the submission rule for the new track (never for local files).
+                if (!isLocal(mediaItem)) {
+                    scope.launch { repo.scrobble(id, submission = false) }
+                }
                 startTicker()
                 pushWidget()
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) {
-                    val id = player?.currentMediaItem?.mediaId
-                    if (id != null && scrobblePolicy.onTrackEnded(id, player?.duration ?: 0L)) {
+                    val item = player?.currentMediaItem
+                    val id = item?.mediaId
+                    if (id != null && !isLocal(item) && scrobblePolicy.onTrackEnded(id, player?.duration ?: 0L)) {
                         scope.launch { repo.scrobble(id, submission = true) }
                     }
                 }
@@ -185,6 +188,12 @@ class PlayerService : MediaLibraryService() {
 
             override fun onPlayerError(error: PlaybackException) {
                 stopTicker()
+                val currentItem = player?.currentMediaItem
+                if (isLocal(currentItem) && player?.hasNextMediaItem() == true) {
+                    player?.seekToNextMediaItem()
+                    player?.prepare()
+                    player?.play()
+                }
             }
         })
 
@@ -281,8 +290,9 @@ class PlayerService : MediaLibraryService() {
         ticker = scope.launch {
             while (true) {
                 val p = player ?: break
-                val id = p.currentMediaItem?.mediaId
-                if (id != null && p.isPlaying) {
+                val item = p.currentMediaItem
+                val id = item?.mediaId
+                if (id != null && !isLocal(item) && p.isPlaying) {
                     val submit = scrobblePolicy.onProgress(
                         id = id,
                         positionMs = p.currentPosition,
@@ -310,7 +320,16 @@ class PlayerService : MediaLibraryService() {
         }
     }
 
+    private fun isLocal(mediaItem: MediaItem?): Boolean {
+        val uri = mediaItem?.localConfiguration?.uri
+        return uri?.scheme == "content" || uri?.scheme == "file" || (mediaItem?.mediaId?.startsWith("local:") == true)
+    }
+
     private fun coverUrl(coverArtId: String?, size: Int = 512): Uri? {
+        if (coverArtId.isNullOrBlank()) return null
+        if (coverArtId.startsWith("content://") || coverArtId.startsWith("file://")) {
+            return Uri.parse(coverArtId)
+        }
         val c = creds.state.value ?: return null
         return CoverArtUrlProvider.build(c.serverUrl, c.username, c.password, coverArtId, size)
             ?.let { Uri.parse(it) }

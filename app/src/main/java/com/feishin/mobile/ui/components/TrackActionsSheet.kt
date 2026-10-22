@@ -253,15 +253,17 @@ private fun TrackSheetContent(
     val pinKey = speedDialKey("album", track.albumId ?: track.album)
     val pinned = pins?.pins?.contains(pinKey) == true
 
+    val isLocal = track.isLocal
+
     fun closeAnd(block: () -> Unit) {
         onDismiss()
         block()
     }
 
     SheetHeader(
-        title = track.title, subtitle = track.artist, starred = starred, starEnabled = true,
+        title = track.title, subtitle = track.artist, starred = starred, starEnabled = !isLocal,
         onStar = {
-            if (starring) return@SheetHeader
+            if (isLocal || starring) return@SheetHeader
             val next = !starred
             starred = next
             starring = true
@@ -278,49 +280,59 @@ private fun TrackSheetContent(
         },
         onClose = onDismiss,
     )
-    ActionTiles(
-        onPlayNext = {
+    if (!isLocal) {
+        ActionTiles(
+            onPlayNext = {
+                player.playNext(track)
+                messenger.show("Playing next: ${track.title}")
+                onDismiss()
+            },
+            onSaveToPlaylist = { showPicker = true },
+            onShare = {
+                shareText(context, "${track.title} - ${track.artist}")
+                onDismiss()
+            },
+        )
+        SheetRow("Start radio", Icons.Default.Radio, onClick = {
+            // The seed starts instantly as item 1; the 20-song batch fills in
+            // behind it and endless appends keep it going.
+            player.startRadio(track) { messenger.show("Your library is empty") }
+            onDismiss()
+            onStartRadio()
+        })
+    } else {
+        SheetRow("Play next", Icons.AutoMirrored.Filled.PlaylistPlay, onClick = {
             player.playNext(track)
             messenger.show("Playing next: ${track.title}")
             onDismiss()
-        },
-        onSaveToPlaylist = { showPicker = true },
-        onShare = {
-            shareText(context, "${track.title} - ${track.artist}")
-            onDismiss()
-        },
-    )
-    SheetRow("Start radio", Icons.Default.Radio, onClick = {
-        // The seed starts instantly as item 1; the 20-song batch fills in
-        // behind it and endless appends keep it going.
-        player.startRadio(track) { messenger.show("Your library is empty") }
-        onDismiss()
-        onStartRadio()
-    })
+        })
+    }
     SheetRow("Add to queue", Icons.Default.QueueMusic, onClick = {
         player.addToEnd(track)
         messenger.show("Added to queue: ${track.title}")
         onDismiss()
     })
-    SheetRow(if (starred) "Remove from library" else "Save to library",
-        if (starred) Icons.Default.BookmarkAdded else Icons.Default.BookmarkAdd,
-        onClick = {
-            if (starring) return@SheetRow
-            val next = !starred
-            starred = next
-            starring = true
-            scope.launch {
-                when (favs.setTrackStarred(track.id, next)) {
-                    is Result.Ok -> messenger.show(if (next) "Saved to library" else "Removed from library")
-                    is Result.Err -> {
-                        starred = !next
-                        messenger.show("Could not update favorite")
+    if (!isLocal) {
+        SheetRow(if (starred) "Remove from library" else "Save to library",
+            if (starred) Icons.Default.BookmarkAdded else Icons.Default.BookmarkAdd,
+            onClick = {
+                if (starring) return@SheetRow
+                val next = !starred
+                starred = next
+                starring = true
+                scope.launch {
+                    when (favs.setTrackStarred(track.id, next)) {
+                        is Result.Ok -> messenger.show(if (next) "Saved to library" else "Removed from library")
+                        is Result.Err -> {
+                            starred = !next
+                            messenger.show("Could not update favorite")
+                        }
                     }
+                    starring = false
                 }
-                starring = false
-            }
-        })
-    DownloadTrackRow(track, downloads, messenger, scope)
+            })
+        DownloadTrackRow(track, downloads, messenger, scope)
+    }
     if (track.albumId?.isNotBlank() == true) {
         SheetRow("Go to album", Icons.Default.Album, onClick = { closeAnd { onAlbum(track.albumId) } })
     }
@@ -328,12 +340,14 @@ private fun TrackSheetContent(
         SheetRow("Go to artist", Icons.Default.Person, onClick = { closeAnd { onArtist(track.artistId) } })
     }
     SheetRow("View song details", Icons.Default.Info, onClick = { showDetails = true })
-    SheetRow(if (pinned) "Unpin from Speed dial" else "Pin to Speed dial", Icons.Default.PushPin, onClick = {
-        scope.launch {
-            settings.setPinned(pinKey, !pinned)
-            messenger.show(if (!pinned) "Pinned to Speed dial" else "Unpinned from Speed dial")
-        }
-    })
+    if (!isLocal) {
+        SheetRow(if (pinned) "Unpin from Speed dial" else "Pin to Speed dial", Icons.Default.PushPin, onClick = {
+            scope.launch {
+                settings.setPinned(pinKey, !pinned)
+                messenger.show(if (!pinned) "Pinned to Speed dial" else "Unpinned from Speed dial")
+            }
+        })
+    }
 
     if (showPicker) {
         PlaylistPickerSheet(tracks = listOf(track), title = track.title, onDismiss = { showPicker = false }, repo = repo, messenger = messenger, playlistEvents = playlistEvents)

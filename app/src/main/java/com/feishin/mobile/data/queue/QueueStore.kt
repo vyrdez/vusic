@@ -45,18 +45,54 @@ data class PersistedTrack(
      */
     val downloaded: Boolean = false,
     val cached: Boolean = false,
+    val localUri: String? = null,
+    val localModifiedSec: Long = 0L,
 ) {
     fun toDomain() = Track(
-        id, title, album, albumId, artist, artistId, coverArt, durationSec, trackNo, year, genre, suffix, starred,
-        sizeBytes, bitRate, path,
+        id = id,
+        title = title,
+        album = album,
+        albumId = albumId,
+        artist = artist,
+        artistId = artistId,
+        coverArt = coverArt,
+        durationSec = durationSec,
+        trackNo = trackNo,
+        year = year,
+        genre = genre,
+        suffix = suffix,
+        starred = starred,
+        sizeBytes = sizeBytes,
+        bitRate = bitRate,
+        path = path,
+        localUri = localUri,
+        localModifiedSec = localModifiedSec,
     )
 
     companion object {
         fun from(t: Track, queueId: Long = -1L, downloaded: Boolean = false, cached: Boolean = false) =
             PersistedTrack(
-                t.id, t.title, t.album, t.albumId, t.artist, t.artistId, t.coverArt,
-                t.durationSec, t.trackNo, t.year, t.genre, t.suffix, t.starred,
-                t.sizeBytes, t.bitRate, t.path, queueId, downloaded, cached,
+                id = t.id,
+                title = t.title,
+                album = t.album,
+                albumId = t.albumId,
+                artist = t.artist,
+                artistId = t.artistId,
+                coverArt = t.coverArt,
+                durationSec = t.durationSec,
+                trackNo = t.trackNo,
+                year = t.year,
+                genre = t.genre,
+                suffix = t.suffix,
+                starred = t.starred,
+                sizeBytes = t.sizeBytes,
+                bitRate = t.bitRate,
+                path = t.path,
+                queueId = queueId,
+                downloaded = downloaded,
+                cached = cached,
+                localUri = t.localUri,
+                localModifiedSec = t.localModifiedSec,
             )
     }
 }

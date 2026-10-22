@@ -104,6 +104,9 @@ object NetworkModule {
         }.getOrDefault(250).coerceIn(100, 1024)
         return ImageLoader.Builder(ctx)
             .okHttpClient(coilClient)
+            .components {
+                add(com.feishin.mobile.core.ui.LocalAudioCoverFetcher.Factory(ctx))
+            }
             .crossfade(true)
             .placeholder(com.feishin.mobile.R.drawable.art_placeholder)
             .error(com.feishin.mobile.R.drawable.art_error)

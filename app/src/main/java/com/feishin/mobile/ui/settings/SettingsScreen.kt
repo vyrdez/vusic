@@ -1,6 +1,7 @@
 package com.feishin.mobile.ui.settings
 
 import androidx.activity.compose.BackHandler
+import com.feishin.mobile.core.common.DeviceFilesFilter
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -967,6 +968,107 @@ private fun StorageScreen(
                 onClick = { vm.restartApp() },
             )
         }
+    }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val permission = if (android.os.Build.VERSION.SDK_INT >= 33) {
+        android.Manifest.permission.READ_MEDIA_AUDIO
+    } else {
+        android.Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+    var showPermissionRationale by androidx.compose.runtime.remember { mutableStateOf(false) }
+    var showAppSettingsDialog by androidx.compose.runtime.remember { mutableStateOf(false) }
+
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            vm.setShowDeviceFiles(true)
+        } else {
+            vm.setShowDeviceFiles(false)
+            val activity = context as? android.app.Activity
+            if (activity != null && !androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)) {
+                showAppSettingsDialog = true
+            } else {
+                showPermissionRationale = true
+            }
+        }
+    }
+
+    SettingsSection("DEVICE FILES")
+    SettingsCard {
+        SwitchRow(
+            "Show device files",
+            s.showDeviceFiles,
+            onSet = { enable ->
+                if (enable) {
+                    val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, permission,
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                    if (hasPerm) {
+                        vm.setShowDeviceFiles(true)
+                    } else {
+                        permissionLauncher.launch(permission)
+                    }
+                } else {
+                    vm.setShowDeviceFiles(false)
+                }
+            },
+            description = "Browse audio files stored on this device.",
+            showDivider = true,
+        )
+        val durationLabels = DeviceFilesFilter.DURATION_CHOICES.map { DeviceFilesFilter.durationLabel(it) }
+        val currentDurationLabel = DeviceFilesFilter.durationLabel(s.deviceFilesMinDurationSec)
+        ChoiceRow(
+            "Minimum track length",
+            currentDurationLabel,
+            durationLabels,
+            onSelect = { label ->
+                val idx = durationLabels.indexOf(label)
+                if (idx >= 0) {
+                    vm.setDeviceFilesMinDurationSec(DeviceFilesFilter.DURATION_CHOICES[idx])
+                }
+            },
+            segmented = true,
+            description = "Filter out short audio clips and ringtones.",
+        )
+    }
+
+    if (showPermissionRationale) {
+        AlertDialog(
+            onDismissRequest = { showPermissionRationale = false },
+            title = { Text("Audio permission needed") },
+            text = { Text("Vusic requires permission to read audio files so you can browse and play device music.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showPermissionRationale = false
+                    permissionLauncher.launch(permission)
+                }) { Text("Grant permission") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPermissionRationale = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showAppSettingsDialog) {
+        AlertDialog(
+            onDismissRequest = { showAppSettingsDialog = false },
+            title = { Text("Permission permanently denied") },
+            text = { Text("Audio permission was previously denied. Please enable it in system app settings to show device files.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAppSettingsDialog = false
+                    val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = android.net.Uri.fromParts("package", context.packageName, null)
+                    }
+                    context.startActivity(intent)
+                }) { Text("Open app settings") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAppSettingsDialog = false }) { Text("Cancel") }
+            },
+        )
     }
     SettingsSection("DANGEROUS")
     SettingsCard {

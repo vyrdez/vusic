@@ -16,6 +16,9 @@ object CoverArtUrlProvider {
         size: Int,
     ): String? {
         if (coverArtId.isNullOrBlank()) return null
+        if (coverArtId.startsWith("content://") || coverArtId.startsWith("file://")) {
+            return coverArtId
+        }
         val salt = SubsonicAuth.stableSalt("cover:$coverArtId")
         val query = mapOf(
             "id" to coverArtId,
