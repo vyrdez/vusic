@@ -45,6 +45,7 @@ class MusicRepository @Inject constructor(
     private val settings: com.feishin.mobile.data.settings.SettingsStore,
     // Lazy breaks the cycle: the sync store replays through this repository.
     private val offlineSync: dagger.Lazy<com.feishin.mobile.data.download.OfflineSyncStore>,
+    private val playlistEvents: dagger.Lazy<com.feishin.mobile.data.favorites.PlaylistEvents>,
 ) : MusicDataRepository {
     /** Background revalidations outlive any one screen. */
     private val cacheScope = kotlinx.coroutines.CoroutineScope(
@@ -381,6 +382,9 @@ class MusicRepository @Inject constructor(
         Result.Ok(playlistId)
     }
 
+    override suspend fun cachedPlaylist(id: String): PlaylistDetail? =
+        cache.read(com.feishin.mobile.data.cache.MetadataCacheKeys.playlist(id), PlaylistDetail.serializer())
+
     override suspend fun addToPlaylist(playlistId: String, trackIds: List<String>): Result<Unit> = call {
         // Subsonic GET URLs have practical length limits; add in batches so a
         // large artist (500+ songs) fits in a single request per batch.
@@ -392,6 +396,72 @@ class MusicRepository @Inject constructor(
             }
         }
         Result.Ok(Unit)
+    }
+
+    override suspend fun addToPlaylistOptimistic(
+        playlistId: String,
+        tracks: List<Track>,
+        playlistName: String,
+        onRollback: (() -> Unit)?,
+    ): Result<Unit> {
+        val detailKey = com.feishin.mobile.data.cache.MetadataCacheKeys.playlist(playlistId)
+        val playlistsKey = com.feishin.mobile.data.cache.MetadataCacheKeys.PLAYLISTS
+
+        // Snapshot original cached state for rollback
+        val originalDetail = cache.read(detailKey, PlaylistDetail.serializer())
+        val originalPlaylists = cache.read(
+            playlistsKey,
+            kotlinx.serialization.builtins.ListSerializer(Playlist.serializer()),
+        )
+
+        // Optimistically update local Room cache
+        if (originalDetail != null) {
+            val updatedDetail = originalDetail.copy(
+                songCount = originalDetail.songCount + tracks.size,
+                durationSec = originalDetail.durationSec + tracks.sumOf { it.durationSec },
+                tracks = originalDetail.tracks + tracks,
+            )
+            cache.write(detailKey, PlaylistDetail.serializer(), updatedDetail)
+        }
+        if (originalPlaylists != null) {
+            val updatedPlaylists = originalPlaylists.map { p ->
+                if (p.id == playlistId) {
+                    p.copy(
+                        songCount = p.songCount + tracks.size,
+                        durationSec = p.durationSec + tracks.sumOf { it.durationSec },
+                    )
+                } else p
+            }
+            cache.write(
+                playlistsKey,
+                kotlinx.serialization.builtins.ListSerializer(Playlist.serializer()),
+                updatedPlaylists,
+            )
+        }
+        playlistEvents.get().emit(com.feishin.mobile.data.favorites.PlaylistEvent.TracksAdded(playlistId))
+
+        // Background network sync
+        cacheScope.launch {
+            val res = addToPlaylist(playlistId, tracks.map { it.id })
+            if (res is Result.Err) {
+                // Roll back local Room cache
+                if (originalDetail != null) {
+                    cache.write(detailKey, PlaylistDetail.serializer(), originalDetail)
+                } else {
+                    cache.remove(detailKey)
+                }
+                if (originalPlaylists != null) {
+                    cache.write(
+                        playlistsKey,
+                        kotlinx.serialization.builtins.ListSerializer(Playlist.serializer()),
+                        originalPlaylists,
+                    )
+                }
+                playlistEvents.get().emit(com.feishin.mobile.data.favorites.PlaylistEvent.TracksAdded(playlistId))
+                onRollback?.invoke()
+            }
+        }
+        return Result.Ok(Unit)
     }
 
     override suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit> = call {

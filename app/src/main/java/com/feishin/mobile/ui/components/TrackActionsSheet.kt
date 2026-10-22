@@ -768,34 +768,25 @@ fun PlaylistPickerSheet(
     val scope = rememberCoroutineScope()
     var playlists by remember { mutableStateOf<List<Playlist>?>(null) }
     var showNew by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var pending by remember { mutableStateOf<PendingDupCheck?>(null) }
+    var confirmDupTarget by remember { mutableStateOf<Playlist?>(null) }
 
     LaunchedEffect(Unit) {
         playlists = (repo.playlists() as? Result.Ok)?.value
     }
 
-    suspend fun addAndReport(playlistId: String, playlistName: String, toAdd: List<Track>, skipped: Int) {
-        // Skip-only (everything was already there) needs no server call.
-        if (toAdd.isEmpty()) {
-            messenger.show(if (skipped > 0) "Skipped $skipped" else "Nothing to add")
-            busy = false
-            onDismiss()
-            return
-        }
-        when (repo.addToPlaylist(playlistId, toAdd.map { it.id })) {
-            is Result.Ok -> {
-                messenger.show(
-                    if (skipped > 0) "Added ${toAdd.size}, skipped $skipped"
-                    else "Saved ${toAdd.size} to $playlistName",
-                )
-                playlistEvents?.emit(PlaylistEvent.TracksAdded(playlistId))
-                onDismiss()
-            }
-            is Result.Err -> {
-                messenger.show("Could not save to $playlistName")
-                busy = false
-            }
+    fun performAdd(p: Playlist) {
+        onDismiss()
+        val msg = if (tracks.size == 1) "Added to ${p.name}" else "Added ${tracks.size} to ${p.name}"
+        messenger.show(msg)
+        scope.launch {
+            repo.addToPlaylistOptimistic(
+                playlistId = p.id,
+                tracks = tracks,
+                playlistName = p.name,
+                onRollback = {
+                    messenger.show("Couldn't add to ${p.name} • Retry")
+                },
+            )
         }
     }
 
@@ -830,24 +821,18 @@ fun PlaylistPickerSheet(
                             )
                             Box(Modifier.weight(1f)) {
                                 SheetRow("${p.name} • ${p.songCount}", Icons.Default.QueueMusic, onClick = {
-                                    if (busy) return@SheetRow
-                                    busy = true
                                     scope.launch {
-                                        val detail = (repo.playlist(p.id) as? Result.Ok)?.value
-                                        if (detail == null) {
-                                            messenger.show("Could not open ${p.name}")
-                                            busy = false
-                                            return@launch
-                                        }
-                                        val part = PlaylistDuplicates.partition(
-                                            detail.tracks.map { it.id }.toSet(), tracks,
-                                        )
-                                        if (part.duplicates.isEmpty()) {
-                                            addAndReport(p.id, p.name, part.fresh, 0)
+                                        val cached = repo.cachedPlaylist(p.id)
+                                        val isDuplicate = if (cached != null) {
+                                            val existingIds = cached.tracks.map { it.id }.toSet()
+                                            tracks.any { it.id in existingIds }
                                         } else {
-                                            // Ask before adding: skip, add anyway, or cancel.
-                                            pending = PendingDupCheck(p.id, p.name, part)
-                                            busy = false
+                                            false // Missing cache proceeds without blocking network
+                                        }
+                                        if (isDuplicate) {
+                                            confirmDupTarget = p
+                                        } else {
+                                            performAdd(p)
                                         }
                                     }
                                 })
@@ -860,21 +845,26 @@ fun PlaylistPickerSheet(
         }
     }
 
-    pending?.let { pd ->
-        DuplicateConfirmDialog(
-            dupCount = pd.partition.duplicates.size,
-            playlistName = pd.playlistName,
-            onSkip = {
-                pending = null
-                busy = true
-                scope.launch { addAndReport(pd.playlistId, pd.playlistName, pd.partition.fresh, pd.partition.duplicates.size) }
+    confirmDupTarget?.let { p ->
+        val songName = if (tracks.size == 1) "\"${tracks.first().title}\"" else "${tracks.size} songs"
+        AlertDialog(
+            onDismissRequest = { confirmDupTarget = null },
+            title = { Text("Already in playlist") },
+            text = { Text("$songName is already in \"${p.name}\". Add anyway?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val target = p
+                    confirmDupTarget = null
+                    performAdd(target)
+                }) {
+                    Text("Add")
+                }
             },
-            onAddAnyway = {
-                pending = null
-                busy = true
-                scope.launch { addAndReport(pd.playlistId, pd.playlistName, tracks, 0) }
+            dismissButton = {
+                TextButton(onClick = { confirmDupTarget = null }) {
+                    Text("Cancel")
+                }
             },
-            onCancel = { pending = null },
         )
     }
 
@@ -892,18 +882,20 @@ fun PlaylistPickerSheet(
             },
             confirmButton = {
                 TextButton(
-                    enabled = name.isNotBlank() && !busy,
+                    enabled = name.isNotBlank(),
                     onClick = {
-                        busy = true
+                        val trimmed = name.trim()
+                        showNew = false
+                        onDismiss()
+                        messenger.show("Creating playlist $trimmed")
                         scope.launch {
-                            when (repo.createPlaylist(name.trim(), tracks.map { it.id })) {
+                            when (repo.createPlaylist(trimmed, tracks.map { it.id })) {
                                 is Result.Ok -> {
-                                    messenger.show("Created playlist $name")
-                                    onDismiss()
+                                    messenger.show("Created playlist $trimmed")
+                                    playlistEvents?.emit(PlaylistEvent.TracksAdded(trimmed))
                                 }
                                 is Result.Err -> {
                                     messenger.show("Could not create playlist")
-                                    busy = false
                                 }
                             }
                         }

@@ -41,7 +41,14 @@ interface MusicDataRepository {
     suspend fun starAlbum(id: String, starred: Boolean): Result<Unit>
     suspend fun starArtist(id: String, starred: Boolean): Result<Unit>
     suspend fun createPlaylist(name: String, trackIds: List<String> = emptyList()): Result<String>
+    suspend fun cachedPlaylist(id: String): PlaylistDetail? = null
     suspend fun addToPlaylist(playlistId: String, trackIds: List<String>): Result<Unit>
+    suspend fun addToPlaylistOptimistic(
+        playlistId: String,
+        tracks: List<Track>,
+        playlistName: String = "",
+        onRollback: (() -> Unit)? = null,
+    ): Result<Unit> = addToPlaylist(playlistId, tracks.map { it.id })
     suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit>
     suspend fun deletePlaylist(id: String): Result<Unit>
     suspend fun scrobble(id: String, submission: Boolean): Result<Unit>
