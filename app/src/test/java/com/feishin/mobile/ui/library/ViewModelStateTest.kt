@@ -97,7 +97,7 @@ class ViewModelStateTest {
     val temp = TemporaryFolder()
 
     private fun settings() = SettingsStore(
-        PreferenceDataStoreFactory.create { temp.newFile("settings_test.preferences_pb") },
+        PreferenceDataStoreFactory.create { java.io.File(temp.root, "settings_test_${java.util.UUID.randomUUID()}.preferences_pb") },
     )
 
     @Before

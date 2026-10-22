@@ -24,7 +24,7 @@ class RememberLyricsTabTest {
     fun testTabStatePersistenceAndRestore() = runTest {
         val testDataStore = androidx.datastore.preferences.core.PreferenceDataStoreFactory.create(
             scope = backgroundScope,
-            produceFile = { tmp.newFile("test_settings.preferences_pb") }
+            produceFile = { java.io.File(tmp.root, "test_settings_${java.util.UUID.randomUUID()}.preferences_pb") }
         )
         val store = SettingsStore(testDataStore)
 

@@ -198,7 +198,8 @@ class PlayerService : MediaLibraryService() {
         })
 
         player = exo
-        mediaSession = MediaLibrarySession.Builder(this, exo, AutoCallback())
+        val sessionPlayer = BoundedQueuePlayer(exo, maxWindow = 100)
+        mediaSession = MediaLibrarySession.Builder(this, sessionPlayer, AutoCallback())
             .setSessionActivity(
                 PendingIntent.getActivity(
                     this,
@@ -812,7 +813,10 @@ class PlayerService : MediaLibraryService() {
             scope.launch {
                 val bmp = runCatching {
                     withContext(Dispatchers.IO) {
-                        val req = ImageRequest.Builder(this@PlayerService).data(data).build()
+                        val req = ImageRequest.Builder(this@PlayerService)
+                            .data(data)
+                            .size(256, 256)
+                            .build()
                         (imageLoader.execute(req).drawable?.toBitmap())
                             ?: BitmapFactory.decodeByteArray(data, 0, data.size)
                     }
@@ -827,7 +831,10 @@ class PlayerService : MediaLibraryService() {
             scope.launch {
                 val bmp = runCatching {
                     withContext(Dispatchers.IO) {
-                        val req = ImageRequest.Builder(this@PlayerService).data(uri.toString()).build()
+                        val req = ImageRequest.Builder(this@PlayerService)
+                            .data(uri.toString())
+                            .size(256, 256)
+                            .build()
                         imageLoader.execute(req).drawable?.toBitmap()
                     }
                 }.getOrNull() ?: placeholderBitmap()

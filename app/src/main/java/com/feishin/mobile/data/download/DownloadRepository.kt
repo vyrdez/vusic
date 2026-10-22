@@ -94,6 +94,12 @@ class DownloadRepository @Inject constructor(
 
     suspend fun completedTracks(): List<DownloadEntity> = dao.completed()
 
+    suspend fun completedPathMap(): Map<String, String> =
+        dao.completed().mapNotNull { e ->
+            val p = e.filePath
+            if (p != null) e.songId to p else null
+        }.toMap()
+
     /** Actively transferring rows (for the Storage screen counters). */
     suspend fun activeDownloads(): List<DownloadEntity> = dao.pending()
 
