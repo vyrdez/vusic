@@ -95,8 +95,14 @@ class DeviceFilesViewModel @Inject constructor(
             val s = settings.flow.first()
             val minTrackSec = s.deviceFilesMinDurationSec
 
-            val (tracks, albums, artists) = withContext(Dispatchers.IO) {
-                queryMediaStore(minTrackSec)
+            val (tracks, albums, artists) = try {
+                withContext(Dispatchers.IO) {
+                    queryMediaStore(minTrackSec)
+                }
+            } catch (_: SecurityException) {
+                // Permission was revoked between the check and the query.
+                _state.value = _state.value.copy(hasPermission = false, isLoading = false)
+                return@launch
             }
 
             allTracks = tracks
@@ -119,7 +125,8 @@ class DeviceFilesViewModel @Inject constructor(
                 reloadJob?.cancel()
                 reloadJob = viewModelScope.launch {
                     delay(500) // Debounce observer triggers
-                    loadData()
+                    // The permission may have been revoked since the last load.
+                    checkAndLoad()
                 }
             }
         }

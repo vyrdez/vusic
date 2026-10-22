@@ -40,8 +40,8 @@ enum class LyricsSource {
  * Fully resolved lyrics for one song. Produced by [LyricsProvider] implementations;
  * pure data so the UI, ViewModel, and Room cache never touch the network directly.
  *
- * Line start times are stored already offset by [offsetMs], so [lineIndexAt]
- * compares straight against the player position.
+ * Line start times are stored unshifted; [offsetMs] is subtracted when
+ * comparing against the player position (see [lineIndexAt]).
  */
 @Serializable
 data class Lyrics(

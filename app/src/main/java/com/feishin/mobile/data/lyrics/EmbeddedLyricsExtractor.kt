@@ -22,25 +22,28 @@ import java.nio.charset.StandardCharsets
 object EmbeddedLyricsExtractor {
 
     fun extract(stream: InputStream): Lyrics? {
+        // ContentResolver streams are often not markable, and the header peek
+        // below rewinds. Buffer it ourselves rather than relying on mark/reset.
+        val src = if (stream.markSupported()) stream else java.io.BufferedInputStream(stream)
         val header = ByteArray(12)
-        stream.mark(12)
-        val read = stream.read(header)
-        stream.reset()
+        src.mark(12)
+        val read = src.read(header)
+        src.reset()
         if (read < 4) return null
 
         return when {
             header[0] == 'I'.code.toByte() && header[1] == 'D'.code.toByte() && header[2] == '3'.code.toByte() -> {
-                extractId3v2(stream)
+                extractId3v2(src)
             }
             header[0] == 'f'.code.toByte() && header[1] == 'L'.code.toByte() && header[2] == 'a'.code.toByte() && header[3] == 'C'.code.toByte() -> {
-                extractFlac(stream)
+                extractFlac(src)
             }
             header[0] == 'O'.code.toByte() && header[1] == 'g'.code.toByte() && header[2] == 'g'.code.toByte() && header[3] == 'S'.code.toByte() -> {
-                extractOgg(stream)
+                extractOgg(src)
             }
             read >= 8 && (header[4] == 'f'.code.toByte() && header[5] == 't'.code.toByte() && header[6] == 'y'.code.toByte() && header[7] == 'p'.code.toByte() ||
                 header[4] == 'm'.code.toByte() && header[5] == 'o'.code.toByte() && header[6] == 'o'.code.toByte() && header[7] == 'v'.code.toByte()) -> {
-                extractMp4(stream)
+                extractMp4(src)
             }
             else -> null
         }

@@ -435,9 +435,9 @@ class MusicRepository @Inject constructor(
                 val structured = runCatching { api.getLyricsBySongId(id).response }.getOrNull()
                 val synced = structured?.lyricsList?.syncedLyrics
                 if (synced != null && synced.line.isNotEmpty()) {
-                    val offset = if (synced.offset > 0) synced.offset * 1000L else 0L
+                    // OpenSubsonic reports the offset in milliseconds (may be negative).
                     return@runCatching Result.Ok(
-                        SyncedLyrics.parse(synced.line.map { it.start to it.value }, offset),
+                        SyncedLyrics.parse(synced.line.map { it.start to it.value }, synced.offset),
                     )
                 }
                 val plain = structured?.lyricsList?.plainLyrics?.value

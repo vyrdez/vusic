@@ -65,7 +65,33 @@ class EmbeddedLyricsExtractorTest {
     @Test
     fun `extracts LYRICS from synthetic FLAC Vorbis comment block`() {
         val lyricsText = "Plain lyric content without stamps"
+        val flac = flacWithVorbisLyrics(lyricsText)
 
+        val lyrics = EmbeddedLyricsExtractor.extract(ByteArrayInputStream(flac))
+        assertNotNull(lyrics)
+        assertEquals(LyricsKind.PLAIN, lyrics!!.kind)
+        assertEquals(lyricsText, lyrics.plainText)
+    }
+
+    @Test
+    fun `reads a stream that does not support mark and reset`() {
+        // ContentResolver streams (device files) often refuse mark/reset; the
+        // extractor must buffer them itself instead of silently returning null.
+        val flac = flacWithVorbisLyrics("Lyrics from a device file")
+        val notMarkable = object : java.io.FilterInputStream(ByteArrayInputStream(flac)) {
+            override fun markSupported(): Boolean = false
+            override fun mark(readlimit: Int) = Unit
+            override fun reset() = throw java.io.IOException("mark/reset not supported")
+        }
+
+        val lyrics = EmbeddedLyricsExtractor.extract(notMarkable)
+
+        assertNotNull(lyrics)
+        assertEquals("Lyrics from a device file", lyrics!!.plainText)
+    }
+
+    /** Minimal FLAC stream with one Vorbis comment block holding a LYRICS tag. */
+    private fun flacWithVorbisLyrics(lyricsText: String): ByteArray {
         // Vorbis comment block:
         // 4 bytes vendor len (LE) + vendor
         // 4 bytes comment count (LE)
@@ -86,7 +112,7 @@ class EmbeddedLyricsExtractorTest {
         }.toByteArray()
 
         // FLAC structure: "fLaC" + block header (type 4 = vorbis comment, last block) + payload
-        val flac = ByteArrayOutputStream().apply {
+        return ByteArrayOutputStream().apply {
             write("fLaC".toByteArray(StandardCharsets.ISO_8859_1))
             // isLast (0x80) | blockType 4 = 0x84
             write(0x84)
@@ -96,10 +122,5 @@ class EmbeddedLyricsExtractorTest {
             write(len and 0xFF)
             write(vorbisPayload)
         }.toByteArray()
-
-        val lyrics = EmbeddedLyricsExtractor.extract(ByteArrayInputStream(flac))
-        assertNotNull(lyrics)
-        assertEquals(LyricsKind.PLAIN, lyrics!!.kind)
-        assertEquals(lyricsText, lyrics.plainText)
     }
 }

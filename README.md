@@ -48,13 +48,12 @@ switching, and a refresh-rate preference (Auto/Max/Standard 60 Hz).
 
 ### Lyrics & Privacy
 
-When "Fetch lyrics online (LRCLIB)" is enabled, Vusic queries the public LRCLIB API
-for synced lyrics. To protect your privacy:
-- Vusic sends **only** the song's `title`, `artist`, `album` name, and `duration`.
-- Vusic **never** sends server URLs, usernames, internal song IDs, local file paths, or IP addresses.
-- Negative lookups are cached locally so repeated lookups are avoided.
-- Lyrics lookups are completely bypassed when in Offline mode or when disabled in Settings.
-
+When "Fetch lyrics online (LRCLIB)" is enabled, Vusic asks the public LRCLIB API
+for synced lyrics. A lookup sends only the song's title, artist, album name and
+duration. Your server URL, username, internal song IDs and local file paths are
+never sent. As with any HTTP request, LRCLIB sees the IP address the request
+comes from. Negative lookups are cached locally, and lookups are skipped
+entirely in Offline mode or when the setting is off.
 
 Accessibility was built in from the start: content descriptions, 48dp touch
 targets, text that scales to 1.3x without clipping, full TalkBack navigation on

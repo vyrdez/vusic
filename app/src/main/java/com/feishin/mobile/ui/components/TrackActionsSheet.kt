@@ -333,10 +333,10 @@ private fun TrackSheetContent(
             })
         DownloadTrackRow(track, downloads, messenger, scope)
     }
-    if (track.albumId?.isNotBlank() == true) {
+    if (!isLocal && track.albumId?.isNotBlank() == true) {
         SheetRow("Go to album", Icons.Default.Album, onClick = { closeAnd { onAlbum(track.albumId) } })
     }
-    if (track.artistId?.isNotBlank() == true) {
+    if (!isLocal && track.artistId?.isNotBlank() == true) {
         SheetRow("Go to artist", Icons.Default.Person, onClick = { closeAnd { onArtist(track.artistId) } })
     }
     SheetRow("View song details", Icons.Default.Info, onClick = { showDetails = true })

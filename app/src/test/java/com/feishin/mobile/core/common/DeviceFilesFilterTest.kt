@@ -50,21 +50,6 @@ class DeviceFilesFilterTest {
     }
 
     @Test
-    fun isHiddenForLocal_hidesServerOnlyActions() {
-        assertTrue(DeviceFilesFilter.isHiddenForLocal("FAVORITE"))
-        assertTrue(DeviceFilesFilter.isHiddenForLocal("DOWNLOAD"))
-        assertTrue(DeviceFilesFilter.isHiddenForLocal("ADD_TO_PLAYLIST"))
-        assertTrue(DeviceFilesFilter.isHiddenForLocal("START_RADIO"))
-        assertTrue(DeviceFilesFilter.isHiddenForLocal("SHARE"))
-        assertTrue(DeviceFilesFilter.isHiddenForLocal("PIN"))
-
-        assertFalse(DeviceFilesFilter.isHiddenForLocal("PLAY_NEXT"))
-        assertFalse(DeviceFilesFilter.isHiddenForLocal("ADD_TO_QUEUE"))
-        assertFalse(DeviceFilesFilter.isHiddenForLocal("VIEW_ALBUM"))
-        assertFalse(DeviceFilesFilter.isHiddenForLocal("VIEW_ARTIST"))
-    }
-
-    @Test
     fun filterAndSort_filtersByQueryAndSortsCorrectly() {
         val tracks = listOf(
             track("1", "Song Beta", artist = "Bravo", localModifiedSec = 100),

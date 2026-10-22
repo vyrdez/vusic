@@ -99,7 +99,9 @@ class NavidromeLyricsProvider @Inject constructor(
                     candidates += fromSynced(
                         SyncedLyrics.parse(
                             synced.line.map { it.start to it.value },
-                            if (synced.offset > 0) synced.offset * 1000L else 0,
+                            // OpenSubsonic reports the offset in milliseconds
+                            // (may be negative); do not rescale it.
+                            synced.offset,
                         ),
                         kind = LyricsKind.SYNCED,
                         source = LyricsSource.SERVER_METADATA,

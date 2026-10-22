@@ -5,7 +5,9 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.network.Lyrics
+import com.feishin.mobile.core.network.LyricsCacheKey
 import com.feishin.mobile.core.network.LyricsKind
+import com.feishin.mobile.core.network.LyricsPick
 import com.feishin.mobile.core.network.LyricsSource
 import com.feishin.mobile.data.db.LyricsCacheDao
 import com.feishin.mobile.data.db.LyricsCacheEntity
@@ -43,13 +45,7 @@ class LyricsRepository @Inject constructor(
     /** In-memory tracking of transient network failures within this app session. */
     private val sessionFailedKeys = ConcurrentHashMap.newKeySet<String>()
 
-    fun cacheKeyForTrack(track: Track): String {
-        return if (track.isLocal) {
-            "local:${track.localUri}@${track.localModifiedSec}"
-        } else {
-            track.id
-        }
-    }
+    fun cacheKeyForTrack(track: Track): String = LyricsCacheKey.of(track)
 
     suspend fun getLyrics(track: Track, bypassCache: Boolean = false): Result<Lyrics> = withContext(Dispatchers.IO) {
         val key = cacheKeyForTrack(track)
@@ -179,11 +175,10 @@ class LyricsRepository @Inject constructor(
                             localUri = track.localUri,
                             localModifiedSec = track.localModifiedSec,
                         )
-                        if (metaResult is Result.Ok && metaResult.value.isSynced) {
-                            finalLyrics = metaResult.value // Upgraded to synced metadata lyrics!
-                        } else {
-                            finalLyrics = lrclibLyrics
-                        }
+                        finalLyrics = LyricsPick.upgrade(
+                            online = lrclibLyrics,
+                            metadata = (metaResult as? Result.Ok)?.value,
+                        )
                     } else {
                         finalLyrics = lrclibLyrics
                     }
@@ -240,10 +235,9 @@ class LyricsRepository @Inject constructor(
         if (!isUnmeteredConnection()) return@withContext
         val key = cacheKeyForTrack(track)
         if (sessionFailedKeys.contains(key)) return@withContext
-        val existing = runCatching { cache.get(key) }.getOrNull()
-        if (existing == null) {
-            getLyrics(track, bypassCache = false)
-        }
+        // getLyrics is cache-first and honours the negative TTL, so an expired
+        // "nothing found" row is refreshed here too.
+        getLyrics(track, bypassCache = false)
     }
 
     suspend fun clearCache() = withContext(Dispatchers.IO) {

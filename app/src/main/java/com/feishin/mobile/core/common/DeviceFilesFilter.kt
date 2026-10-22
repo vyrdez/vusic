@@ -33,18 +33,6 @@ object DeviceFilesFilter {
         return durationMs >= threshold
     }
 
-    /** Which track actions must be hidden when operating on local device tracks. */
-    fun isHiddenForLocal(actionKey: String): Boolean = when (actionKey.uppercase()) {
-        "FAVORITE", "STAR", "UNSTAR",
-        "DOWNLOAD", "REMOVE_DOWNLOAD", "KEEP_DOWNLOADED",
-        "ADD_TO_PLAYLIST", "SAVE_TO_PLAYLIST",
-        "START_RADIO", "RADIO",
-        "SHARE",
-        "PIN", "SPEED_DIAL",
-        -> true
-        else -> false
-    }
-
     /** Filters and sorts a list of local tracks according to search query and sort choice. */
     fun filterAndSort(
         tracks: List<Track>,

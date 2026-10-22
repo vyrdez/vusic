@@ -8,7 +8,7 @@
   - LRCLIB integration with smart candidate matching, fuzzy title cleaning, artist splitting, duration scoring, and rate-limited non-storm lookups.
   - OpenSubsonic structured lyrics fallback (`getLyricsBySongId` with fallback to legacy `getLyrics`) and embedded local audio tags (ID3v2 USLT/SYLT, Vorbis/FLAC, MP4).
   - Room `lyrics_cache` persistence with 7-day negative caching and manual "Search again" in the Lyrics menu.
-  - Comprehensive Lyrics settings in Appearance & Layout: online fetch toggle, priority selection (Online first / Song file first), text alignment (Left/Center), text size (Small/Normal/Large), auto-scroll, tap line to seek, word-by-word highlight, keep screen on, sync offset adjustment (-5000ms to +5000ms), show unsynced lyrics fallback, and "Clear lyrics cache" action.
+  - Comprehensive Lyrics settings in Appearance & Layout: online fetch toggle, priority selection (Online first / Song file first), text alignment (Left/Center), text size (Small/Normal/Large), auto-scroll, tap line to seek, word-by-word highlight, keep screen on, sync offset adjustment (-2000ms to +2000ms), show unsynced lyrics fallback, and "Clear lyrics cache" action.
 - **Device Files in Library**:
   - Optional local device music playback integrated into the Library tab via a "View my" bottom sheet switcher with persistent state (`library_view_mode`).
   - Native MediaStore integration with live `ContentObserver` updates, Songs, Albums, Artists tabs, and local Album / Artist detail views.
@@ -19,23 +19,14 @@
 ### Changed
 - Renamed "Dynamic Now Playing color" setting to "Dynamic Theme" in Settings > Appearance & Layout (preserving existing user preference).
 
-
 ### Fixed
-- In-app messages (snackbars, Undo, download progress) now appear fully above
-  the floating mini player and bottom navigation bar, move with the mini player
-  when it's dragged, and never sit behind the keyboard.
-- "Keep downloaded" on large playlists no longer freezes the app: Room progress
-  writes are throttled (~2/sec, visible steps only) and notifications update at
-  most once per second, so hundreds of concurrent downloads don't flood the UI.
-- Artist page: "Save to playlist" now saves all of the artist's songs (every
-  album, deduped, ordered by year then track), opening the existing playlist
-  picker with a "Loading songs..." progress message. Large artists are added in
-  batches of 100. Existing playlist entries are skipped.
-- Login: failed "Test & Connect" / "Test connection only" no longer resets the
-  form - fields keep their values, and a themed inline error card plus snackbar
-  shows a specific friendly message (wrong credentials, unreachable server,
-  invalid URL, untrusted certificate, etc.). Login screen restyled to match the
-  app (filled rounded fields, pill buttons, app logo).
+- Device files: favourite, save-to-playlist, download and "go to album / artist" actions are no longer offered for local tracks, where they used to send a local id to the server.
+- Lyrics: embedded file-tag lyrics now parse for real device files, whose `content://` streams are buffered before the format sniff.
+- Lyrics: server lyric offsets are applied in milliseconds (including negative offsets) instead of being scaled by 1000.
+- Lyrics: lookups are paced between requests, so skipping through tracks quickly does not hammer LRCLIB.
+- Device files: revoking audio permission now flips the screen back to the permission card instead of failing a query.
+- Device files: a permanently denied permission offers "Open app settings", and returning to the app picks up a newly granted permission.
+- Queue restore keeps each track's local file URI, so a queue of device tracks still plays after the service is recreated.
 
 ## 1.1.3
 

@@ -25,6 +25,10 @@ data class TrackMediaInfo(
      * has two distinguishable MediaItems. Null for ad-hoc items.
      */
     val queueId: Long? = null,
+    /** Content URI for device files; null for server songs. */
+    val localUri: String? = null,
+    /** Device-file modification time, part of the lyrics cache key. */
+    val localModifiedSec: Long = 0L,
 )
 
 /**
@@ -51,6 +55,8 @@ object TrackMediaItems {
         trackNo = track.trackNo,
         durationMs = if (track.durationSec > 0) track.durationSec * 1000L else 0L,
         queueId = queueId,
+        localUri = track.localUri,
+        localModifiedSec = track.localModifiedSec,
     )
 
     @androidx.media3.common.util.UnstableApi
@@ -71,6 +77,8 @@ object TrackMediaItems {
         EXTRA_ARTIST_ID to info.artistId,
         EXTRA_ALBUM_ID to info.albumId,
         EXTRA_QUEUE_ID to info.queueId?.toString(),
+        EXTRA_LOCAL_URI to info.localUri,
+        EXTRA_LOCAL_MODIFIED to info.localModifiedSec.takeIf { it > 0L }?.toString(),
     )
 
     fun toMediaItem(info: TrackMediaInfo): MediaItem {
@@ -89,6 +97,8 @@ object TrackMediaItems {
                         EXTRA_ARTIST_ID to packed[EXTRA_ARTIST_ID],
                         EXTRA_ALBUM_ID to packed[EXTRA_ALBUM_ID],
                         EXTRA_QUEUE_ID to packed[EXTRA_QUEUE_ID],
+                        EXTRA_LOCAL_URI to packed[EXTRA_LOCAL_URI],
+                        EXTRA_LOCAL_MODIFIED to packed[EXTRA_LOCAL_MODIFIED],
                     ),
                 )
             }
@@ -128,6 +138,8 @@ object TrackMediaItems {
             genre = null,
             suffix = null,
             starred = false,
+            localUri = extras?.getString(EXTRA_LOCAL_URI),
+            localModifiedSec = extras?.getString(EXTRA_LOCAL_MODIFIED)?.toLongOrNull() ?: 0L,
         )
     }
 
@@ -135,4 +147,6 @@ object TrackMediaItems {
     const val EXTRA_ARTIST_ID = "artistId"
     const val EXTRA_ALBUM_ID = "albumId"
     const val EXTRA_QUEUE_ID = "queueId"
+    const val EXTRA_LOCAL_URI = "localUri"
+    const val EXTRA_LOCAL_MODIFIED = "localModifiedSec"
 }

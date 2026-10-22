@@ -35,6 +35,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,15 +49,20 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.AlbumDetail
@@ -83,6 +90,8 @@ fun DeviceFilesScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val nowPlaying by player.current.collectAsStateWithLifecycle()
     val isPlaying by player.isPlaying.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var showAppSettingsDialog by remember { mutableStateOf(false) }
 
     val permission = if (Build.VERSION.SDK_INT >= 33) {
         android.Manifest.permission.READ_MEDIA_AUDIO
@@ -93,7 +102,43 @@ fun DeviceFilesScreen(
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (granted) vm.checkAndLoad()
+        if (granted) {
+            vm.checkAndLoad()
+        } else {
+            // "Don't ask again" (or a second denial) cannot be recovered with
+            // another request; send the user to the system settings instead.
+            val activity = context as? android.app.Activity
+            if (activity != null &&
+                !androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
+            ) {
+                showAppSettingsDialog = true
+            }
+        }
+    }
+
+    // Returning from system settings should pick up a newly granted permission.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        if (!state.hasPermission) vm.checkAndLoad()
+    }
+
+    if (showAppSettingsDialog) {
+        AlertDialog(
+            onDismissRequest = { showAppSettingsDialog = false },
+            title = { Text("Permission permanently denied") },
+            text = { Text("Audio access was denied. Enable \"Music and audio\" for Vusic in system app settings to browse device files.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAppSettingsDialog = false
+                    val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = android.net.Uri.fromParts("package", context.packageName, null)
+                    }
+                    runCatching { context.startActivity(intent) }
+                }) { Text("Open app settings") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAppSettingsDialog = false }) { Text("Cancel") }
+            },
+        )
     }
 
     if (!state.hasPermission) {
@@ -102,9 +147,10 @@ fun DeviceFilesScreen(
     }
 
     // Local Album Detail Screen
-    if (state.selectedAlbum != null) {
+    val selectedAlbum = state.selectedAlbum
+    if (selectedAlbum != null) {
         LocalAlbumDetailView(
-            album = state.selectedAlbum!!,
+            album = selectedAlbum,
             nowPlaying = nowPlaying,
             isPlaying = isPlaying,
             onBack = { vm.closeAlbum() },
@@ -117,9 +163,10 @@ fun DeviceFilesScreen(
     }
 
     // Local Artist Detail Screen
-    if (state.selectedArtist != null) {
+    val selectedArtist = state.selectedArtist
+    if (selectedArtist != null) {
         LocalArtistDetailView(
-            artist = state.selectedArtist!!,
+            artist = selectedArtist,
             onBack = { vm.closeArtist() },
             onAlbumClick = { albId -> vm.openAlbum(albId) },
             modifier = modifier,

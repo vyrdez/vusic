@@ -558,9 +558,10 @@ fun NowPlayingScreen(
                     NpChipsRow(
                         content = content,
                         starred = starred,
+                        local = current.isLocal,
                         downloadState = downloadState,
                         onFavorite = {
-                            if (starring) return@NpChipsRow
+                            if (current.isLocal || starring) return@NpChipsRow
                             val next = !starred
                             starred = next
                             starring = true
@@ -740,6 +741,7 @@ private fun SongLyricsToggle(
 private fun NpChipsRow(
     content: Color,
     starred: Boolean,
+    local: Boolean,
     downloadState: com.feishin.mobile.data.db.DownloadEntity?,
     onFavorite: () -> Unit,
     onSave: () -> Unit,
@@ -760,25 +762,29 @@ private fun NpChipsRow(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
     ) {
-        NpChip(
-            label = if (starred) "Favorited" else "Favorite",
-            icon = if (starred) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-            content = content,
-            accent = if (starred) FavoriteRed else null,
-            onClick = onFavorite,
-        )
-        NpChip("Save", Icons.Default.Save, content, onSave)
+        if (!local) {
+            NpChip(
+                label = if (starred) "Favorited" else "Favorite",
+                icon = if (starred) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                content = content,
+                accent = if (starred) FavoriteRed else null,
+                onClick = onFavorite,
+            )
+            NpChip("Save", Icons.Default.Save, content, onSave)
+        }
         NpChip("Share", Icons.Default.Share, content, onShare)
-        NpChip(
-            label = downloadLabel,
-            icon = if (dlStatus == com.feishin.mobile.data.db.DownloadStatus.COMPLETED) {
-                Icons.Default.DownloadDone
-            } else {
-                Icons.Default.Download
-            },
-            content = content,
-            onClick = onDownload,
-        )
+        if (!local) {
+            NpChip(
+                label = downloadLabel,
+                icon = if (dlStatus == com.feishin.mobile.data.db.DownloadStatus.COMPLETED) {
+                    Icons.Default.DownloadDone
+                } else {
+                    Icons.Default.Download
+                },
+                content = content,
+                onClick = onDownload,
+            )
+        }
     }
 }
 

@@ -34,6 +34,20 @@ class LrclibLyricsProvider @Inject constructor(
         }
         .build()
 
+    /**
+     * LRCLIB's fair-use policy is per IP, so one song lookup (up to four
+     * requests) must not turn into a burst when the user skips tracks quickly.
+     * Serialises every request app-wide with a small gap between them.
+     */
+    private val paceLock = Any()
+    private var lastRequestAtMs = 0L
+
+    private fun pace() = synchronized(paceLock) {
+        val wait = MIN_REQUEST_GAP_MS - (System.currentTimeMillis() - lastRequestAtMs)
+        if (wait > 0) Thread.sleep(wait)
+        lastRequestAtMs = System.currentTimeMillis()
+    }
+
     override suspend fun lyricsForSong(
         songId: String,
         title: String,
@@ -165,6 +179,7 @@ class LrclibLyricsProvider @Inject constructor(
 
     private fun executeGet(url: String): LrclibResponseDto? {
         val request = Request.Builder().url(url).build()
+        pace()
         client.newCall(request).execute().use { resp ->
             if (resp.code == 404) return null
             if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
@@ -175,6 +190,7 @@ class LrclibLyricsProvider @Inject constructor(
 
     private fun executeSearch(url: String): List<LrclibResponseDto> {
         val request = Request.Builder().url(url).build()
+        pace()
         client.newCall(request).execute().use { resp ->
             if (resp.code == 404) return emptyList()
             if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
@@ -197,5 +213,10 @@ class LrclibLyricsProvider @Inject constructor(
             return Lyrics(emptyList(), 0, LyricsKind.PLAIN, plainText = plain.trim(), source = LyricsSource.LRCLIB)
         }
         return Lyrics(emptyList(), 0, LyricsKind.NONE, source = LyricsSource.LRCLIB)
+    }
+
+    private companion object {
+        /** 250 ms between requests keeps a 4-request lookup under ~1 s. */
+        const val MIN_REQUEST_GAP_MS = 250L
     }
 }

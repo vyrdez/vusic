@@ -321,8 +321,10 @@ class PlayerService : MediaLibraryService() {
     }
 
     private fun isLocal(mediaItem: MediaItem?): Boolean {
-        val uri = mediaItem?.localConfiguration?.uri
-        return uri?.scheme == "content" || uri?.scheme == "file" || (mediaItem?.mediaId?.startsWith("local:") == true)
+        // Keyed on the id we mint for MediaStore tracks. Downloaded server songs
+        // also play from a file:// URI, so a scheme check would wrongly treat
+        // them as device files (and silently stop scrobbling them).
+        return mediaItem?.mediaId?.startsWith("local:") == true
     }
 
     private fun coverUrl(coverArtId: String?, size: Int = 512): Uri? {
@@ -388,8 +390,9 @@ class PlayerService : MediaLibraryService() {
      * entry that errors in the car).
      */
     private suspend fun resolveTrack(track: Track, queueIdHint: Long = -1L): MediaItem? {
-        val local = downloads.localFile(track.id)
-        val uriStr = if (local != null) {
+        val deviceUri = track.localUri
+        val local = if (deviceUri == null) downloads.localFile(track.id) else null
+        val uriStr = deviceUri ?: if (local != null) {
             PlaybackSource.localUri(local.absolutePath)
         } else {
             if (isOffline()) return null

@@ -61,6 +61,16 @@ class LrcParserTest {
     }
 
     @Test
+    fun `hybrid line stamp with a single karaoke stamp keeps only the text`() {
+        val text = "[00:10.00]<00:10.00>Hello there"
+        val out = LrcParser.parse(text)
+        assertEquals(1, out.lines.size)
+        assertEquals(10000L, out.lines[0].startMs)
+        assertEquals("Hello there", out.lines[0].text)
+        assertTrue(out.lines[0].words.isEmpty())
+    }
+
+    @Test
     fun `unsorted stamps are sorted by time`() {
         val text = "[00:20.00]c\n[00:00.00]a\n[00:10.00]b"
         val out = LrcParser.parse(text)

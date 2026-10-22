@@ -19,6 +19,7 @@ package com.feishin.mobile.core.network
 object LrcParser {
     private val TIME_TAG = Regex("""([<\[])\s*(\d{1,3}):(\d{2})(?:[.,](\d{1,3}))?\s*([>\]])""")
     private val OFFSET_TAG = Regex("""\[offset:\s*([+-]?\d+)\s*\]""", RegexOption.IGNORE_CASE)
+    private val LEADING_ANGLE_TAG = Regex("""^(?:\s*<\s*\d{1,3}:\d{2}(?:[.,]\d{1,3})?\s*>)+\s*""")
 
     private data class Tag(val timeMs: Long, val startIdx: Int, val endIdx: Int, val isAngle: Boolean)
 
@@ -110,6 +111,11 @@ object LrcParser {
                 if (words.isNotEmpty()) {
                     lineText = words.joinToString(" ") { it.text }
                 }
+            } else if (angleTags.isNotEmpty()) {
+                // Hybrid line: a line stamp followed by a single karaoke stamp,
+                // e.g. "[00:10.00]<00:10.00>Hello". Drop the marker so it does
+                // not render as text.
+                lineText = lineText.replace(LEADING_ANGLE_TAG, "").trim()
             }
 
             // Each square-bracket line stamp creates a line at that timestamp
