@@ -211,6 +211,8 @@ fun NowPlayingScreen(
     val current = song
     val lyricsLazyListState = rememberLazyListState()
     val plainLyricsScrollState = rememberScrollState()
+    val lyricsUi by lyricsVm.ui.collectAsStateWithLifecycle()
+    val lyricsSettings by lyricsVm.settings.flow.collectAsStateWithLifecycle(initialValue = null)
 
     LaunchedEffect(current?.id) {
         lyricsVm.load(current)
@@ -385,37 +387,31 @@ fun NowPlayingScreen(
                     SongLyricsToggle(lyricsMode = lyricsMode, onSelect = { lyricsMode = it }, palette = palette)
                 }
                 var showLyricsMenu by remember { mutableStateOf(false) }
-                Box {
-                    IconButton(onClick = {
+                IconButton(
+                    onClick = {
                         if (lyricsMode) {
                             showLyricsMenu = true
                         } else {
                             onActions(ActionTarget.Track(current))
                         }
-                    }, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Default.MoreVert, "Options", tint = content)
-                    }
-                    DropdownMenu(
-                        expanded = showLyricsMenu,
-                        onDismissRequest = { showLyricsMenu = false },
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Search lyrics again") },
-                            onClick = {
-                                showLyricsMenu = false
-                                lyricsVm.searchAgain(current)
-                            },
-                            leadingIcon = { Icon(Icons.Default.Refresh, null) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Track details & actions") },
-                            onClick = {
-                                showLyricsMenu = false
-                                onActions(ActionTarget.Track(current))
-                            },
-                            leadingIcon = { Icon(Icons.Default.Info, null) },
-                        )
-                    }
+                    },
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(Icons.Default.MoreVert, "Options", tint = content)
+                }
+                if (showLyricsMenu && lyricsSettings != null) {
+                    LyricsMenuSheet(
+                        track = current,
+                        lyricsUi = lyricsUi,
+                        lyricsVm = lyricsVm,
+                        settings = lyricsSettings!!,
+                        onDismiss = { showLyricsMenu = false },
+                        onShowMessage = { messenger.show(it) },
+                        onTrackDetails = {
+                            showLyricsMenu = false
+                            onActions(ActionTarget.Track(current))
+                        },
+                    )
                 }
             }
             // Swipe-down-to-close area: art, titles, chips, seek, controls.
@@ -1226,8 +1222,9 @@ private fun SyncedLyricsList(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 32.dp),
         ) {
+            val showInterval = settings?.lyricsShowIntervalIndicator != false
             val firstLine = lyrics.lines.firstOrNull()
-            if (firstLine != null && firstLine.startMs >= 5000L && activeIndex == -1) {
+            if (showInterval && firstLine != null && firstLine.startMs >= 5000L && activeIndex == -1) {
                 item(key = "intro_countdown") {
                     IntroCountdownDots(
                         firstStartMs = firstLine.startMs,
@@ -1246,7 +1243,21 @@ private fun SyncedLyricsList(
                     label = "lyrics-color",
                 )
                 val activeWordIdx = if (active && wordHighlight) lyrics.wordIndexAt(i, effectivePosition) else -1
-                val displayText = if (line.text.isBlank()) "♪" else line.text
+                val displayText = if (line.text.isBlank()) (if (showInterval) "♪" else "") else line.text
+
+                val respectAgent = settings?.lyricsRespectAgentPositioning == true
+                val lineAlignment = if (respectAgent && line.agent != null) {
+                    when {
+                        line.agent.contains("v2", ignoreCase = true) ||
+                        line.agent.contains("bg", ignoreCase = true) ||
+                        line.agent.contains("back", ignoreCase = true) -> TextAlign.End
+                        line.agent.contains("v1", ignoreCase = true) ||
+                        line.agent.contains("lead", ignoreCase = true) -> TextAlign.Start
+                        else -> alignment
+                    }
+                } else {
+                    alignment
+                }
 
                 val textAnnotated = if (activeWordIdx >= 0 && line.words.isNotEmpty()) {
                     buildAnnotatedString {
@@ -1270,7 +1281,7 @@ private fun SyncedLyricsList(
                     text = textAnnotated,
                     color = lineColor,
                     style = if (active) activeStyle else inactiveStyle,
-                    textAlign = alignment,
+                    textAlign = lineAlignment,
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onSeek(line.startMs + lyrics.offsetMs) }

@@ -177,6 +177,23 @@ class LrclibLyricsProvider @Inject constructor(
 
     private fun urlEncode(s: String): String = URLEncoder.encode(s, "UTF-8")
 
+    suspend fun searchCandidates(title: String, artist: String): List<com.feishin.mobile.core.network.LyricsCandidate> = withContext(Dispatchers.IO) {
+        val searchUrl = buildSearchUrl(title, artist)
+        val dtos = runCatching { executeSearch(searchUrl) }.getOrDefault(emptyList())
+        dtos.map { dto ->
+            val lyrics = toLyrics(dto)
+            com.feishin.mobile.core.network.LyricsCandidate(
+                title = dto.trackName ?: title,
+                artist = dto.artistName ?: artist,
+                album = dto.albumName,
+                durationSec = dto.duration?.toLong() ?: 0L,
+                source = LyricsSource.LRCLIB,
+                isSynced = !dto.syncedLyrics.isNullOrBlank(),
+                lyrics = lyrics,
+            )
+        }
+    }
+
     private fun executeGet(url: String): LrclibResponseDto? {
         val request = Request.Builder().url(url).build()
         pace()
