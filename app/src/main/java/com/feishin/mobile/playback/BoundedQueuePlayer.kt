@@ -12,6 +12,7 @@ import androidx.media3.common.Timeline
  * Exposes at most [maxWindow] items centered around the currently playing song.
  * Prevents Binder transaction buffer overflow and Bluetooth daemon crashes on huge playlists.
  */
+@androidx.media3.common.util.UnstableApi
 class BoundedQueuePlayer(
     player: Player,
     private val maxWindow: Int = 100,

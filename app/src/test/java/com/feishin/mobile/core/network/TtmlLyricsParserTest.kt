@@ -48,6 +48,7 @@ class TtmlLyricsParserTest {
         assertEquals(33642L, line1.startMs)
         assertEquals("v1", line1.agent)
         assertEquals(4, line1.words.size)
+        assertEquals("Look at the stars", line1.text)
         assertEquals(33642L, line1.words[0].startMs)
         assertEquals("Look", line1.words[0].text)
         assertEquals("stars", line1.words[3].text)
@@ -55,6 +56,7 @@ class TtmlLyricsParserTest {
         val line2 = lyrics.lines[1]
         assertEquals(36381L, line2.startMs)
         assertEquals("v2", line2.agent)
+        assertEquals("Look how they shine", line2.text)
         assertEquals(3, line2.words.size)
     }
 

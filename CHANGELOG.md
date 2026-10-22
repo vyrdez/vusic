@@ -3,39 +3,44 @@
 ## 1.2.1
 
 ### Added
-- **Configurable Lyrics Provider Chain**:
-  - Provider pipeline supporting LRCLIB, BetterLyrics (TTML word-level timing, background vocals, transliteration), Paxsenix, KuGou (KRC word-level timing decoding with unofficial source disclaimer), and Local song metadata.
-  - Sequential rate-limited lookup with global mutex, 5s connect / 8s read timeouts, and 15s overall budget per song.
-  - Settings > Appearance & Layout > Lyrics > "Lyrics sources" reorderable drag-and-drop screen with per-source toggles, "Prefer word-by-word lyrics" toggle, "Reset order" button, and privacy policy disclosure.
-  - Automatic migration from legacy 9.0 priority switches.
-- **Lyrics Menu Bottom Sheet**:
-  - Dedicated bottom sheet on Lyrics tab (3-dot menu button) preserving existing Song tab options.
-  - Top action buttons: Edit (custom LRC / plain text override with timestamp validation, "Edited by you" source badge, and "Reset to original"), Refetch (bypasses cache and re-runs chain), Search (manual lookup by title/artist across enabled providers), and Copy.
-  - Settings switches: Respect agent positioning, Show interval indicator, Lyrics offset adjuster (+/- ms), and Romanize current track toggle.
-- **Continuous Lyrics Text Size**:
-  - Granular text size slider from 80% to 220% in 10% steps in Lyrics settings, replacing discrete Small/Normal/Large options while preserving backward compatibility.
-- **Dual-Line Romanization / Transliteration**:
-  - Dual-line pronunciation rendering showing romanized reading beneath Japanese (Hepburn romaji), Korean (Revised Romanization), and Chinese (compact Pinyin with tone marks) characters.
-  - Per-track toggle in lyrics menu and global auto-romanize setting in Appearance & Layout > Lyrics.
-- **Remember Now Playing Lyrics Tab**:
-  - Now Playing tab selection (Song vs Lyrics) hoisted to parent and persisted across sheet collapse/reopen.
-  - Automatically resets to Song tab on queue clear or mini player dismiss.
+- **Configurable lyrics sources**:
+  - Lookup chain over LRCLIB, BetterLyrics (TTML word timing), KuGou (KRC word timing, unofficial source) and local metadata (server lyrics plus device file tags). Paxsenix is still listed, but disabled: its public endpoint is gone.
+  - Sources are tried in the order you set, with per-request timeouts and a 15 s budget per song.
+  - Settings > Appearance & Layout > Lyrics > "Lyrics sources" has a switch per source, up/down buttons for priority, "Reset order" and a "Prefer word-by-word lyrics" switch.
+  - Online lookups send the title, artist, album and duration only. Nothing else leaves the device.
+- **Lyrics menu**:
+  - 3-dot menu on the Lyrics tab with Edit (paste LRC or plain text, cached for that song), Refetch (skips the cache), Search (LRCLIB lookup by title/artist) and Copy.
+  - Switches for agent positioning, interval indicator, lyrics offset (+/- ms) and romanizing the current track.
+- **Continuous lyrics text size**:
+  - + / - buttons step the lyrics size from 80% to 220%, replacing the Small/Normal/Large choices. Existing values still map to 85/100/125.
+- **Dual-line romanization**:
+  - Romanized readings under the original line for Japanese (Hepburn), Korean (Revised Romanization) and Chinese (Pinyin with tone marks).
+  - Per-track toggle in the lyrics menu, plus a global auto-romanize switch for CJK tracks in Lyrics settings.
+- **Now Playing tab memory**:
+  - The Song/Lyrics selection is persisted, so collapsing and reopening the sheet keeps the tab you were on.
 
 ### Fixed
-- **Large Playlist Shuffle & MediaSession Stability (500+ Songs)**:
-  - Fixed ANR freezes and Bluetooth/AVRCP daemon crashes (`TransactionTooLargeException`) when shuffling or loading large playlists (500 to 3,000+ songs).
-  - Offloaded item conversion and download path lookups to `Dispatchers.IO` and `Dispatchers.Default` using batch query `completedPathMap()`.
-  - Replaced loop of `c.moveMediaItem` with single atomic `c.setMediaItems(reordered, targetIndex, pos)` for queues > 30 items.
-  - Introduced `BoundedQueuePlayer` forwarding player, capping the published timeline to 100 items around the active track for external clients (Bluetooth AVRCP, Android Auto, lockscreen).
-  - Constrained `CoilBitmapLoader` artwork decodes to `256x256` to prevent Binder buffer overflow.
-  - Debounced queue state persistence with 500ms coarse debounce.
-- **Add-to-Playlist Speed & Optimistic UI**:
-  - Fixed slow add-to-playlist by eliminating pre-flight network calls.
-  - Duplicate check queries local Room cache in 0ms; missing cache proceeds without network block.
-  - If song is already in playlist, displays confirmation dialog: `"<song> is already in <playlist>. Add anyway?"` with "Add" and "Cancel".
-  - Instant dismissal of picker sheet on selection with immediate snackbar ("Added to <playlist>") and optimistic Room cache updates (`songCount`, `durationSec`, tracks).
-  - Background atomic append via Subsonic `updatePlaylist` using `songIdToAdd=<id>` without re-uploading existing playlist contents.
-  - Automatic Room cache rollback and retry snackbar ("Couldn't add to <playlist> • Retry") on network sync failure.
+- **Large queues and MediaSession**:
+  - Item building and download-path lookups for big queues moved off the main thread and into one batched query, instead of per-item work on the UI thread.
+  - Artwork decoded for the session is capped at 256×256, so a full-size bitmap cannot fill the Binder buffer on its own.
+  - The session publishes a 100-item window around the current track to external clients (Bluetooth AVRCP, Android Auto, lockscreen) instead of the whole playlist.
+  - Restoring a queue after the app process is killed keeps the full queue; it used to adopt the published 100-item window as the queue and drop the rest. The session is now seeded in 100-item chunks instead of one oversized transaction.
+  - "Play next" and "Play next all" insert at the real queue position instead of the edge of the published window.
+  - Queue state is saved on a 500 ms debounce rather than on every position tick.
+- **Add to playlist**:
+  - Removed the pre-flight network calls; the picker reads playlists from the local cache and checks duplicates locally.
+  - Duplicates ask "<song> is already in <playlist>. Add anyway?" with Add / Cancel.
+  - The picker closes once the optimistic cache write lands, and the snackbar reports "Added to <playlist>" (or "Added N to <playlist>").
+  - The server update appends just the new ids via `songIdToAdd`, so existing playlist contents are not re-uploaded.
+  - On failure the cache change is rolled back and an error message is shown.
+  - A newly created playlist now refreshes its detail screen; the refresh event used to carry the name instead of the server id.
+- **Lyrics reliability**:
+  - One failing provider no longer aborts the rest of the chain.
+  - Timeouts and HTTP errors are no longer cached as "no lyrics" for 7 days; only a real "not found" answer is.
+  - TTML lines are rebuilt from the line body, so word spans no longer run together ("Lookatthestars").
+  - KuGou lyric lookup and download switched to HTTPS. Its search host has no usable certificate and stays on HTTP.
+  - KRC payloads are capped at 2 MB compressed and 4 MB inflated.
+  - Saving the lyrics editor without changes no longer rewrites a word-synced lyric as line-only LRC.
 
 ## 1.2.0
 

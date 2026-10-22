@@ -32,6 +32,7 @@ class BetterLyricsProvider @Inject constructor(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
+        .callTimeout(9, TimeUnit.SECONDS)
         .retryOnConnectionFailure(false)
         .addInterceptor { chain ->
             val req = chain.request().newBuilder()

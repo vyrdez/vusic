@@ -775,18 +775,21 @@ fun PlaylistPickerSheet(
     }
 
     fun performAdd(p: Playlist) {
-        onDismiss()
         val msg = if (tracks.size == 1) "Added to ${p.name}" else "Added ${tracks.size} to ${p.name}"
-        messenger.show(msg)
+        // Commit the optimistic write before dismissing: onDismiss() removes
+        // this sheet from composition and cancels its rememberCoroutineScope,
+        // which used to abort the cache update mid-flight.
         scope.launch {
             repo.addToPlaylistOptimistic(
                 playlistId = p.id,
                 tracks = tracks,
                 playlistName = p.name,
                 onRollback = {
-                    messenger.show("Couldn't add to ${p.name} • Retry")
+                    messenger.show("Couldn't add to ${p.name}")
                 },
             )
+            messenger.show(msg)
+            onDismiss()
         }
     }
 
@@ -885,19 +888,23 @@ fun PlaylistPickerSheet(
                     enabled = name.isNotBlank(),
                     onClick = {
                         val trimmed = name.trim()
-                        showNew = false
-                        onDismiss()
                         messenger.show("Creating playlist $trimmed")
+                        // Same ordering rule as performAdd(): dismiss only after
+                        // the work is done, since dismissing cancels this scope.
                         scope.launch {
-                            when (repo.createPlaylist(trimmed, tracks.map { it.id })) {
+                            when (val res = repo.createPlaylist(trimmed, tracks.map { it.id })) {
                                 is Result.Ok -> {
                                     messenger.show("Created playlist $trimmed")
-                                    playlistEvents?.emit(PlaylistEvent.TracksAdded(trimmed))
+                                    // The event carries the server id, not the
+                                    // name: detail screens match on id.
+                                    playlistEvents?.emit(PlaylistEvent.TracksAdded(res.value))
                                 }
                                 is Result.Err -> {
                                     messenger.show("Could not create playlist")
                                 }
                             }
+                            showNew = false
+                            onDismiss()
                         }
                     },
                 ) { Text("Create") }

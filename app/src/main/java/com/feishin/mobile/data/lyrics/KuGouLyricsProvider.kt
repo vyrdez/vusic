@@ -71,6 +71,7 @@ class KuGouLyricsProvider @Inject constructor(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
+        .callTimeout(9, TimeUnit.SECONDS)
         .retryOnConnectionFailure(false)
         .addInterceptor { chain ->
             val req = chain.request().newBuilder()
@@ -127,6 +128,9 @@ class KuGouLyricsProvider @Inject constructor(
     private fun searchSongHash(title: String, artist: String, targetDurationSec: Long): String? {
         val enc = { s: String -> URLEncoder.encode(s, "UTF-8") }
         val query = if (artist.isNotBlank()) "$title $artist" else title
+        // mobilecdn's certificate is issued for a different host name, so TLS
+        // cannot be verified there; the search request stays on HTTP. Nothing
+        // but title/artist leaves this call.
         val url = "http://mobilecdn.kugou.com/api/v3/search/song?format=json&keyword=${enc(query)}&page=1&pagesize=5"
 
         val request = Request.Builder().url(url).get().build()
@@ -149,7 +153,7 @@ class KuGouLyricsProvider @Inject constructor(
 
     private fun searchCandidates(title: String, durationMs: Long, hash: String): KugouCandidate? {
         val enc = { s: String -> URLEncoder.encode(s, "UTF-8") }
-        val url = "http://krcs.kugou.com/search?ver=1&man=yes&client=mobi&keyword=${enc(title)}&duration=$durationMs&hash=$hash"
+        val url = "https://krcs.kugou.com/search?ver=1&man=yes&client=mobi&keyword=${enc(title)}&duration=$durationMs&hash=$hash"
 
         val request = Request.Builder().url(url).get().build()
         client.newCall(request).execute().use { response ->
@@ -164,7 +168,7 @@ class KuGouLyricsProvider @Inject constructor(
     }
 
     private fun downloadKrc(id: String, accessKey: String): String? {
-        val url = "http://lyrics.kugou.com/download?ver=1&client=pc&id=$id&accesskey=$accessKey&fmt=krc&charset=utf8"
+        val url = "https://lyrics.kugou.com/download?ver=1&client=pc&id=$id&accesskey=$accessKey&fmt=krc&charset=utf8"
 
         val request = Request.Builder().url(url).get().build()
         client.newCall(request).execute().use { response ->

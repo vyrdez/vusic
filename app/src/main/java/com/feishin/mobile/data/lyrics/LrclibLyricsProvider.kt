@@ -25,10 +25,11 @@ class LrclibLyricsProvider @Inject constructor(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
+        .callTimeout(9, TimeUnit.SECONDS)
         .retryOnConnectionFailure(false)
         .addInterceptor { chain ->
             val req = chain.request().newBuilder()
-                .header("User-Agent", "Vusic/1.2.0 (personal use)")
+                .header("User-Agent", "Vusic/1.2.1 (personal use)")
                 .build()
             chain.proceed(req)
         }

@@ -140,38 +140,33 @@ object KrcLyricsParser {
 
     /**
      * Decompresses ZLIB/Deflate payload into UTF-8 text.
+     *
+     * Remote data is untrusted: cap both the input and the inflated output so a
+     * hostile or truncated KRC body cannot exhaust memory.
      */
     fun decompressZlib(data: ByteArray): String? {
-        // Try standard ZLIB Inflater first
-        runCatching {
-            val inflater = Inflater(false)
-            val buffer = ByteArray(4096)
-            inflater.setInput(data)
-            val out = ByteArrayOutputStream()
-            while (!inflater.finished()) {
-                val count = inflater.inflate(buffer)
-                if (count <= 0) break
-                out.write(buffer, 0, count)
-            }
-            inflater.end()
-            return out.toString(StandardCharsets.UTF_8.name())
-        }
-
-        // Try nowrap (raw deflate) if ZLIB header was omitted
-        runCatching {
-            val inflater = Inflater(true)
-            val buffer = ByteArray(4096)
-            inflater.setInput(data)
-            val out = ByteArrayOutputStream()
-            while (!inflater.finished()) {
-                val count = inflater.inflate(buffer)
-                if (count <= 0) break
-                out.write(buffer, 0, count)
-            }
-            inflater.end()
-            return out.toString(StandardCharsets.UTF_8.name())
-        }
-
-        return null
+        if (data.size > MAX_COMPRESSED_BYTES) return null
+        return inflate(data, nowrap = false) ?: inflate(data, nowrap = true)
     }
+
+    private fun inflate(data: ByteArray, nowrap: Boolean): String? = runCatching {
+        val inflater = Inflater(nowrap)
+        try {
+            val buffer = ByteArray(4096)
+            inflater.setInput(data)
+            val out = ByteArrayOutputStream()
+            while (!inflater.finished()) {
+                val count = inflater.inflate(buffer)
+                if (count <= 0) break
+                if (out.size() + count > MAX_INFLATED_BYTES) return null
+                out.write(buffer, 0, count)
+            }
+            out.toString(StandardCharsets.UTF_8.name())
+        } finally {
+            inflater.end()
+        }
+    }.getOrNull()
+
+    private const val MAX_COMPRESSED_BYTES = 2 * 1024 * 1024
+    private const val MAX_INFLATED_BYTES = 4 * 1024 * 1024
 }

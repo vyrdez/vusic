@@ -1434,35 +1434,35 @@ Reference: `docs/reference/before-8.4/` and `docs/reference/after-8.4/`.
 
 ## Phase 9.1 (v1.2.1, versionCode 9)
 - **P9.1-A provider chain**:
-  - Provider pipeline supporting LRCLIB, BetterLyrics (TTML word-level timing, background vocals, transliteration), Paxsenix, KuGou (KRC word-level timing decoding with unofficial source disclaimer), and Local song metadata.
-  - Sequential rate-limited lookup with global mutex, 5s connect / 8s read timeouts, and 15s overall budget per song.
-  - Settings > Appearance & Layout > Lyrics > "Lyrics sources" reorderable drag-and-drop screen with per-source toggles, "Prefer word-by-word lyrics" toggle, "Reset order" button, and privacy policy disclosure.
-  - Automatic migration from legacy 9.0 priority switches.
+  - Lookup chain over LRCLIB, BetterLyrics (TTML word timing), KuGou (KRC word timing) and
+    local metadata. Paxsenix is wired in but disabled: its public endpoint is gone.
+  - Sources run in the user's order with a per-call timeout (9s) and a 15s budget per song.
+    A provider that throws is skipped instead of aborting the chain.
+  - Settings > Lyrics > "Lyrics sources": per-source switches, up/down buttons for priority,
+    "Reset order", "Prefer word-by-word lyrics".
+  - No migration from the old priority switch; the old key stays in DataStore and is ignored.
 - **P9.1-B lyrics menu**:
-  - Dedicated bottom sheet on Lyrics tab (3-dot menu button) preserving existing Song tab options.
-  - Top action buttons: Edit (custom LRC / plain text override with timestamp validation, "Edited by you" source badge, and "Reset to original"), Refetch (bypasses cache and re-runs chain), Search (manual lookup by title/artist across enabled providers), and Copy.
-  - Settings switches: Respect agent positioning, Show interval indicator, Lyrics offset adjuster (+/- ms), and Romanize current track toggle.
-- **P9.1-C lyrics text size**:
-  - Granular text size slider from 80% to 220% in 10% steps in Lyrics settings, replacing discrete Small/Normal/Large options while preserving backward compatibility.
-- **P9.1-D romanize lyrics**:
-  - Dual-line pronunciation rendering showing romanized reading beneath Japanese (Hepburn romaji), Korean (Revised Romanization), and Chinese (compact Pinyin with tone marks) characters.
-  - Per-track toggle in lyrics menu and global auto-romanize setting in Appearance & Layout > Lyrics.
-- **P9.1-E remember lyrics tab**:
-  - Now Playing tab selection (Song vs Lyrics) hoisted to parent and persisted across sheet collapse/reopen.
-  - Automatically resets to Song tab on queue clear or mini player dismiss.
+  - 3-dot sheet on the Lyrics tab: Edit (LRC/plain override, cached for the song), Refetch,
+    Search (LRCLIB by title/artist) and Copy.
+  - Switches for agent positioning, interval indicator, offset and romanize-current-track.
+- **P9.1-C lyrics text size**: +/- buttons, 80-220%; SMALL/LARGE still parse as 85/125.
+- **P9.1-D romanize lyrics**: dual-line readings (Hepburn / Revised Romanization / Pinyin).
+- **P9.1-E remember lyrics tab**: the Song/Lyrics selection is persisted in DataStore.
 - **P9.1-F big playlist shuffle**:
-  - Fixed ANR freezes and Bluetooth/AVRCP daemon crashes (`TransactionTooLargeException`) when shuffling or loading large playlists (500 to 3,000+ songs).
-  - Offloaded item conversion and download path lookups to `Dispatchers.IO` and `Dispatchers.Default` using batch query `completedPathMap()`.
-  - Replaced loop of `c.moveMediaItem` with single atomic `c.setMediaItems(reordered, targetIndex, pos)` for queues > 30 items.
-  - Introduced `BoundedQueuePlayer` forwarding player, capping the published timeline to 100 items around the active track for external clients (Bluetooth AVRCP, Android Auto, lockscreen).
-  - Constrained `CoilBitmapLoader` artwork decodes to `256x256` to prevent Binder buffer overflow.
-  - Debounced queue state persistence with 500ms coarse debounce.
+  - Queue item building and the download-path lookup run off the main thread with one
+    batched query.
+  - `BoundedQueuePlayer` publishes a 100-item window around the current track to the
+    session, so external clients never receive a 3,000-item queue.
+  - Queue restore prefers the persisted snapshot over the published window (the window
+    used to be adopted as the whole queue) and seeds the session in 100-item chunks.
+  - "Play next"/"play next all" use the real queue index, not the window edge.
+  - Artwork decoding for the session is capped at 256x256.
+  - Reorders still go through `moveMediaItem` for queues over 100 items; the
+    `setMediaItems` shortcut only runs when the whole queue fits the controller.
   - Benchmark report in `docs/perf/shuffle-9.1.md`.
 - **P9.1-G add to playlist speed**:
-  - Fixed slow add-to-playlist by eliminating pre-flight network calls.
-  - Duplicate check queries local Room cache in 0ms; missing cache proceeds without network block.
-  - If song is already in playlist, displays confirmation dialog: `"<song> is already in <playlist>. Add anyway?"` with "Add" and "Cancel".
-  - Instant dismissal of picker sheet on selection with immediate snackbar ("Added to <playlist>") and optimistic Room cache updates (`songCount`, `durationSec`, tracks).
-  - Background atomic append via Subsonic `updatePlaylist` using `songIdToAdd=<id>` without re-uploading existing playlist contents.
-  - Automatic Room cache rollback and retry snackbar ("Couldn't add to <playlist> • Retry") on network sync failure.
+  - No pre-flight network calls; duplicates are checked in the local cache.
+  - The optimistic cache write commits before the sheet closes (closing used to cancel it).
+  - The refresh event fires after the server call, not before, and carries the playlist id.
+  - Rollback restores the pre-add cache and shows an error message; there is no retry action.
   - Benchmark report in `docs/perf/playlist-add-9.1.md`.

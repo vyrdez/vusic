@@ -2,6 +2,7 @@ package com.feishin.mobile.ui.library
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewModelScope
 import com.feishin.mobile.core.common.LibraryOrdering
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.common.SortChoice
@@ -25,6 +26,7 @@ import com.feishin.mobile.ui.home.InMemoryHomeCache
 import com.feishin.mobile.ui.home.HomeViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -96,9 +98,26 @@ class ViewModelStateTest {
     @get:Rule
     val temp = TemporaryFolder()
 
-    private fun settings() = SettingsStore(
-        PreferenceDataStoreFactory.create { java.io.File(temp.root, "settings_test_${java.util.UUID.randomUUID()}.preferences_pb") },
-    )
+    private var settingsFileSeq = 0
+
+    // One stable file per store. The file must not change between calls to the
+    // producer, and reusing a single name across tests trips DataStore's
+    // multiple-instances check, so number them per test class instance.
+    private fun settings(): SettingsStore {
+        val file = java.io.File(temp.root, "settings_test_${settingsFileSeq++}.preferences_pb")
+        return SettingsStore(PreferenceDataStoreFactory.create { file })
+    }
+
+    // ViewModels collect the settings DataStore on the Main test dispatcher and
+    // nothing clears them before the test ends. Those live collectors are what
+    // made unrelated runTest classes fail with "uncaught exceptions before the
+    // test started" once resetMain() pulled the dispatcher out from under them.
+    private val createdVms = mutableListOf<androidx.lifecycle.ViewModel>()
+
+    private fun <T : androidx.lifecycle.ViewModel> track(vm: T): T {
+        createdVms += vm
+        return vm
+    }
 
     @Before
     fun setUp() {
@@ -107,6 +126,10 @@ class ViewModelStateTest {
 
     @After
     fun tearDown() {
+        // Cancel the collectors while Main is still installed so their
+        // cancellation never resumes on the missing Android main dispatcher.
+        createdVms.forEach { it.viewModelScope.cancel() }
+        createdVms.clear()
         // PreferenceDataStoreFactory runs its own work on Dispatchers.IO. If a
         // continuation from this test is still in flight, resetMain() races it
         // and throws "Dispatchers.Main is used concurrently with setting it".
@@ -115,7 +138,8 @@ class ViewModelStateTest {
         Dispatchers.resetMain()
     }
 
-    private fun homeVm(repo: FakeMusicRepo) = HomeViewModel(repo, settings(), InMemoryHomeCache())
+    private fun homeVm(repo: FakeMusicRepo) =
+        track(HomeViewModel(repo, settings(), InMemoryHomeCache()))
 
     @Test
     fun home_withAlbums_fillsSections() {
@@ -170,13 +194,15 @@ class ViewModelStateTest {
     private fun libraryVm(
         repo: FakeMusicRepo,
         handle: SavedStateHandle = SavedStateHandle(),
-    ) = LibraryViewModel(
-        repo,
-        PlaylistEvents(),
-        settings(),
-        com.feishin.mobile.data.cache.CachedTrackStore(FakeCachedTrackDao(), FakeCacheBytes()),
-        com.feishin.mobile.data.cache.LibraryRefresh(),
-        handle,
+    ) = track(
+        LibraryViewModel(
+            repo,
+            PlaylistEvents(),
+            settings(),
+            com.feishin.mobile.data.cache.CachedTrackStore(FakeCachedTrackDao(), FakeCacheBytes()),
+            com.feishin.mobile.data.cache.LibraryRefresh(),
+            handle,
+        ),
     )
 
     private class FakeCacheBytes : com.feishin.mobile.data.cache.CacheBytes {
@@ -259,11 +285,13 @@ class ViewModelStateTest {
     fun library_layoutToggle_isPerTab_andPersists() {
         val file = temp.newFile("layout_toggle.preferences_pb")
         val store = SettingsStore(PreferenceDataStoreFactory.create { file })
-        val vm = LibraryViewModel(
-            FakeMusicRepo(), PlaylistEvents(), store,
-            com.feishin.mobile.data.cache.CachedTrackStore(FakeCachedTrackDao(), FakeCacheBytes()),
-            com.feishin.mobile.data.cache.LibraryRefresh(),
-            SavedStateHandle(),
+        val vm = track(
+            LibraryViewModel(
+                FakeMusicRepo(), PlaylistEvents(), store,
+                com.feishin.mobile.data.cache.CachedTrackStore(FakeCachedTrackDao(), FakeCacheBytes()),
+                com.feishin.mobile.data.cache.LibraryRefresh(),
+                SavedStateHandle(),
+            ),
         )
         awaitLayout(vm, LibraryTab.ALBUMS, LayoutMode.GRID)
         // Toggle flips ALBUMS only; SONGS keeps the default.
@@ -283,11 +311,13 @@ class ViewModelStateTest {
             assertEquals(LayoutMode.GRID, persisted.libraryLayouts["ALBUMS"] ?: LayoutMode.GRID)
         }
         // A recreated ViewModel on the same store restores the exact modes.
-        val vm2 = LibraryViewModel(
-            FakeMusicRepo(), PlaylistEvents(), store,
-            com.feishin.mobile.data.cache.CachedTrackStore(FakeCachedTrackDao(), FakeCacheBytes()),
-            com.feishin.mobile.data.cache.LibraryRefresh(),
-            SavedStateHandle(),
+        val vm2 = track(
+            LibraryViewModel(
+                FakeMusicRepo(), PlaylistEvents(), store,
+                com.feishin.mobile.data.cache.CachedTrackStore(FakeCachedTrackDao(), FakeCacheBytes()),
+                com.feishin.mobile.data.cache.LibraryRefresh(),
+                SavedStateHandle(),
+            ),
         )
         awaitLayout(vm2, LibraryTab.SONGS, LayoutMode.LIST)
         assertEquals(LayoutMode.GRID, vm2.layoutFor(LibraryTab.ALBUMS))
@@ -342,10 +372,12 @@ class ViewModelStateTest {
         // cannot prove emission on its own. Round-tripping a real change does:
         // toggling the layout only comes back through the settings flow, so
         // once it reads LIST the collector has demonstrably run.
+        assertEquals(LayoutMode.GRID, vm.layoutFor(LibraryTab.ALBUMS))
         vm.toggleLayout(LibraryTab.ALBUMS)
-        repeat(400) {
-            if (vm.layoutFor(LibraryTab.ALBUMS) == LayoutMode.LIST) return@repeat
+        var waited = 0
+        while (vm.layoutFor(LibraryTab.ALBUMS) != LayoutMode.LIST && waited < 400) {
             Thread.sleep(25)
+            waited++
         }
         assertEquals(
             "settings flow never emitted, so this test proved nothing (layout=${vm.layoutFor(LibraryTab.ALBUMS)})",

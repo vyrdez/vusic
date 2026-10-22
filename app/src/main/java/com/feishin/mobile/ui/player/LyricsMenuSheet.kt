@@ -274,8 +274,12 @@ fun LyricsMenuSheet(
         EditLyricsDialog(
             initialText = initialText,
             onSave = { edited ->
-                lyricsVm.saveEditedLyrics(track, edited)
-                onShowMessage("Lyrics updated and cached")
+                // Saving an untouched word-synced lyric would rewrite it as
+                // line-only LRC and drop the word timings for good.
+                if (edited != initialText) {
+                    lyricsVm.saveEditedLyrics(track, edited)
+                    onShowMessage("Lyrics updated and cached")
+                }
                 showEditDialog = false
             },
             onDismiss = { showEditDialog = false },

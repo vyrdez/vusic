@@ -438,9 +438,9 @@ class MusicRepository @Inject constructor(
                 updatedPlaylists,
             )
         }
-        playlistEvents.get().emit(com.feishin.mobile.data.favorites.PlaylistEvent.TracksAdded(playlistId))
-
-        // Background network sync
+        // Background network sync runs after the server confirms, because a
+        // PlaylistEvent makes detail screens re-read from the server: emitting
+        // now would fetch the pre-add playlist and wipe the optimistic entry.
         cacheScope.launch {
             val res = addToPlaylist(playlistId, tracks.map { it.id })
             if (res is Result.Err) {
@@ -459,6 +459,8 @@ class MusicRepository @Inject constructor(
                 }
                 playlistEvents.get().emit(com.feishin.mobile.data.favorites.PlaylistEvent.TracksAdded(playlistId))
                 onRollback?.invoke()
+            } else {
+                playlistEvents.get().emit(com.feishin.mobile.data.favorites.PlaylistEvent.TracksAdded(playlistId))
             }
         }
         return Result.Ok(Unit)

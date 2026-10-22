@@ -28,6 +28,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.Json
 
 @Singleton
@@ -106,14 +108,18 @@ class LyricsRepository @Inject constructor(
             // Run sequential chain inside global mutex with total 15s budget
             var finalLyrics: Lyrics? = null
             var transientError: Result.Err? = null
+            var budgetExpired = false
 
             globalLookupMutex.withLock {
-                withTimeoutOrNull(totalLookupBudgetMs) {
+                val finished = withTimeoutOrNull(totalLookupBudgetMs) {
                     val enabledOrder = settings.lyricsProviderOrder.filter { it in settings.lyricsProviderEnabled }
                     var bestSynced: Lyrics? = null
                     var plainCandidate: Lyrics? = null
 
                     for (providerId in enabledOrder) {
+                        // Providers use blocking OkHttp, which ignores cancellation
+                        // until the call returns; at least stop between providers.
+                        currentCoroutineContext().ensureActive()
                         val isOnlineProvider = providerId != "LOCAL_DATA"
                         if (isOnlineProvider && !isOnlineAllowed) {
                             continue
@@ -128,15 +134,23 @@ class LyricsRepository @Inject constructor(
                             else -> continue
                         }
 
-                        val result = provider.lyricsForSong(
-                            songId = track.id,
-                            title = track.title,
-                            artist = track.artist,
-                            album = track.album,
-                            durationMs = durationMs,
-                            localUri = track.localUri,
-                            localModifiedSec = track.localModifiedSec,
-                        )
+                        // One broken provider must not kill the rest of the chain.
+                        val result = runCatching {
+                            provider.lyricsForSong(
+                                songId = track.id,
+                                title = track.title,
+                                artist = track.artist,
+                                album = track.album,
+                                durationMs = durationMs,
+                                localUri = track.localUri,
+                                localModifiedSec = track.localModifiedSec,
+                            )
+                        }.getOrElse { e ->
+                            // Cancellation is not a provider failure: let the
+                            // timeout end the chain instead of trying the next one.
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            Result.Err(e.message ?: e::class.simpleName ?: "lyrics provider failed")
+                        }
 
                         when (result) {
                             is Result.Ok -> {
@@ -168,6 +182,7 @@ class LyricsRepository @Inject constructor(
 
                     finalLyrics = bestSynced ?: plainCandidate
                 }
+                budgetExpired = finished == null
             }
 
             // Persist & Return
@@ -179,10 +194,11 @@ class LyricsRepository @Inject constructor(
                     cache.put(LyricsCacheEntity(key, encoded, System.currentTimeMillis()))
                 }
                 return@withContext Result.Ok(processed)
-            } else if (transientError != null) {
-                // Do NOT cache transient errors negatively in Room; remember in session guard
+            } else if (transientError != null || budgetExpired) {
+                // Do NOT cache transient errors or an exhausted time budget
+                // negatively in Room; remember in session guard only.
                 sessionFailedKeys.add(key)
-                return@withContext transientError
+                return@withContext transientError ?: Result.Err("Lyrics lookup timed out")
             } else {
                 // Definitive nothing found: cache negative result with 7-day TTL
                 val emptyLyrics = Lyrics(emptyList(), 0, LyricsKind.NONE, source = LyricsSource.CACHE)

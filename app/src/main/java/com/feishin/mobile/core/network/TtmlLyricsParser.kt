@@ -18,6 +18,7 @@ object TtmlLyricsParser {
         Pattern.CASE_INSENSITIVE or Pattern.DOTALL,
     )
     private val attrPattern = Pattern.compile("""([a-zA-Z0-9:_]+)="([^"]*)"""")
+    private val WHITESPACE = Regex("""\s+""")
 
     fun parse(
         ttmlXml: String,
@@ -66,9 +67,13 @@ object TtmlLyricsParser {
             }
 
             val lineText = if (words.isNotEmpty()) {
-                spanTexts.toString().trim()
+                // Rebuild from the line body, not from the span texts: the
+                // whitespace that separates word spans lives *between* the
+                // tags, so concatenating them would run "Look at" into "Lookat".
+                cleanXmlText(pBody).replace(WHITESPACE, " ").trim()
+                    .ifEmpty { spanTexts.toString().replace(WHITESPACE, " ").trim() }
             } else {
-                cleanXmlText(pBody).trim()
+                cleanXmlText(pBody).replace(WHITESPACE, " ").trim()
             }
 
             if (lineText.isNotEmpty()) {

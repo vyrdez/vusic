@@ -278,13 +278,30 @@ class PlayerManager @Inject constructor(
                 }
             })
             if (c.mediaItemCount > 0) {
-                // Service survived (or another client queued): adopt its playlist.
-                syncQueueFromController(c)
-                _currentIndex.value = c.currentMediaItemIndex.coerceIn(0, maxOf(0, _queue.value.size - 1))
-                _current.value = _queue.value.getOrNull(_currentIndex.value)?.song
-                _isPlaying.value = c.isPlaying
-                _repeatMode.value = c.repeatMode
-                restored = true
+                // The service survived (or another client queued). The session
+                // publishes a bounded window, so the controller's item list can
+                // be shorter than the real queue: prefer our own snapshot and
+                // only adopt the controller's items when there is none.
+                scope.launch {
+                    val hadSnapshot = restoreFromSnapshot(c, seedPlayer = false)
+                    if (!hadSnapshot) syncQueueFromController(c)
+                    // The controller's index is window-relative once the queue is
+                    // longer than the published window, so resolve the real entry
+                    // by its per-queue key instead.
+                    val currentItem = c.currentMediaItem
+                    val qid = currentItem?.let { TrackMediaItems.queueIdOf(it) }
+                    val idx = qid?.let { id -> _queue.value.indexOfFirst { it.queueId == id } }
+                        ?.takeIf { it >= 0 }
+                        ?: _queue.value.indexOfFirst { it.song.id == currentItem?.mediaId }.takeIf { it >= 0 }
+                    _currentIndex.value = (idx ?: c.currentMediaItemIndex)
+                        .coerceIn(0, maxOf(0, _queue.value.size - 1))
+                    _current.value = _queue.value.getOrNull(_currentIndex.value)?.song
+                        ?: currentItem?.let { TrackMediaItems.toTrack(it) }
+                    _isPlaying.value = c.isPlaying
+                    _repeatMode.value = c.repeatMode
+                    restored = true
+                    persist()
+                }
             } else {
                 scope.launch { restoreFromSnapshot(c) }
             }
@@ -358,25 +375,22 @@ class PlayerManager @Inject constructor(
      * The per-entry queue keys and the shuffle snapshot are restored verbatim so a
      * shuffle toggle after restart behaves exactly as before the kill.
      */
-    private suspend fun restoreFromSnapshot(c: MediaController) {
+    private suspend fun restoreFromSnapshot(c: MediaController, seedPlayer: Boolean = true): Boolean {
         // Give the credentials up to 10s to arrive (first launch, slow disk);
         // if they never do, keep the snapshot for the next launch instead of
         // silently dropping it forever.
         val credsReady = withTimeoutOrNull(10_000) { creds.state.first { it != null } } != null
         if (restored) {
-            return
+            return true
         }
         // Credentials not ready within 10s: don't permanently bail, leave the
         // snapshot for the next launch (restored stays false so a reconnect
         // retries).
         if (!credsReady) {
-            return
+            return false
         }
         val snapshot = runCatching { queueStore.load() }.getOrNull()
-        if (snapshot == null) {
-            restored = true
-            return
-        }
+        if (snapshot == null) return false
         val persisted = snapshot.tracks
         val tracks = persisted.map { it.toDomain() }
         var maxId = queueSeq - 1
@@ -391,10 +405,7 @@ class PlayerManager @Inject constructor(
             entries += qi
             built += qi to mi
         }
-        if (built.isEmpty()) {
-            restored = true
-            return
-        }
+        if (built.isEmpty()) return false
         queueSeq = maxOf(queueSeq, maxId + 1)
         // Publish the mirror + current item before touching the player, so the
         // queue sheet / mini player show something immediately.
@@ -412,17 +423,35 @@ class PlayerManager @Inject constructor(
         } else {
             null
         }
-        _position.value = snapshot.positionMs
         _duration.value = c.duration.takeIf { it > 0 } ?: 0L
-        val items = built.map { it.second }
-        val index = _currentIndex.value
-        // setMediaItems seeds the session; seekTo lands at the saved position.
-        // No prepare(): nothing downloads, nothing buffers, nothing plays.
-        c.setMediaItems(items, index, snapshot.positionMs)
-        c.seekTo(snapshot.positionMs)
-        c.pause()
-        VLog.d(TAG, "restore: ${entries.size} items, index=$index pos=${snapshot.positionMs}")
+        if (seedPlayer) {
+            _position.value = snapshot.positionMs
+            val items = built.map { it.second }
+            seedQueue(c, items, _currentIndex.value, snapshot.positionMs)
+            VLog.d(TAG, "restore: ${entries.size} items, index=${_currentIndex.value} pos=${snapshot.positionMs}")
+        } else {
+            // The service still owns a live queue: only fill the mirror, never
+            // replace what is playing.
+            _position.value = c.currentPosition.coerceAtLeast(0L)
+        }
         restored = true
+        return true
+    }
+
+    /**
+     * Seeds the session queue without putting the whole list in one Binder
+     * transaction. [MediaItem]s carry titles, artwork URIs and extras, so a
+     * multi-thousand-song queue has to be appended in chunks or
+     * `setMediaItems` throws [android.os.TransactionTooLargeException].
+     */
+    private fun seedQueue(c: MediaController, items: List<MediaItem>, index: Int, positionMs: Long) {
+        val chunk = 100
+        c.setMediaItems(items.take(chunk), 0, 0L)
+        items.drop(chunk).chunked(chunk).forEach { c.addMediaItems(it) }
+        // setMediaItems/seekTo indexes are forwarded to the real (unbounded)
+        // player, so the full-queue index is valid here.
+        c.seekTo(index, positionMs)
+        c.pause()
     }
 
     private suspend fun persist() {
@@ -811,7 +840,10 @@ class PlayerManager @Inject constructor(
             val item = toMediaItem(track, qi.queueId) ?: return@launch
             val at = (_currentIndex.value + 1).coerceIn(0, _queue.value.size)
             _queue.value = QueueOps.insertNext(_queue.value, qi, _currentIndex.value)
-            c.addMediaItem(at.coerceAtMost(c.mediaItemCount), item)
+            // `at` is a real-queue index and is forwarded untranslated to the
+            // real player; clamping it to the bounded published window would
+            // insert the track at the window edge instead.
+            c.addMediaItem(at, item)
             // Mirror the add into the restore snapshot: "play next" belongs right
             // after the current entry there too.
             shuffleOrder = shuffleOrder?.let { ShufflePlan.insertAfter(it, currentQueueId(), qi.queueId) }
@@ -836,7 +868,7 @@ class PlayerManager @Inject constructor(
             }
             if (mediaItems.isEmpty()) return@launch
             val at = (_currentIndex.value + 1).coerceIn(0, _queue.value.size)
-            c.addMediaItems(at.coerceAtMost(c.mediaItemCount), mediaItems)
+            c.addMediaItems(at, mediaItems)
             _queue.value = _queue.value.toMutableList().apply { addAll(at, entries) }
             shuffleOrder = shuffleOrder?.let {
                 ShufflePlan.insertAllAfter(it, currentQueueId(), entries.map { e -> e.queueId })
