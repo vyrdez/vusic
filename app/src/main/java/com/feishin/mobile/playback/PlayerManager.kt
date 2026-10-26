@@ -112,6 +112,7 @@ class PlayerManager @Inject constructor(
      * positions). Null whenever shuffle is off, so "off" is always the real order.
      */
     private var shuffleOrder: List<Long>? = null
+    private val mediaItemCache = java.util.concurrent.ConcurrentHashMap<Long, MediaItem>(); private var shuffleJob: kotlinx.coroutines.Job? = null
 
     @Volatile private var controller: MediaController? = null
     @Volatile private var connectJob: kotlinx.coroutines.Job? = null
@@ -403,7 +404,7 @@ class PlayerManager @Inject constructor(
             val qi = QueueItem(track, qid)
             val mi = toMediaItem(track, qid) ?: continue
             entries += qi
-            built += qi to mi
+            built += qi to mi; mediaItemCache[qid] = mi
         }
         if (built.isEmpty()) return false
         queueSeq = maxOf(queueSeq, maxId + 1)
@@ -613,6 +614,7 @@ class PlayerManager @Inject constructor(
                 val built = ordered.mapNotNull { qi ->
                     toMediaItem(qi.song, qi.queueId, completedPaths)?.let { qi to it }
                 }
+                built.forEach { (qi, mi) -> mediaItemCache[qi.queueId] = mi }
                 built.map { it.first } to built.map { it.second }
             }
             if (queue.isEmpty()) return@launch
@@ -823,6 +825,7 @@ class PlayerManager @Inject constructor(
             toMediaItem(t, qi.queueId)?.let { qi to it }
         }
         if (built.isEmpty() || gen != radioTrigger.currentGeneration()) return
+        built.forEach { (qi, mi) -> mediaItemCache[qi.queueId] = mi }
         c.addMediaItems(built.map { it.second })
         val entries = built.map { it.first }
         _queue.value = QueueOps.appendAll(_queue.value, entries)
@@ -837,7 +840,7 @@ class PlayerManager @Inject constructor(
         scope.launch {
             val c = awaitController() ?: return@launch
             val qi = QueueItem(track, queueSeq++)
-            val item = toMediaItem(track, qi.queueId) ?: return@launch
+            val item = toMediaItem(track, qi.queueId)?.also { mediaItemCache[qi.queueId] = it } ?: return@launch
             val at = (_currentIndex.value + 1).coerceIn(0, _queue.value.size)
             _queue.value = QueueOps.insertNext(_queue.value, qi, _currentIndex.value)
             // `at` is a real-queue index and is forwarded untranslated to the
@@ -864,6 +867,7 @@ class PlayerManager @Inject constructor(
                 val built = qis.mapNotNull { qi ->
                     toMediaItem(qi.song, qi.queueId, completedPaths)?.let { qi to it }
                 }
+                built.forEach { (qi, mi) -> mediaItemCache[qi.queueId] = mi }
                 built.map { it.first } to built.map { it.second }
             }
             if (mediaItems.isEmpty()) return@launch
@@ -881,7 +885,7 @@ class PlayerManager @Inject constructor(
         scope.launch {
             val c = awaitController() ?: return@launch
             val qi = QueueItem(track, queueSeq++)
-            val item = toMediaItem(track, qi.queueId) ?: return@launch
+            val item = toMediaItem(track, qi.queueId)?.also { mediaItemCache[qi.queueId] = it } ?: return@launch
             c.addMediaItem(item)
             _queue.value = QueueOps.append(_queue.value, qi)
             shuffleOrder = shuffleOrder?.let { it + qi.queueId }
@@ -901,6 +905,7 @@ class PlayerManager @Inject constructor(
                 val built = qis.mapNotNull { qi ->
                     toMediaItem(qi.song, qi.queueId, completedPaths)?.let { qi to it }
                 }
+                built.forEach { (qi, mi) -> mediaItemCache[qi.queueId] = mi }
                 built.map { it.first } to built.map { it.second }
             }
             if (mediaItems.isEmpty()) return@launch
@@ -919,7 +924,7 @@ class PlayerManager @Inject constructor(
         _queue.value = next
         _currentIndex.value = adjusted
         _current.value = next.getOrNull(adjusted)?.song
-        shuffleOrder = shuffleOrder?.filterNot { it == removedId }
+        shuffleOrder = shuffleOrder?.filterNot { it == removedId }; if (removedId != null) mediaItemCache.remove(removedId)
         c.removeMediaItem(index)
         persistAsync()
     }
@@ -1054,7 +1059,7 @@ class PlayerManager @Inject constructor(
         _current.value = null
         _sourceName.value = null
         _shuffle.value = false
-        shuffleOrder = null
+        shuffleOrder = null; mediaItemCache.clear()
         _isPlaying.value = false
         _position.value = 0
         _duration.value = 0
@@ -1124,39 +1129,23 @@ class PlayerManager @Inject constructor(
         }
         c.shuffleModeEnabled = false
         val live = _queue.value
-        if (enabled) {
-            // Already shuffling: never re-snapshot (that would lose the original).
-            if (!_shuffle.value && live.isNotEmpty()) {
-                shuffleOrder = live.map { it.queueId }
-                val from = (_currentIndex.value + 1).coerceIn(0, live.size)
-                scope.launch {
-                    val target = withContext(Dispatchers.Default) {
-                        ShufflePlan.shuffledTail(live.map { it.queueId }, from, random)
-                    }
-                    applyOrder(c, target)
-                    _shuffle.value = true
-                    persistAsync()
+        if (live.isEmpty()) { _shuffle.value = enabled; shuffleOrder = null; persistAsync(); return }
+        shuffleJob?.cancel(); val from = (_currentIndex.value + 1).coerceIn(0, live.size)
+        val snapshot = if (enabled) {
+            if (!_shuffle.value && shuffleOrder == null) live.map { it.queueId }.also { shuffleOrder = it } else shuffleOrder
+        } else shuffleOrder.also { shuffleOrder = null }
+        shuffleJob = scope.launch {
+            val (targetIds, reorderedMediaItems) = withContext(Dispatchers.Default) {
+                val target = if (enabled) ShufflePlan.shuffledTail(live.map { it.queueId }, from, random)
+                else snapshot?.let { ShufflePlan.restore(live.map { it.queueId }, it) } ?: live.map { it.queueId }
+                val items = target.mapNotNull { qid ->
+                    mediaItemCache[qid] ?: live.firstOrNull { it.queueId == qid }?.let { toMediaItem(it.song, it.queueId) }
                 }
-                return
+                target to items
             }
-            _shuffle.value = true
-        } else {
-            val snapshot = shuffleOrder
-            shuffleOrder = null
-            if (snapshot != null && live.isNotEmpty()) {
-                scope.launch {
-                    val target = withContext(Dispatchers.Default) {
-                        ShufflePlan.restore(live.map { it.queueId }, snapshot)
-                    }
-                    applyOrder(c, target)
-                    _shuffle.value = false
-                    persistAsync()
-                }
-                return
-            }
-            _shuffle.value = false
+            applyOrder(c, targetIds, reorderedMediaItems)
+            _shuffle.value = enabled; persistAsync()
         }
-        persistAsync()
     }
 
     /**
@@ -1164,7 +1153,7 @@ class PlayerManager @Inject constructor(
      * (>30 items) or [moveMediaItem] for small queues, then rebuilds the mirror and
      * re-points the current index at the same entry (by queue key, so duplicates are safe).
      */
-    private fun applyOrder(c: MediaController, targetIds: List<Long>) {
+    private fun applyOrder(c: MediaController, targetIds: List<Long>, reorderedMediaItems: List<MediaItem> = targetIds.mapNotNull { mediaItemCache[it] }) {
         val before = _queue.value
         val keepId = currentQueueId()
         val reordered = ShufflePlan.applyOrder(targetIds, before) { it.queueId }
@@ -1172,39 +1161,12 @@ class PlayerManager @Inject constructor(
             "queue reorder must not drop entries (${before.size} -> ${reordered.size})"
         }
         val idx = reordered.indexOfFirst { it.queueId == keepId }
-        val targetIndex = if (idx >= 0) idx
-        else _currentIndex.value.coerceIn(0, maxOf(0, reordered.size - 1))
-
-        if (before.size > 30) {
-            val currentPos = c.currentPosition
-            val isPlaying = c.isPlaying
-            val mediaCount = c.mediaItemCount
-            val mediaItems = (0 until mediaCount).map { c.getMediaItemAt(it) }
-            if (mediaItems.size == before.size) {
-                val idToItem = before.indices.associate { before[it].queueId to mediaItems[it] }
-                val reorderedItems = reordered.mapNotNull { idToItem[it.queueId] }
-                if (reorderedItems.size == before.size) {
-                    c.setMediaItems(reorderedItems, targetIndex, currentPos)
-                    if (isPlaying && !c.isPlaying) {
-                        c.play()
-                    }
-                } else {
-                    for ((from, to) in ShufflePlan.moveSeq(before.map { it.queueId }, reordered.map { it.queueId })) {
-                        c.moveMediaItem(from, to)
-                    }
-                }
-            } else {
-                for ((from, to) in ShufflePlan.moveSeq(before.map { it.queueId }, reordered.map { it.queueId })) {
-                    c.moveMediaItem(from, to)
-                }
-            }
-        } else {
-            for ((from, to) in ShufflePlan.moveSeq(before.map { it.queueId }, reordered.map { it.queueId })) {
-                c.moveMediaItem(from, to)
-            }
-        }
-        _queue.value = reordered
-        _currentIndex.value = targetIndex
+        val targetIndex = if (idx >= 0) idx else _currentIndex.value.coerceIn(0, maxOf(0, reordered.size - 1))
+        val currentPos = c.currentPosition; val isPlaying = c.isPlaying
+        c.setMediaItems(reorderedMediaItems, targetIndex, currentPos)
+        if (isPlaying && !c.isPlaying) c.play()
+        _queue.value = reordered; _currentIndex.value = targetIndex
+        _current.value = reordered.getOrNull(targetIndex)?.song
     }
 
     /**
