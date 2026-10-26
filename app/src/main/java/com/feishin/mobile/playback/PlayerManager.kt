@@ -1078,6 +1078,29 @@ class PlayerManager @Inject constructor(
         }
     }
 
+    fun playOrToggle(queueId: Long) {
+        val c = controller ?: return
+        val currentItem = _queue.value.getOrNull(_currentIndex.value)
+        if (currentItem != null && currentItem.queueId == queueId) {
+            if (c.isPlaying || c.playWhenReady) {
+                c.pause()
+            } else {
+                c.play()
+            }
+            return
+        }
+        val index = _queue.value.indexOfFirst { it.queueId == queueId }
+        if (index >= 0) {
+            c.seekTo(index, 0L)
+            c.play()
+            _currentIndex.value = index
+            _current.value = _queue.value[index].song
+            _current.value?.let { recordRecent(it) }
+            scope.launch { applyReplayGain(_current.value) }
+            persistAsync()
+        }
+    }
+
     fun togglePlayPause() {
         val c = controller ?: return
         if (c.isPlaying) c.pause() else c.play()

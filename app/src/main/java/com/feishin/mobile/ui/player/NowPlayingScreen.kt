@@ -1453,7 +1453,7 @@ private fun QueueList(
     haptics: androidx.compose.ui.hapticfeedback.HapticFeedback,
     onMoveLocal: (Int, Int) -> Unit,
     onCommit: () -> Unit,
-    onPlayAt: (Int) -> Unit,
+    onPlayQueueItem: (Long) -> Unit,
     /** Dismiss = remove the entry with THIS queue key, never a slot. */
     onRemove: (Long) -> Unit,
     onActions: (com.feishin.mobile.domain.model.Track) -> Unit,
@@ -1579,7 +1579,7 @@ private fun QueueList(
                             .background(rowBg, RoundedCornerShape(16.dp))
                             .combinedClickable(
                                 enabled = idx >= 0,
-                                onClick = { if (idx >= 0) onPlayAt(idx) },
+                                onClick = { if (idx >= 0) onPlayQueueItem(item.queueId) },
                                 onLongClick = {
                                     // Long-press opens the same sheet as the ⋮
                                     // button, with a haptic tick for feedback.
@@ -2037,7 +2037,7 @@ private fun QueueSheet(
                     displayOrder = displayOrder.toMutableList().apply { add(to, removeAt(from)) }
                 },
                 onCommit = { commitIfDirty() },
-                onPlayAt = { idx -> player.playAt(idx) },
+                onPlayQueueItem = { qid -> player.playOrToggle(qid) },
                 onRemove = { id -> player.removeById(id) },
                 onActions = onActions,
                 palette = palette,
