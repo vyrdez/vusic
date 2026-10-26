@@ -48,8 +48,8 @@ class LyricsRepository @Inject constructor(
     /** 7-day TTL for negative cache entries ("nothing found"). */
     private val negativeTtlMs = 7 * 24 * 60 * 60 * 1000L
 
-    /** Total lookup budget per song across all providers before giving up. */
-    private val totalLookupBudgetMs = 15_000L
+    /** Total lookup budget per song across all providers before giving up (20s for multi-variant). */
+    private val totalLookupBudgetMs = 20_000L
 
     /** Global mutex to ensure requests across all providers are strictly sequential. */
     private val globalLookupMutex = Mutex()
@@ -239,16 +239,16 @@ class LyricsRepository @Inject constructor(
     }
 
     private fun isNetworkAvailable(): Boolean {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
-        val active = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(active) ?: return false
+        val cm = runCatching { context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager }.getOrNull() ?: return true
+        val active = runCatching { cm.activeNetwork }.getOrNull() ?: return true
+        val caps = runCatching { cm.getNetworkCapabilities(active) }.getOrNull() ?: return true
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     private fun isUnmeteredConnection(): Boolean {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
-        val active = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(active) ?: return false
+        val cm = runCatching { context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager }.getOrNull() ?: return true
+        val active = runCatching { cm.activeNetwork }.getOrNull() ?: return true
+        val caps = runCatching { cm.getNetworkCapabilities(active) }.getOrNull() ?: return true
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
     }
 }

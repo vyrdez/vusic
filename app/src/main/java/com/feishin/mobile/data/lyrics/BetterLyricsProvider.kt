@@ -60,31 +60,45 @@ class BetterLyricsProvider @Inject constructor(
             return@withContext Result.Ok(Lyrics(emptyList(), 0, LyricsKind.NONE, source = LyricsSource.BETTER_LYRICS))
         }
 
-        val cleanTitle = LrclibMatcher.cleanTitle(title)
-        val cleanArtist = if (isUnknownArtist) "" else artist
+        val titleVariants = LrclibMatcher.generateTitleVariants(title)
+        val artistVariants = if (isUnknownArtist) listOf("") else LrclibMatcher.generateArtistVariants(artist)
 
-        val url = buildUrl(cleanTitle, cleanArtist, album, durationSec)
+        val queryPairs = mutableListOf<Pair<String, String>>()
+        for (t in titleVariants) {
+            for (a in artistVariants) {
+                val pair = t to a
+                if (pair !in queryPairs) {
+                    queryPairs += pair
+                    if (queryPairs.size >= 6) break
+                }
+            }
+            if (queryPairs.size >= 6) break
+        }
 
-        try {
-            val request = Request.Builder().url(url).get().build()
-            client.newCall(request).execute().use { response ->
-                when (response.code) {
-                    200 -> {
-                        val body = response.body?.string().orEmpty()
-                        val parsedDto = runCatching {
-                            json.decodeFromString<BetterLyricsResponse>(body)
-                        }.getOrNull()
+        var plainFallback: Lyrics? = null
+        var lastErr: Result.Err? = null
 
-                        val ttml = parsedDto?.ttml
-                        if (!ttml.isNullOrBlank()) {
-                            val lyrics = TtmlLyricsParser.parse(ttml, LyricsSource.BETTER_LYRICS)
-                            if (!lyrics.isNone) return@withContext Result.Ok(lyrics)
-                        }
+        for ((qTitle, qArtist) in queryPairs) {
+            val url = buildUrl(qTitle, qArtist, album, durationSec)
+            try {
+                val request = Request.Builder().url(url).get().build()
+                client.newCall(request).execute().use { response ->
+                    when (response.code) {
+                        200 -> {
+                            val body = response.body?.string().orEmpty()
+                            val parsedDto = runCatching {
+                                json.decodeFromString<BetterLyricsResponse>(body)
+                            }.getOrNull()
 
-                        val plain = parsedDto?.plainLyrics
-                        if (!plain.isNullOrBlank()) {
-                            return@withContext Result.Ok(
-                                Lyrics(
+                            val ttml = parsedDto?.ttml
+                            if (!ttml.isNullOrBlank()) {
+                                val lyrics = TtmlLyricsParser.parse(ttml, LyricsSource.BETTER_LYRICS)
+                                if (lyrics.isSynced) return@withContext Result.Ok(lyrics)
+                            }
+
+                            val plain = parsedDto?.plainLyrics
+                            if (!plain.isNullOrBlank() && plainFallback == null) {
+                                plainFallback = Lyrics(
                                     lines = plain.lineSequence()
                                         .filter { it.isNotBlank() }
                                         .map { com.feishin.mobile.core.network.LyricLine(0L, it.trim()) }
@@ -92,25 +106,26 @@ class BetterLyricsProvider @Inject constructor(
                                     kind = LyricsKind.PLAIN,
                                     plainText = plain,
                                     source = LyricsSource.BETTER_LYRICS,
-                                ),
-                            )
+                                )
+                            }
                         }
-
-                        Result.Ok(Lyrics(emptyList(), 0, LyricsKind.NONE, source = LyricsSource.BETTER_LYRICS))
-                    }
-                    404, 422 -> {
-                        Result.Ok(Lyrics(emptyList(), 0, LyricsKind.NONE, source = LyricsSource.BETTER_LYRICS))
-                    }
-                    else -> {
-                        Result.Err("BetterLyrics HTTP error: ${response.code}")
+                        404, 422 -> Unit
+                        else -> {
+                            lastErr = Result.Err("BetterLyrics HTTP error: ${response.code}")
+                        }
                     }
                 }
+            } catch (e: IOException) {
+                lastErr = Result.Err("BetterLyrics network error: ${e.message}", e)
+            } catch (e: Exception) {
+                lastErr = Result.Err("BetterLyrics unexpected error: ${e.message}", e)
             }
-        } catch (e: IOException) {
-            Result.Err("BetterLyrics network error: ${e.message}", e)
-        } catch (e: Exception) {
-            Result.Err("BetterLyrics unexpected error: ${e.message}", e)
         }
+
+        plainFallback?.let { return@withContext Result.Ok(it) }
+        val err = lastErr
+        if (err != null) return@withContext err
+        Result.Ok(Lyrics(emptyList(), 0, LyricsKind.NONE, source = LyricsSource.BETTER_LYRICS))
     }
 
     private fun buildUrl(

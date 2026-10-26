@@ -92,6 +92,7 @@ class SettingsStore internal constructor(
         val lyricsSyncOffsetMs = intPreferencesKey("lyrics_sync_offset_ms")
         val lyricsShowUnsynced = booleanPreferencesKey("lyrics_show_unsynced")
         val lyricsProviderOrder = stringPreferencesKey("lyrics_provider_order")
+        val lyricsProviderOrderMigrated92 = booleanPreferencesKey("lyrics_provider_order_migrated_92")
         val lyricsProviderEnabled = stringPreferencesKey("lyrics_provider_enabled")
         val lyricsPreferWordByWord = booleanPreferencesKey("lyrics_prefer_word_by_word")
         val lyricsRespectAgentPositioning = booleanPreferencesKey("lyrics_respect_agent_positioning")
@@ -243,8 +244,12 @@ class SettingsStore internal constructor(
             lyricsKeepScreenOn = p[K.lyricsKeepScreenOn] ?: false,
             lyricsSyncOffsetMs = (p[K.lyricsSyncOffsetMs] ?: 0).coerceIn(-2000, 2000),
             lyricsShowUnsynced = p[K.lyricsShowUnsynced] ?: true,
-            lyricsProviderOrder = p[K.lyricsProviderOrder]?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
-                ?: DEFAULT_LYRICS_PROVIDER_ORDER,
+            lyricsProviderOrder = if (p[K.lyricsProviderOrderMigrated92] == true) {
+                p[K.lyricsProviderOrder]?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+                    ?: DEFAULT_LYRICS_PROVIDER_ORDER
+            } else {
+                DEFAULT_LYRICS_PROVIDER_ORDER
+            },
             lyricsProviderEnabled = p[K.lyricsProviderEnabled]?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
                 ?: DEFAULT_LYRICS_PROVIDER_ENABLED,
             lyricsPreferWordByWord = p[K.lyricsPreferWordByWord] ?: true,
@@ -287,7 +292,7 @@ class SettingsStore internal constructor(
         const val LAYOUT_PREFIX = "library_layout_"
         const val PLAYLIST_SORT_PREFIX = "playlist_sort_"
         val RADIO_BATCH_OPTIONS = listOf(10, 20, 30, 50)
-        val DEFAULT_LYRICS_PROVIDER_ORDER = listOf("LRCLIB", "BETTER_LYRICS", "PAXSENIX", "KUGOU", "LOCAL_DATA")
+        val DEFAULT_LYRICS_PROVIDER_ORDER = listOf("BETTER_LYRICS", "LRCLIB", "PAXSENIX", "KUGOU", "LOCAL_DATA")
         val DEFAULT_LYRICS_PROVIDER_ENABLED = setOf("LRCLIB", "BETTER_LYRICS", "KUGOU", "LOCAL_DATA")
 
         fun parseLyricsTextSizePercent(raw: String): Int {
@@ -353,7 +358,10 @@ class SettingsStore internal constructor(
     suspend fun setLyricsKeepScreenOn(v: Boolean) = edit { it[K.lyricsKeepScreenOn] = v }
     suspend fun setLyricsSyncOffsetMs(v: Int) = edit { it[K.lyricsSyncOffsetMs] = v.coerceIn(-2000, 2000) }
     suspend fun setLyricsShowUnsynced(v: Boolean) = edit { it[K.lyricsShowUnsynced] = v }
-    suspend fun setLyricsProviderOrder(order: List<String>) = edit { it[K.lyricsProviderOrder] = order.joinToString(",") }
+    suspend fun setLyricsProviderOrder(order: List<String>) = edit {
+        it[K.lyricsProviderOrder] = order.joinToString(",")
+        it[K.lyricsProviderOrderMigrated92] = true
+    }
     suspend fun setLyricsProviderEnabled(enabled: Set<String>) = edit { it[K.lyricsProviderEnabled] = enabled.joinToString(",") }
     suspend fun setLyricsPreferWordByWord(v: Boolean) = edit { it[K.lyricsPreferWordByWord] = v }
     suspend fun setLyricsRespectAgentPositioning(v: Boolean) = edit { it[K.lyricsRespectAgentPositioning] = v }
@@ -379,6 +387,7 @@ class SettingsStore internal constructor(
     suspend fun resetLyricsProviders() = edit {
         it[K.lyricsProviderOrder] = DEFAULT_LYRICS_PROVIDER_ORDER.joinToString(",")
         it[K.lyricsProviderEnabled] = DEFAULT_LYRICS_PROVIDER_ENABLED.joinToString(",")
+        it[K.lyricsProviderOrderMigrated92] = true
     }
     // Device files setters (P9-B)
     suspend fun setShowDeviceFiles(v: Boolean) = edit { it[K.showDeviceFiles] = v }

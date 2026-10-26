@@ -67,7 +67,8 @@ class LrclibLyricsProvider @Inject constructor(
         }
 
         var requestCount = 0
-        val maxRequests = 4
+        val maxRequests = 6
+        var plainFallback: Lyrics? = null
 
         // 1. Try exact match via /api/get
         try {
@@ -85,7 +86,8 @@ class LrclibLyricsProvider @Inject constructor(
                 val threshold = if (isUnknownArtist) LrclibMatcher.UNKNOWN_ARTIST_THRESHOLD else LrclibMatcher.CONFIDENCE_THRESHOLD
                 if (score >= threshold) {
                     val lyrics = toLyrics(getCandidate)
-                    if (!lyrics.isNone) return@withContext Result.Ok(lyrics)
+                    if (lyrics.isSynced) return@withContext Result.Ok(lyrics)
+                    if (lyrics.isPlain && plainFallback == null) plainFallback = lyrics
                 }
             }
         } catch (e: IOException) {
@@ -95,31 +97,21 @@ class LrclibLyricsProvider @Inject constructor(
             // Other exception
         }
 
-        // 2. Query variants via /api/search
-        val searchVariants = mutableListOf<Pair<String, String>>() // title, artist
-
-        val cleanT = LrclibMatcher.cleanTitle(title)
+        // 2. Query variants via /api/search (up to 5 calls)
+        val titleVariants = LrclibMatcher.generateTitleVariants(title)
         val primaryArtist = LrclibMatcher.splitArtists(artist).firstOrNull() ?: artist
 
-        // Variant A: cleaned title + primary artist
-        if (cleanT != title || primaryArtist != artist) {
-            searchVariants += cleanT to primaryArtist
-        }
-
-        // Variant B: bilingual parts if present
-        val parts = LrclibMatcher.splitTitleParts(title)
-        for (part in parts) {
-            if (part != title && part != cleanT) {
-                searchVariants += part to primaryArtist
+        val searchVariants = mutableListOf<Pair<String, String>>()
+        for (tv in titleVariants) {
+            if (primaryArtist.isNotBlank() && !isUnknownArtist) {
+                searchVariants += tv to primaryArtist
             }
+            searchVariants += tv to ""
         }
 
-        // Variant C: cleaned title only (without artist if artist is unknown or multi-artist)
-        if (isUnknownArtist || searchVariants.isEmpty()) {
-            searchVariants += cleanT to ""
-        }
+        val distinctQueries = searchVariants.distinct().take(maxRequests - requestCount)
 
-        for ((vTitle, vArtist) in searchVariants) {
+        for ((vTitle, vArtist) in distinctQueries) {
             if (requestCount >= maxRequests) break
             requestCount++
 
@@ -127,8 +119,7 @@ class LrclibLyricsProvider @Inject constructor(
                 val searchUrl = buildSearchUrl(vTitle, vArtist)
                 val candidates = executeSearch(searchUrl)
                 if (candidates.isNotEmpty()) {
-                    // Pick the highest scoring candidate
-                    val best = candidates.map { c ->
+                    val scored = candidates.map { c ->
                         c to LrclibMatcher.scoreCandidate(
                             candidate = c,
                             targetTitle = title,
@@ -136,12 +127,21 @@ class LrclibLyricsProvider @Inject constructor(
                             targetDurationSec = durationSec,
                             isUnknownArtist = isUnknownArtist,
                         )
-                    }.maxByOrNull { it.second }
+                    }
 
+                    // Early exit if synced candidate score >= 0.80
+                    val earlySynced = scored.firstOrNull { it.first.syncedLyrics?.isNotBlank() == true && it.second >= 0.80 }
+                    if (earlySynced != null) {
+                        val lyrics = toLyrics(earlySynced.first)
+                        if (lyrics.isSynced) return@withContext Result.Ok(lyrics)
+                    }
+
+                    val best = scored.maxByOrNull { it.second }
                     val threshold = if (isUnknownArtist) LrclibMatcher.UNKNOWN_ARTIST_THRESHOLD else LrclibMatcher.CONFIDENCE_THRESHOLD
                     if (best != null && best.second >= threshold) {
                         val lyrics = toLyrics(best.first)
-                        if (!lyrics.isNone) return@withContext Result.Ok(lyrics)
+                        if (lyrics.isSynced) return@withContext Result.Ok(lyrics)
+                        if (lyrics.isPlain && plainFallback == null) plainFallback = lyrics
                     }
                 }
             } catch (e: IOException) {
@@ -151,6 +151,7 @@ class LrclibLyricsProvider @Inject constructor(
             }
         }
 
+        plainFallback?.let { return@withContext Result.Ok(it) }
         Result.Ok(Lyrics(emptyList(), 0, LyricsKind.NONE, source = LyricsSource.LRCLIB))
     }
 

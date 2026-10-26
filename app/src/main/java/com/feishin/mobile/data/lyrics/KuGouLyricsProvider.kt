@@ -100,24 +100,46 @@ class KuGouLyricsProvider @Inject constructor(
         }
 
         val cleanTitle = LrclibMatcher.cleanTitle(title)
-        val cleanArtist = if (isUnknownArtist) "" else artist
+        val primaryArtist = if (isUnknownArtist) "" else (LrclibMatcher.splitArtists(artist).firstOrNull() ?: artist)
+
+        // Generate query variants according to Section C spec:
+        // cleanTitle, titlePart1, titlePart2, cleanTitle + " " + primaryArtist
+        val queries = mutableListOf<String>()
+        queries += cleanTitle
+        if (title.contains(" - ")) {
+            val parts = title.split(" - ").map { LrclibMatcher.cleanTitle(it) }.filter { it.isNotBlank() }
+            queries.addAll(parts)
+        }
+        if (primaryArtist.isNotBlank()) {
+            queries += "$cleanTitle $primaryArtist"
+        }
+        val distinctQueries = queries.distinct()
+
+        var callCount = 0
+        val maxCalls = 6
 
         try {
-            // Step 1: Search song to retrieve hash
-            val hash = searchSongHash(cleanTitle, cleanArtist, durationSec)
-                ?: return@withContext Result.Ok(Lyrics(emptyList(), 0, LyricsKind.NONE, source = LyricsSource.KUGOU))
+            for (query in distinctQueries) {
+                if (callCount >= maxCalls) break
+                // Step 1: Search song to retrieve hash (1 call)
+                callCount++
+                val hash = searchSongHash(query, targetDurationSec = durationSec) ?: continue
 
-            // Step 2: Search candidates to retrieve download id & accesskey
-            val candidate = searchCandidates(cleanTitle, durationMs, hash)
-                ?: return@withContext Result.Ok(Lyrics(emptyList(), 0, LyricsKind.NONE, source = LyricsSource.KUGOU))
+                if (callCount >= maxCalls) break
+                // Step 2: Search candidates to retrieve download id & accesskey (1 call)
+                callCount++
+                val candidate = searchCandidates(cleanTitle, durationMs, hash) ?: continue
 
-            // Step 3: Download KRC
-            val krcBase64 = downloadKrc(candidate.id, candidate.accesskey)
-                ?: return@withContext Result.Ok(Lyrics(emptyList(), 0, LyricsKind.NONE, source = LyricsSource.KUGOU))
+                if (callCount >= maxCalls) break
+                // Step 3: Download KRC (1 call)
+                callCount++
+                val krcBase64 = downloadKrc(candidate.id, candidate.accesskey) ?: continue
 
-            // Step 4: Parse KRC
-            val lyrics = KrcLyricsParser.parseBase64(krcBase64, LyricsSource.KUGOU)
-            Result.Ok(lyrics)
+                // Step 4: Parse KRC
+                val lyrics = KrcLyricsParser.parseBase64(krcBase64, LyricsSource.KUGOU)
+                if (lyrics.isSynced) return@withContext Result.Ok(lyrics)
+            }
+            Result.Ok(Lyrics(emptyList(), 0, LyricsKind.NONE, source = LyricsSource.KUGOU))
         } catch (e: IOException) {
             Result.Err("KuGou network error: ${e.message}", e)
         } catch (e: Exception) {
@@ -125,9 +147,8 @@ class KuGouLyricsProvider @Inject constructor(
         }
     }
 
-    private fun searchSongHash(title: String, artist: String, targetDurationSec: Long): String? {
+    private fun searchSongHash(query: String, targetDurationSec: Long): String? {
         val enc = { s: String -> URLEncoder.encode(s, "UTF-8") }
-        val query = if (artist.isNotBlank()) "$title $artist" else title
         // mobilecdn's certificate is issued for a different host name, so TLS
         // cannot be verified there; the search request stays on HTTP. Nothing
         // but title/artist leaves this call.
@@ -142,8 +163,8 @@ class KuGouLyricsProvider @Inject constructor(
             if (items.isEmpty()) return null
 
             if (targetDurationSec > 0) {
-                // Find candidate within +/- 4 seconds
-                val match = items.firstOrNull { Math.abs(it.duration - targetDurationSec) <= 4 }
+                // Find candidate within +/- 3 seconds (Section C spec)
+                val match = items.firstOrNull { Math.abs(it.duration - targetDurationSec) <= 3 }
                 if (match != null && match.hash.isNotBlank()) return match.hash
             }
 

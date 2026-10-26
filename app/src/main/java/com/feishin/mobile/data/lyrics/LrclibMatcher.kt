@@ -2,16 +2,15 @@ package com.feishin.mobile.data.lyrics
 
 import java.text.Normalizer
 import kotlin.math.abs
-import kotlin.math.max
 
 object LrclibMatcher {
 
     private val SUFFIX_BRACKETS = Regex(
-        """\s*[(\[](?:original\s+mix|feat\.?|ft\.?|remaster(?:ed)?|remix|live|bonus(?:\s+track)?|official|audio|deluxe|version|edit|mono|stereo|radio\s+edit)[^)\]]*[)\]]""",
+        """\s*[(\[【（](?:original\s+mix|feat\.?|ft\.?|remaster(?:ed)?|remix|live|bonus(?:\s+track)?|official|audio|deluxe|version|edit|mono|stereo|radio\s+edit|acoustic(?:[\s\w]+)?|sped\s+up(?:[\s\w]+)?)[^)\]】）]*[)\]】）]""",
         RegexOption.IGNORE_CASE,
     )
 
-    private val ARTIST_SPLIT = Regex("""\s*(?:/|,|&|\band\b|\bx\b)\s*""", RegexOption.IGNORE_CASE)
+    private val ARTIST_SPLIT = Regex("""\s*(?:/|,|&|\band\b|\bx\b|、)\s*""", RegexOption.IGNORE_CASE)
 
     /** Normalizes a string using NFKC, lowercase, stripping punctuation and redundant whitespace. */
     fun normalize(s: String): String {
@@ -22,7 +21,7 @@ object LrclibMatcher {
             .trim()
     }
 
-    /** Cleans bracketed and parenthesized tags (e.g. "(Original Mix)", "[Remastered]"). */
+    /** Cleans bracketed and parenthesized tags (e.g. "(Original Mix)", "[Remastered]", "【Official】"). */
     fun cleanTitle(title: String): String {
         val cleaned = SUFFIX_BRACKETS.replace(title, "").trim()
         return cleaned.ifBlank { title.trim() }
@@ -53,6 +52,43 @@ object LrclibMatcher {
         return result.distinct()
     }
 
+    /** Generates up to 5 deduplicated title variants. */
+    fun generateTitleVariants(title: String): List<String> {
+        val variants = mutableListOf<String>()
+        val clean = cleanTitle(title)
+        if (clean.isNotBlank()) variants += clean
+
+        if (title.contains(" - ")) {
+            val parts = title.split(" - ").map { it.trim() }.filter { it.isNotBlank() }
+            for (part in parts) {
+                val cleanPart = cleanTitle(part)
+                if (cleanPart.isNotBlank()) variants += cleanPart
+            }
+        }
+
+        if (title.trim().isNotBlank()) variants += title.trim()
+        val nfkc = Normalizer.normalize(clean.ifBlank { title }, Normalizer.Form.NFKC).trim()
+        if (nfkc.isNotBlank()) variants += nfkc
+
+        return variants.distinct().take(5)
+    }
+
+    /** Generates up to 4 deduplicated artist variants. */
+    fun generateArtistVariants(artist: String): List<String> {
+        val variants = mutableListOf<String>()
+        val trimmed = artist.trim()
+        if (trimmed.isNotBlank() && !trimmed.equals("Unknown Artist", ignoreCase = true) && !trimmed.equals("<unknown>", ignoreCase = true)) {
+            variants += trimmed
+            val parts = trimmed.split(ARTIST_SPLIT).map { it.trim() }.filter { it.isNotBlank() }
+            if (parts.isNotEmpty()) {
+                variants += parts.first()
+                variants.addAll(parts)
+            }
+        }
+        variants += "" // Empty artist for title-only query
+        return variants.distinct().take(4)
+    }
+
     /** Calculates Sørensen-Dice coefficient similarity between two strings (0.0 to 1.0). */
     fun diceSimilarity(s1: String, s2: String): Double {
         val n1 = normalize(s1)
@@ -80,7 +116,7 @@ object LrclibMatcher {
     }
 
     /**
-     * Scores a candidate from LRCLIB against target track metadata.
+     * Duration-first candidate scoring according to section_c_spec.md.
      * Returns a confidence score from 0.0 to 1.0.
      */
     fun scoreCandidate(
@@ -94,57 +130,61 @@ object LrclibMatcher {
         val candidateArtist = candidate.artistName ?: ""
         val candidateDuration = candidate.duration?.toLong() ?: 0L
 
-        // 1. Duration check
-        if (targetDurationSec > 0 && candidateDuration > 0) {
-            val diffSec = abs(candidateDuration - targetDurationSec)
-            if (diffSec > 5) return 0.0 // Reject outright if duration differs > 5 seconds
-            if (diffSec > 2) {
-                // Between 2 and 5 seconds: only allow if title and artist match almost exactly
-                val tNorm = normalize(targetTitle)
-                val cNorm = normalize(candidateTitle)
-                val aNorm = normalize(targetArtist)
-                val caNorm = normalize(candidateArtist)
-                if (tNorm != cNorm || (!isUnknownArtist && aNorm != caNorm)) {
-                    return 0.0
-                }
-            }
-        }
-
-        // 2. Title similarity
-        val titleParts = splitTitleParts(targetTitle)
-        val titleScore = titleParts.maxOfOrNull { part ->
-            diceSimilarity(part, candidateTitle)
-        } ?: 0.0
-
-        if (titleScore < 0.6) return 0.0
-
-        // 3. Artist similarity
-        val artistScore = if (isUnknownArtist || targetArtist.isBlank() || targetArtist.equals("Unknown Artist", ignoreCase = true)) {
-            // When artist is unknown, candidate must have very high title match
-            if (titleScore >= 0.95) 0.8 else 0.0
+        val diffSec = if (targetDurationSec > 0 && candidateDuration > 0) {
+            abs(candidateDuration - targetDurationSec)
         } else {
-            val targetArtists = splitArtists(targetArtist)
-            targetArtists.maxOfOrNull { a ->
-                diceSimilarity(a, candidateArtist)
-            } ?: 0.0
+            -1L
         }
 
-        if (!isUnknownArtist && artistScore < 0.4) return 0.0
+        // Section C: If delta d > 5: reject (0.0)
+        if (diffSec > 5) return 0.0
 
-        // 4. Combined score
-        val baseScore = if (isUnknownArtist) {
-            titleScore
+        // Title similarity across variants
+        val titleVariants = generateTitleVariants(targetTitle)
+        val titleScore = titleVariants.maxOfOrNull { diceSimilarity(it, candidateTitle) } ?: 0.0
+
+        val artistVariants = generateArtistVariants(targetArtist).filter { it.isNotBlank() }
+        val artistScore = if (artistVariants.isEmpty() || isUnknownArtist) {
+            0.0
+        } else {
+            artistVariants.maxOfOrNull { diceSimilarity(it, candidateArtist) } ?: 0.0
+        }
+
+        val cleanT = cleanTitle(targetTitle)
+        val isShortTitle = cleanT.length < 4
+
+        val matchAccepted: Boolean = if (diffSec in 0..3) {
+            if (isShortTitle) {
+                titleScore >= 0.65 && (artistScore >= 0.40 || diffSec <= 1)
+            } else {
+                titleScore >= 0.65
+            }
+        } else if (diffSec in 4..5) {
+            // Tight tolerance for 4..5s
+            titleScore >= 0.85 && (isUnknownArtist || artistScore >= 0.60)
+        } else {
+            // Duration unknown
+            if (isUnknownArtist) titleScore >= 0.90 else (titleScore >= 0.75 && artistScore >= 0.50)
+        }
+
+        if (!matchAccepted) return 0.0
+
+        val baseScore = if (isUnknownArtist || artistVariants.isEmpty()) {
+            titleScore * 0.85
         } else {
             (titleScore * 0.6) + (artistScore * 0.4)
         }
 
-        // Small bonus if syncedLyrics present
-        val syncedBonus = if (!candidate.syncedLyrics.isNullOrBlank()) 0.05 else 0.0
+        // Synced bonus: +0.05 for line-synced, +0.10 for word-synced
+        val syncedBonus = if (!candidate.syncedLyrics.isNullOrBlank()) {
+            if (candidate.syncedLyrics.contains("<") || candidate.syncedLyrics.contains("(")) 0.10 else 0.05
+        } else {
+            0.0
+        }
 
         return (baseScore + syncedBonus).coerceIn(0.0, 1.0)
     }
 
-    /** Minimum confidence threshold for accepting a match. */
-    const val CONFIDENCE_THRESHOLD = 0.75
-    const val UNKNOWN_ARTIST_THRESHOLD = 0.90
+    const val CONFIDENCE_THRESHOLD = 0.65
+    const val UNKNOWN_ARTIST_THRESHOLD = 0.80
 }
