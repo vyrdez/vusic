@@ -137,6 +137,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -626,16 +627,32 @@ fun NowPlayingScreen(
                 }
             }
             } else {
-                LyricsPanel(
-                    lyricsVm = lyricsVm,
-                    player = player,
-                    content = content,
-                    dim = dim,
-                    lazyListState = lyricsLazyListState,
-                    plainScrollState = plainLyricsScrollState,
-                    onSearchAgain = { lyricsVm.searchAgain(current) },
-                    modifier = Modifier.fillMaxSize(),
-                )
+                Box(Modifier.fillMaxSize()) {
+                    LyricsPanel(
+                        lyricsVm = lyricsVm,
+                        player = player,
+                        content = content,
+                        dim = dim,
+                        lazyListState = lyricsLazyListState,
+                        plainScrollState = plainLyricsScrollState,
+                        onSearchAgain = { lyricsVm.searchAgain(current) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(horizontal = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        PlayingFromBottom(
+                            player = player, dim = dim,
+                            onClick = { sheet.openSheet() },
+                            onDrag = { delta -> sheet.dragByPixels(delta) },
+                            onDragEnd = { velocity -> sheet.onDragEnd(velocity) },
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+                }
             }
             }
         }
@@ -1174,7 +1191,7 @@ private fun LyricsPanel(
                         }
                         Spacer(Modifier.height(24.dp))
                         SourceFooter(state.source, dim)
-                        Spacer(Modifier.height(64.dp))
+                        Spacer(Modifier.height(96.dp))
                     }
                 }
             }
@@ -1190,6 +1207,8 @@ private fun LyricsPanel(
         }
     }
 }
+
+val LyricsDisplayTokens.QueueStripPadding: Dp get() = 88.dp
 
 @Composable
 private fun SyncedLyricsList(
@@ -1280,7 +1299,7 @@ private fun SyncedLyricsList(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 32.dp),
+            contentPadding = PaddingValues(start = 24.dp, top = 32.dp, end = 24.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(LyricsDisplayTokens.LineGap),
         ) {
             val showInterval = settings?.lyricsShowIntervalIndicator != false
@@ -1388,7 +1407,7 @@ private fun SyncedLyricsList(
             exit = fadeOut(androidx.compose.animation.core.tween(200)) + scaleOut(androidx.compose.animation.core.tween(200)),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(bottom = 24.dp, end = 24.dp),
+                .padding(bottom = LyricsDisplayTokens.QueueStripPadding, end = 24.dp),
         ) {
             Surface(
                 shape = CircleShape,
