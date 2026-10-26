@@ -1466,3 +1466,37 @@ Reference: `docs/reference/before-8.4/` and `docs/reference/after-8.4/`.
   - The refresh event fires after the server call, not before, and carries the playlist id.
   - Rollback restores the pre-add cache and shows an error message; there is no retry action.
   - Benchmark report in `docs/perf/playlist-add-9.1.md`.
+
+## Phase 9.2 status: queue shuffle fix, queue tap toggle, lyrics coverage & display, romanization (1.2.2)
+
+Version 1.2.2 (versionCode 10) — `applicationId com.feishin.mobile` unchanged.
+
+- **P9.2-A queue shuffle** (`PlayerManager.kt`, `QueueShufflePipelineTest.kt`):
+  - Root cause: `BoundedQueuePlayer` exposes at most 100 items to `MediaController`. When `applyOrder` checked `c.mediaItemCount == before.size` (100 == 533 -> false), it fell back to ~500 sequential `c.moveMediaItem` IPC calls in a tight loop on `Dispatchers.Main`. Each call triggered `onTimelineChanged` across Binder to Bluetooth AVRCP daemon, overflowing its buffer and crashing with SIGABRT (Bluetooth reset + ANR).
+  - Fix: In-memory `ConcurrentHashMap<Long, MediaItem>` cache maintained in `PlayerManager`. Atomic `c.setMediaItems(reorderedMediaItems, targetIndex, currentPos)` reorders queues of any size in a single call without timeline inspection or audio restart. Rapid toggles coalesced with job cancellation. Tested up to 5,000 items with at most 1 timeline-changing call.
+- **P9.2-B queue tap toggle** (`PlayerManager.kt`, `NowPlayingScreen.kt`, `QueueTapToggleTest.kt`):
+  - Tapping the currently playing song (identified by stable `queueId`, distinct even for duplicate tracks) toggles pause/play via `player.playOrToggle(queueId)` with zero seek and no restart. Works while buffering and under repeat-one.
+  - Tapping another row seeks to 0 and starts playback as before.
+- **P9.2-C provider chain and coverage** (`BetterLyricsProvider.kt`, `LrclibLyricsProvider.kt`, `KuGouLyricsProvider.kt`, `LrclibMatcher.kt`, `LyricsRepository.kt`, `SettingsStore.kt`, `LyricsProbeTest.kt`, `LyricsMatchingTest.kt`):
+  - New default priority: BetterLyrics, LRCLIB, Paxsenix, KuGou, and Local data with automatic DataStore migration.
+  - Multi-variant title/artist search generator handles bilingual " - " cuts, parenthetical tags, and credit splitting.
+  - Duration-first candidate scoring (±3 s) accepting matches across romanized and kanji artist spellings.
+  - Multi-query sequential lookups capped at 6 requests per provider with 20 s total budget.
+  - Automated JVM `LyricsProbeTest` against real providers achieves 12/12 (100%) synced lyrics rate on probe seed tracks.
+- **P9.2-D lyrics display** (`NowPlayingScreen.kt`, `LyricsScrollEngine.kt`, `SettingsStore.kt`, `SettingsScreen.kt`, `LyricsScrollEngineTest.kt`):
+  - Root cause: `animateContentSize` on line items combined with font size differences (16sp vs 21sp) changed item heights mid-scroll, causing LazyColumn to lag back and jitter.
+  - Fix: Constant item layout metrics; bold typography for all lines; active emphasis and 40% dimming driven purely in draw phase via `graphicsLayer` alpha/scale.
+  - Removed word-by-word highlight rendering and both word settings to eliminate character spacing artifacts. 22 dp inter-line gaps.
+  - Smooth continuous scroll engine with 35% viewport anchor and dynamic duration acceleration on far seeks.
+- **P9.2-E romanization** (`Romanizer.kt`, `SettingsStore.kt`, `LyricsMenuSheet.kt`, `LyricsViewModel.kt`, `SettingsScreen.kt`, `NowPlayingScreen.kt`, `RomanizerTest.kt`):
+  - Japanese morphological analyzer with reading dictionary: Kuromoji IPADIC (`com.atilika.kuromoji:kuromoji-ipadic:0.9.0`, Apache 2.0 / BSD license).
+  - Complete Katakana reading to Hepburn transliteration without macrons (phonetic ou/uu, particles wa/e/o, word-separated, no CJK output).
+  - Provider romanization sanity check rejects empty or CJK-polluted strings.
+  - Single global "Romanize lyrics" switch in DataStore, merging old settings and removing per-track toggles.
+- **P9.2-F lyrics menu style** (`LyricsMenuSheet.kt`, `TrackActionsSheet.kt`, `LyricsMenuContrastTest.kt`):
+  - Reused standard `surfaceContainerLow` container matching Song menu sheet across Dark/Light and Dynamic Theme modes.
+  - 4 big rounded-square `ActionTile` controls (Edit, Refetch, Search, Copy).
+  - High-contrast controls and `VusicControlDefaults.switchColors()` meeting WCAG AA standards.
+- **P9.2-G queue strip on lyrics** (`NowPlayingScreen.kt`, `LyricsQueueStripTest.kt`):
+  - Added bottom `PlayingFromBottom` peek strip to Lyrics tab using hoisted sheet state with identical gestures.
+  - Bottom padding set to 96 dp and floating Sync pill elevated to 88 dp to sit cleanly above the strip.

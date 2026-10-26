@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.2.2
+
+### Added
+- **Provider chain and synced lyrics coverage**:
+  - New default lookup order: BetterLyrics, LRCLIB, Paxsenix, KuGou, and Local data with automatic DataStore migration.
+  - Multi-query search with intelligent title and artist variant generator (handles bilingual " - " titles, bracket tags, and multi-artist credits).
+  - Duration-first scoring (±3 s) accepting matches across romanized and kanji artist spellings.
+  - Automated JVM `lyricsProbe` test reading `tools/lyrics_probe.txt` verifying real synced lyrics coverage.
+- **Full Japanese morphological romanization**:
+  - Integrated Kuromoji IPADIC morphological analyzer for complete kanji-to-Hepburn transliteration.
+  - Plain Hepburn format without macrons (phonetic ou/uu, particles wa/e/o, word spacing, and CJK removal).
+  - Single global "Romanize lyrics" setting across Lyrics menu and Settings > Lyrics, removing per-track toggles.
+- **Metrolist-inspired lyrics display & smooth flow**:
+  - Full-line highlight only; removed word-by-word highlight and settings to eliminate character spacing artifacts.
+  - Bold typography, 22 dp inter-line gaps, and draw-phase opacity scaling in `graphicsLayer`.
+  - Zero-reflow continuous scroll engine with dynamic easing and seek jump acceleration.
+- **Lyrics menu restyle**:
+  - Matched Song menu sheet container across all Dark/Light and Dynamic Theme combinations.
+  - Replaced circle buttons with big rounded-square `ActionTile` controls (Edit, Refetch, Search, Copy).
+  - High-contrast controls and switches meeting WCAG AA standards.
+- **Queue bottom strip on Lyrics tab**:
+  - Mirrored bottom "Playing from" queue strip with identical 72 dp peek height and shared sheet gestures on the Lyrics tab.
+
+### Fixed
+- **Queue sheet shuffle freeze & Bluetooth daemon crash**:
+  - Pre-cached `MediaItem`s in `PlayerManager` and replaced sequential IPC loops with atomic single-call reordering.
+  - Coalesced rapid shuffle toggles to prevent Binder transaction buffer overflow and Bluetooth daemon restarts.
+- **Queue item tap toggle**:
+  - Tapping the currently playing song in the queue toggles pause/play without seeking back to 0. Tapping any other song jumps and plays from 0.
+
 ## 1.2.1
 
 ### Added

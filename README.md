@@ -27,7 +27,7 @@ support for browsing and playing local device music files. The queue is
 gapless-capable ExoPlayer with a volume-ramp crossfade, ReplayGain (peak-limited,
 never clips), per-network quality for mobile and Wi-Fi, and a smart prefetch cache
 so transitions have no loading gap. There's a full-screen Now Playing with
-real-time synced lyrics (LRCLIB, BetterLyrics, KuGou, and local metadata; the Paxsenix
+real-time synced lyrics (BetterLyrics, LRCLIB, KuGou, and local metadata; the Paxsenix
 placeholder is listed but disabled because its public endpoint is gone),
 a mini player you can drag to skip, clear, or open Now Playing,
 and a queue sheet with drag-reorder, swipe-to-remove, shuffle with order
@@ -49,8 +49,13 @@ switching, and a refresh-rate preference (Auto/Max/Standard 60 Hz).
 
 ### Lyrics & Privacy
 
-When online lyrics sources (LRCLIB, BetterLyrics, KuGou) are enabled, Vusic queries
-the enabled providers sequentially for synced lyrics. A lookup sends only the song's title, artist, album name,
+When online lyrics sources (BetterLyrics, LRCLIB, KuGou) are enabled, Vusic queries
+the enabled providers sequentially for synced lyrics using smart bilingual title and artist variants
+with duration-first matching (±3 s). A single global "Romanize lyrics" setting provides on-device
+word-spaced Hepburn transliteration for Japanese (via Kuromoji IPADIC morphological analysis) without macrons,
+plus Revised Romanization for Korean and Pinyin for Chinese.
+Lyrics are displayed with clean whole-line highlighting, bold typography, generous line spacing, and a smooth
+continuous scroll engine. A lookup sends only the song's title, artist, album name,
 and duration. Your server URL, username, internal song IDs, and local file paths are never sent.
 As with any HTTP request, external providers see the IP address the request originates from.
 Negative lookups are cached locally with expiry, and online lookups are skipped entirely in Offline
