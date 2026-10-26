@@ -137,10 +137,16 @@ class LyricsViewModel @Inject constructor(
         }
     }
 
-    fun toggleRomanize(trackId: String, hasCjk: Boolean = true) {
+    fun toggleRomanize(trackId: String = "", hasCjk: Boolean = true) {
         viewModelScope.launch {
             val s = settings.flow.first()
-            settings.toggleTrackRomanization(trackId, hasCjk, s.lyricsRomanizeAutomatically)
+            settings.setLyricsRomanize(!s.lyricsRomanize)
+        }
+    }
+
+    fun setLyricsRomanize(v: Boolean) {
+        viewModelScope.launch {
+            settings.setLyricsRomanize(v)
         }
     }
 

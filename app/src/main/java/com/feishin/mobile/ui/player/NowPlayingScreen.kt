@@ -1123,16 +1123,6 @@ private fun LyricsPanel(
                         "RIGHT" -> TextAlign.End
                         else -> TextAlign.Center
                     }
-                    val plainTrack by player.current.collectAsStateWithLifecycle()
-                    val plainTrackId = plainTrack?.id.orEmpty()
-                    val plainHasCjk = remember(state.text) {
-                        com.feishin.mobile.data.lyrics.Romanizer.hasRomanizableScript(state.text)
-                    }
-                    val isPlainRomanized = remember(plainTrackId, plainHasCjk, s) {
-                        if (s != null) {
-                            com.feishin.mobile.data.settings.SettingsStore.isTrackRomanized(plainTrackId, plainHasCjk, s)
-                        } else false
-                    }
                     val pct = com.feishin.mobile.data.settings.SettingsStore.parseLyricsTextSizePercent(s?.lyricsTextSize ?: "100%")
                     val scale = pct / 100f
                     val textStyle = MaterialTheme.typography.bodyMedium.copy(
@@ -1163,7 +1153,7 @@ private fun LyricsPanel(
                                     textAlign = alignment,
                                     modifier = Modifier.fillMaxWidth(),
                                 )
-                                if (isPlainRomanized) {
+                                if (s?.lyricsRomanize == true && com.feishin.mobile.data.lyrics.Romanizer.hasRomanizableScript(pLine)) {
                                     val rom = remember(pLine) { com.feishin.mobile.data.lyrics.Romanizer.romanizeLine(pLine) }
                                     if (!rom.isNullOrBlank()) {
                                         Text(
@@ -1228,16 +1218,7 @@ private fun SyncedLyricsList(
         fontWeight = FontWeight.Bold,
     )
 
-    val track by player.current.collectAsStateWithLifecycle()
-    val trackId = track?.id.orEmpty()
-    val hasCjk = remember(lyrics) {
-        lyrics.lines.any { !it.romanizedText.isNullOrBlank() || com.feishin.mobile.data.lyrics.Romanizer.hasRomanizableScript(it.text) }
-    }
-    val isRomanized = remember(trackId, hasCjk, settings) {
-        if (settings != null) {
-            com.feishin.mobile.data.settings.SettingsStore.isTrackRomanized(trackId, hasCjk, settings)
-        } else false
-    }
+    val romanize = settings?.lyricsRomanize == true
 
     val autoScroll = settings?.lyricsAutoScroll != false
     val wordHighlight = settings?.lyricsWordHighlight != false
@@ -1359,7 +1340,7 @@ private fun SyncedLyricsList(
                         textAlign = lineAlignment,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    if (isRomanized && !line.romanizedText.isNullOrBlank()) {
+                    if (romanize && com.feishin.mobile.data.lyrics.Romanizer.hasRomanizableScript(line.text) && !line.romanizedText.isNullOrBlank()) {
                         val romColor by animateColorAsState(
                             targetValue = if (active) content.copy(alpha = 0.82f) else dim.copy(alpha = 0.65f),
                             animationSpec = androidx.compose.animation.core.tween(300),

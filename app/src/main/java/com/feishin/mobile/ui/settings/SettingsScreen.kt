@@ -515,10 +515,10 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
             description = "Otherwise songs without synced lyrics show the no-lyrics state.",
         )
         SwitchRow(
-            "Romanize lyrics automatically",
-            s.lyricsRomanizeAutomatically,
+            "Romanize lyrics",
+            s.lyricsRomanize,
             vm::setLyricsRomanizeAutomatically,
-            description = "Automatically romanize Japanese, Korean, and Chinese lyrics without touching the lyrics menu.",
+            description = "Show romanized pronunciation for Japanese, Korean, and Chinese lyrics",
         )
         // Offset stepper: -2000..+2000 in 50 ms steps
         val offsetSteps = (-40..40).map { (it * 50).toString() }

@@ -60,21 +60,40 @@ object Romanizer {
         initPinyin(stream)
     }
 
+    private val CJK_REGEX = Regex("[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}]")
+
+    private val tokenizer: com.atilika.kuromoji.ipadic.Tokenizer by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        com.atilika.kuromoji.ipadic.Tokenizer()
+    }
+
+    private const val MAX_CACHE_SIZE = 1000
+    private val lineCache = java.util.Collections.synchronizedMap(
+        object : java.util.LinkedHashMap<String, String>(128, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean = size > MAX_CACHE_SIZE
+        }
+    )
+
+    fun isValidProviderRomanization(raw: String?): Boolean {
+        if (raw.isNullOrBlank()) return false
+        return !CJK_REGEX.containsMatchIn(raw)
+    }
+
     /**
      * Romanizes [lyrics]. Provider-supplied romanization on [LyricLine.romanizedText] takes
-     * priority; lines without romanization are processed on-device.
+     * priority if valid; lines without valid romanization are processed on-device.
      */
     fun romanizeLyrics(lyrics: Lyrics): Lyrics {
         if (lyrics.lines.isEmpty()) return lyrics
         val updatedLines = lyrics.lines.map { line ->
-            if (!line.romanizedText.isNullOrBlank()) {
+            val providerRom = line.romanizedText
+            if (isValidProviderRomanization(providerRom)) {
                 line
             } else {
                 val romanized = romanizeLine(line.text)
                 if (romanized != null && romanized != line.text) {
                     line.copy(romanizedText = romanized)
                 } else {
-                    line
+                    line.copy(romanizedText = null)
                 }
             }
         }
@@ -89,14 +108,29 @@ object Romanizer {
         if (text.isBlank()) return null
         if (!hasRomanizableScript(text)) return null
 
+        val cached = lineCache[text]
+        if (cached != null) return cached
+
         val hasKana = containsKana(text)
         val hasHangul = containsHangul(text)
 
-        return when {
-            hasKana -> romanizeJapanese(text)
+        val result = when {
             hasHangul -> romanizeKorean(text)
-            else -> romanizeChinese(text)
+            hasKana -> romanizeJapanese(text)
+            else -> {
+                val tokens = tokenizer.tokenize(text)
+                val allKnownJp = tokens.isNotEmpty() && tokens.all {
+                    it.isKnown && !it.reading.isNullOrBlank() && it.reading != "*"
+                }
+                if (allKnownJp) {
+                    romanizeJapanese(text)
+                } else {
+                    romanizeChinese(text)
+                }
+            }
         }
+        lineCache[text] = result
+        return result
     }
 
     fun hasRomanizableScript(text: String): Boolean {
@@ -205,147 +239,149 @@ object Romanizer {
         'バ' to "ba", 'ビ' to "bi", 'ブ' to "bu", 'ベ' to "be", 'ボ' to "bo",
         'パ' to "pa", 'ピ' to "pi", 'プ' to "pu", 'ペ' to "pe", 'ポ' to "po",
         'ヴ' to "vu",
+        'ァ' to "a", 'ィ' to "i", 'ゥ' to "u", 'ェ' to "e", 'ォ' to "o",
     )
 
-    private fun romanizeJapanese(text: String): String {
+    private fun toKatakana(text: String): String {
+        val sb = StringBuilder(text.length)
+        for (c in text) {
+            if (c in '\u3041'..'\u3096') {
+                sb.append((c.code + 0x60).toChar())
+            } else {
+                sb.append(c)
+            }
+        }
+        return sb.toString()
+    }
+
+    private fun katakanaToHepburn(raw: String): String {
+        val s = toKatakana(raw)
         val sb = StringBuilder()
         var i = 0
-        var sokuonPending = false
+        var sokuon = false
 
-        while (i < text.length) {
-            val c = text[i]
+        while (i < s.length) {
+            val c = s[i]
 
-            // 1. Small tsu (っ / ッ)
-            if (c == 'っ' || c == 'ッ') {
-                sokuonPending = true
+            // Sokuon ッ
+            if (c == 'ッ') {
+                sokuon = true
                 i++
                 continue
             }
 
-            // 2. Chōonpu (ー)
+            // Chōonpu ー
             if (c == 'ー') {
                 if (sb.isNotEmpty()) {
-                    val lastChar = sb.last()
-                    val macron = when (lastChar) {
-                        'a' -> 'ā'
-                        'i' -> 'ī'
-                        'u' -> 'ū'
-                        'e' -> 'ē'
-                        'o' -> 'ō'
-                        else -> null
-                    }
-                    if (macron != null) {
-                        sb.setCharAt(sb.length - 1, macron)
+                    val prev = sb.last()
+                    when (prev) {
+                        'a' -> sb.append('a')
+                        'i' -> sb.append('i')
+                        'u' -> sb.append('u')
+                        'e' -> sb.append('e')
+                        'o' -> sb.append('u')
+                        else -> sb.append(prev)
                     }
                 }
                 i++
                 continue
             }
 
-            // 3. Digraphs (2 kana)
-            if (i + 1 < text.length) {
-                val pair = text.substring(i, i + 2)
-                val digraphRom = DIGRAPHS[pair]
-                if (digraphRom != null) {
-                    appendHepburn(sb, digraphRom, sokuonPending)
-                    sokuonPending = false
+            // Digraphs (2 kana)
+            if (i + 1 < s.length) {
+                val pair = s.substring(i, i + 2)
+                val digraph = DIGRAPHS[pair]
+                if (digraph != null) {
+                    appendHepburn(sb, digraph, sokuon)
+                    sokuon = false
                     i += 2
                     continue
                 }
             }
 
-            // 4. Single Kana
-            val singleRom = SINGLE_KANA[c]
-            if (singleRom != null) {
-                // Check particle cases for は, へ, を
-                val isParticleWa = c == 'は' && isIsolatedOrParticle(text, i)
-                val isParticleE = c == 'へ' && isIsolatedOrParticle(text, i)
-                val rom = when {
-                    isParticleWa -> "wa"
-                    isParticleE -> "e"
-                    else -> singleRom
-                }
-
-                // Check long vowels (e.g. おう -> ō, おお -> ō, ああ -> ā, いい -> ī, うう -> ū, ええ -> ē)
-                if (sb.isNotEmpty() && !sokuonPending) {
-                    val prev = sb.last()
-                    var mergedLongVowel = false
-                    if (rom == "u" && prev == 'o') {
-                        sb.setCharAt(sb.length - 1, 'ō')
-                        mergedLongVowel = true
-                    } else if (rom == "o" && prev == 'o') {
-                        sb.setCharAt(sb.length - 1, 'ō')
-                        mergedLongVowel = true
-                    } else if (rom == "a" && prev == 'a') {
-                        sb.setCharAt(sb.length - 1, 'ā')
-                        mergedLongVowel = true
-                    } else if (rom == "i" && prev == 'i') {
-                        sb.setCharAt(sb.length - 1, 'ī')
-                        mergedLongVowel = true
-                    } else if (rom == "u" && prev == 'u') {
-                        sb.setCharAt(sb.length - 1, 'ū')
-                        mergedLongVowel = true
-                    } else if (rom == "e" && prev == 'e') {
-                        sb.setCharAt(sb.length - 1, 'ē')
-                        mergedLongVowel = true
-                    }
-                    if (mergedLongVowel) {
-                        i++
-                        continue
-                    }
-                }
-
-                // Check ん followed by vowel or y
-                if (c == 'ん' || c == 'ン') {
-                    val nextChar = text.getOrNull(i + 1)
-                    if (nextChar != null && isVowelOrYKana(nextChar)) {
-                        appendHepburn(sb, "n'", sokuonPending)
-                    } else {
-                        appendHepburn(sb, "n", sokuonPending)
-                    }
+            // Hatsun ン
+            if (c == 'ン') {
+                val next = s.getOrNull(i + 1)
+                if (next != null && isVowelOrYKana(next)) {
+                    appendHepburn(sb, "n'", sokuon)
                 } else {
-                    appendHepburn(sb, rom, sokuonPending)
+                    appendHepburn(sb, "n", sokuon)
                 }
-
-                sokuonPending = false
+                sokuon = false
                 i++
                 continue
             }
 
-            // Non-kana character (Kanji left as is per spec, Latin, punctuation)
-            sokuonPending = false
+            // Single Kana
+            val single = SINGLE_KANA[c]
+            if (single != null) {
+                appendHepburn(sb, single, sokuon)
+                sokuon = false
+                i++
+                continue
+            }
+
+            // Other character (Latin, punctuation, etc.)
+            sokuon = false
             sb.append(c)
             i++
         }
 
-        return sb.toString()
+        val out = sb.toString()
+        return if (CJK_REGEX.containsMatchIn(out)) {
+            romanizeChinese(out)
+        } else {
+            out
+        }
+    }
+
+    private fun romanizeJapanese(text: String): String {
+        val tokens = tokenizer.tokenize(text)
+        val words = mutableListOf<String>()
+
+        for (token in tokens) {
+            val surface = token.surface
+            if (surface.isBlank()) continue
+
+            val pos1 = token.partOfSpeechLevel1
+            val wordRom = if (pos1 == "助詞" && (surface == "は" || surface == "へ" || surface == "を")) {
+                when (surface) {
+                    "は" -> "wa"
+                    "へ" -> "e"
+                    "を" -> "o"
+                    else -> surface
+                }
+            } else {
+                val reading = token.reading
+                val raw = if (!reading.isNullOrEmpty() && reading != "*") reading else surface
+                katakanaToHepburn(raw)
+            }
+
+            val trimmed = wordRom.trim()
+            if (trimmed.isNotEmpty()) {
+                words.add(trimmed)
+            }
+        }
+
+        return words.joinToString(" ")
     }
 
     private fun appendHepburn(sb: StringBuilder, rom: String, sokuon: Boolean) {
         if (sokuon && rom.isNotEmpty()) {
-            val first = rom.first()
             if (rom.startsWith("ch")) {
                 sb.append('t')
-            } else if (first in "bcdfghjklmnprstvwxyz") {
-                sb.append(first)
+            } else {
+                val first = rom.first()
+                if (first in "bcdfghjklmnprstvwxyz") {
+                    sb.append(first)
+                }
             }
         }
         sb.append(rom)
     }
 
-    private fun isIsolatedOrParticle(text: String, index: Int): Boolean {
-        val prev = text.getOrNull(index - 1)
-        val next = text.getOrNull(index + 1)
-        val prevBoundary = prev == null || prev.isWhitespace() || isPunctuation(prev)
-        val nextBoundary = next == null || next.isWhitespace() || isPunctuation(next)
-        return prevBoundary || nextBoundary
-    }
-
     private fun isVowelOrYKana(c: Char): Boolean =
-        c in "あいうえおアイウエオやゆよヤユヨ"
-
-    private fun isPunctuation(c: Char): Boolean =
-        !c.isLetterOrDigit()
+        c in "アイウエオヤユヨァィゥェォャュョ"
 
     /* ---------------- Korean Hangul -> Revised Romanization ---------------- */
 

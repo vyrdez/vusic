@@ -85,6 +85,8 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/*.md"
+            excludes += "META-INF/INDEX.LIST"
         }
     }
 }
@@ -136,6 +138,7 @@ dependencies {
     ksp(libs.hilt.ext.compiler)
 
     implementation(libs.security.crypto)
+    implementation("com.atilika.kuromoji:kuromoji-ipadic:0.9.0")
 
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
