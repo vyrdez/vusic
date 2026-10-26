@@ -3,7 +3,6 @@ package com.feishin.mobile.ui.player
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,7 +48,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -59,7 +57,9 @@ import com.feishin.mobile.core.network.Lyrics
 import com.feishin.mobile.core.network.LyricsCandidate
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.Track
+import com.feishin.mobile.ui.components.ActionTile
 import com.feishin.mobile.ui.theme.VusicColors
+import com.feishin.mobile.ui.theme.VusicControlDefaults
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -87,7 +87,6 @@ fun LyricsMenuSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = VusicColors.Surface,
     ) {
         Column(
             modifier = Modifier
@@ -95,39 +94,43 @@ fun LyricsMenuSheet(
                 .padding(horizontal = 20.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
-            // Header row: 4 action buttons (Edit, Refetch, Search, Copy)
+            // Header row: 4 action tiles (Edit, Refetch, Search, Copy)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                ActionButton(
-                    icon = Icons.Default.Edit,
+                ActionTile(
                     label = "Edit",
+                    icon = Icons.Default.Edit,
+                    modifier = Modifier.weight(1f),
                     onClick = {
                         showEditDialog = true
                     },
                 )
-                ActionButton(
-                    icon = Icons.Default.Refresh,
+                ActionTile(
                     label = "Refetch",
+                    icon = Icons.Default.Refresh,
+                    modifier = Modifier.weight(1f),
                     onClick = {
                         lyricsVm.searchAgain(track)
                         onShowMessage("Refetching lyrics…")
                         scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
                     },
                 )
-                ActionButton(
-                    icon = Icons.Default.Search,
+                ActionTile(
                     label = "Search",
+                    icon = Icons.Default.Search,
+                    modifier = Modifier.weight(1f),
                     onClick = {
                         showSearchDialog = true
                     },
                 )
-                ActionButton(
-                    icon = Icons.Default.ContentCopy,
+                ActionTile(
                     label = "Copy",
+                    icon = Icons.Default.ContentCopy,
+                    modifier = Modifier.weight(1f),
                     onClick = {
                         val textToCopy = formatLyricsForCopy(lyricsUi)
                         if (textToCopy.isNotBlank()) {
@@ -169,7 +172,7 @@ fun LyricsMenuSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Lyrics offset", style = MaterialTheme.typography.bodyLarge)
+                    Text("Lyrics offset", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
                     Text("Adjust timing for this song only", style = MaterialTheme.typography.bodySmall, color = VusicColors.SecondaryText)
                 }
                 Text(
@@ -198,7 +201,7 @@ fun LyricsMenuSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Text size", style = MaterialTheme.typography.bodyLarge)
+                    Text("Text size", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
                     Text("Adjust lyrics line text scaling", style = MaterialTheme.typography.bodySmall, color = VusicColors.SecondaryText)
                 }
                 Row(
@@ -215,11 +218,13 @@ fun LyricsMenuSheet(
                             .size(36.dp)
                             .background(VusicColors.SurfaceHigh, CircleShape),
                     ) {
-                        Icon(Icons.Default.Remove, contentDescription = "Decrease text size", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Remove, contentDescription = "Decrease text size", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(18.dp))
                     }
                     Text(
                         text = "$currentSizePct%",
                         style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 4.dp),
                     )
                     IconButton(
@@ -232,7 +237,7 @@ fun LyricsMenuSheet(
                             .size(36.dp)
                             .background(VusicColors.SurfaceHigh, CircleShape),
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "Increase text size", modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Add, contentDescription = "Increase text size", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -254,7 +259,7 @@ fun LyricsMenuSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Track details & actions", style = MaterialTheme.typography.bodyLarge)
+                        Text("Track details & actions", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
                         Text("View track details, album, artist, or playlist options", style = MaterialTheme.typography.bodySmall, color = VusicColors.SecondaryText)
                     }
                     Icon(Icons.Default.ChevronRight, contentDescription = null, tint = VusicColors.SecondaryText)
@@ -308,32 +313,6 @@ fun LyricsMenuSheet(
 }
 
 @Composable
-private fun ActionButton(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(12.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .background(VusicColors.SurfaceHigh, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.onSurface)
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(label, style = MaterialTheme.typography.labelMedium)
-    }
-}
-
-@Composable
 private fun MenuSwitchRow(
     title: String,
     description: String,
@@ -349,10 +328,10 @@ private fun MenuSwitchRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
             Text(description, style = MaterialTheme.typography.bodySmall, color = VusicColors.SecondaryText)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, colors = VusicControlDefaults.switchColors())
     }
 }
 

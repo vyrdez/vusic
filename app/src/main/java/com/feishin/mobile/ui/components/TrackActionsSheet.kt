@@ -173,7 +173,7 @@ private fun ActionTiles(
 }
 
 @Composable
-private fun ActionTile(label: String, icon: ImageVector, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun ActionTile(label: String, icon: ImageVector, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier.fillMaxWidth().aspectRatio(1.4f)
@@ -184,7 +184,13 @@ private fun ActionTile(label: String, icon: ImageVector, modifier: Modifier = Mo
             Icon(icon, label, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(32.dp))
         }
         Spacer(Modifier.height(6.dp))
-        Text(label, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
