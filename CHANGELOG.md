@@ -22,6 +22,11 @@
   - High-contrast controls and switches meeting WCAG AA standards.
 - **Queue bottom strip on Lyrics tab**:
   - Mirrored bottom "Playing from" queue strip with identical 72 dp peek height and shared sheet gestures on the Lyrics tab.
+  - Solid opaque background on the queue strip extending under navigation bar insets, preventing lyrics from bleeding behind it.
+  - Hoisted top bar and single queue strip outside tab transitions, keeping the strip completely static without sliding, fading, or flickering.
+- **Lyrics edge fade & exit freeze**:
+  - Smooth 56 dp vertical gradient alpha mask (`DstIn`) at top and bottom of the lyrics container.
+  - Lyrics list freezes in place during tab transitions or sheet dismiss, snapping directly to the active line upon return without jumping from the top.
 
 ### Fixed
 - **Queue sheet shuffle freeze & Bluetooth daemon crash**:

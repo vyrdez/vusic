@@ -1500,3 +1500,8 @@ Version 1.2.2 (versionCode 10) — `applicationId com.feishin.mobile` unchanged.
 - **P9.2-G queue strip on lyrics** (`NowPlayingScreen.kt`, `LyricsQueueStripTest.kt`):
   - Added bottom `PlayingFromBottom` peek strip to Lyrics tab using hoisted sheet state with identical gestures.
   - Bottom padding set to 96 dp and floating Sync pill elevated to 88 dp to sit cleanly above the strip.
+- **P9.2-H lyrics tab corrections** (`NowPlayingScreen.kt`, `LyricsTabCorrections.kt`, `LyricsTabCorrectionsTest.kt`):
+  - Solid queue strip: Opaque `bottomBgColor` extending under bottom insets prevents lyrics from bleeding behind strip in all theme combinations.
+  - Static queue strip: Hoisted top bar and single `PlayingFromBottom` strip outside `AnimatedContent` so strip remains completely static during tab transitions.
+  - Lyrics movement on exit / collapse fixed: Auto-scroll cancelled and frozen during tab exit transitions, drag gestures, or sheet collapse. Snaps directly to active line upon return once viewport is measured (`viewportHeight > 0`) without animated scrolling from top.
+  - Edge fade: 56 dp vertical gradient alpha mask (`DstIn`) applied to the lyrics list container. All pure functions covered in `LyricsTabCorrectionsTest.kt`.

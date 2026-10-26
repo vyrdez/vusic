@@ -33,7 +33,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -106,6 +110,7 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -115,12 +120,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -334,6 +344,10 @@ fun NowPlayingScreen(
     }
     val content = playingColor(palette.content)
     val dim = playingColor(palette.dim)
+    // One solid strip colour: the scheme's bottom surface when artwork tint is
+    // on, otherwise the last stop of the backdrop it sits on. 100% opaque, so
+    // lyrics scrolling underneath can never bleed through.
+    val bottomBgColor = schemeBottom ?: playingColor(palette.backdropBottom)
 
     // The system bars follow the surface that is really behind them, not the
     // theme flag: a tinted Now Playing can be light even in the Dark theme.
@@ -376,8 +390,9 @@ fun NowPlayingScreen(
         Modifier
             .fillMaxSize()
             .background(backdrop)
-            .statusBarsPadding()
-            .navigationBarsPadding(),
+            // The bottom strip paints under the gesture bar and applies the
+            // navigation-bar inset itself, which is why this root does not.
+            .statusBarsPadding(),
     ) {
         Column(Modifier.fillMaxSize()) {
             // Top row: collapse far left, Song|Lyrics pill centred, ⋮ far right.
@@ -433,7 +448,7 @@ fun NowPlayingScreen(
             // queue are untouched - they live in the player, not in here.
             AnimatedContent(
                 targetState = lyricsMode,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
                 transitionSpec = {
                     // targetState == true is heading to Lyrics: the incoming
                     // panel comes from the side it is travelling towards and the
@@ -617,43 +632,42 @@ fun NowPlayingScreen(
                     // The queue entry sits near the bottom edge, above the
                     // gesture bar: tappable and swipe-up draggable.
                     Spacer(Modifier.weight(1f))
-                    PlayingFromBottom(
-                        player = player, dim = dim,
-                        onClick = { sheet.openSheet() },
-                        onDrag = { delta -> sheet.dragByPixels(delta) },
-                        onDragEnd = { velocity -> sheet.onDragEnd(velocity) },
-                    )
                     Spacer(Modifier.height(8.dp))
                 }
             }
             } else {
-                Box(Modifier.fillMaxSize()) {
-                    LyricsPanel(
-                        lyricsVm = lyricsVm,
-                        player = player,
-                        content = content,
-                        dim = dim,
-                        lazyListState = lyricsLazyListState,
-                        plainScrollState = plainLyricsScrollState,
-                        onSearchAgain = { lyricsVm.searchAgain(current) },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(horizontal = 16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        PlayingFromBottom(
-                            player = player, dim = dim,
-                            onClick = { sheet.openSheet() },
-                            onDrag = { delta -> sheet.dragByPixels(delta) },
-                            onDragEnd = { velocity -> sheet.onDragEnd(velocity) },
-                        )
-                        Spacer(Modifier.height(8.dp))
-                    }
-                }
+                val isTabActive = showLyrics && lyricsMode && !transition.isRunning
+                val isLeaving = !lyricsMode || dragOffset.value > 0f
+                LyricsPanel(
+                    lyricsVm = lyricsVm,
+                    player = player,
+                    content = content,
+                    dim = dim,
+                    lazyListState = lyricsLazyListState,
+                    plainScrollState = plainLyricsScrollState,
+                    onSearchAgain = { lyricsVm.searchAgain(current) },
+                    modifier = Modifier.fillMaxSize().lyricsEdgeFade(),
+                )
             }
+            }
+            // The queue strip is outside the tab transition: it never fades,
+            // slides or resizes when Song <-> Lyrics switches. Solid background
+            // under the gesture bar, so lyrics scroll up to its edge unseen.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(bottomBgColor)
+                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                    .padding(horizontal = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                PlayingFromBottom(
+                    player = player, dim = dim,
+                    onClick = { sheet.openSheet() },
+                    onDrag = { delta -> sheet.dragByPixels(delta) },
+                    onDragEnd = { velocity -> sheet.onDragEnd(velocity) },
+                )
+                Spacer(Modifier.height(8.dp))
             }
         }
     }
@@ -1076,6 +1090,35 @@ private fun IntroCountdownDots(
     }
 }
 
+/** Height of the lyrics edge fade at the top and bottom of the panel. */
+private val EdgeFadeHeight: Dp = 56.dp
+
+/**
+ * Fades the top and bottom [EdgeFadeHeight] of the lyrics panel to alpha 0
+ * with [BlendMode.DstIn]. The mask needs its own offscreen layer, otherwise
+ * DstIn would erase what is already on screen behind the panel. The queue
+ * strip sits outside this container, so it is never faded.
+ */
+private fun Modifier.lyricsEdgeFade(): Modifier = this
+    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+    .drawWithContent {
+        drawContent()
+        val height = size.height
+        if (height <= 0f) return@drawWithContent
+        val fade = EdgeFadeHeight.toPx().coerceIn(0f, height / 2f)
+        if (fade <= 0f) return@drawWithContent
+        val stop = fade / height
+        drawRect(
+            brush = Brush.verticalGradient(
+                0f to Color.Transparent,
+                stop to Color.Black,
+                1f - stop to Color.Black,
+                1f to Color.Transparent,
+            ),
+            blendMode = BlendMode.DstIn,
+        )
+    }
+
 @Composable
 private fun LyricsPanel(
     lyricsVm: LyricsViewModel,
@@ -1086,6 +1129,8 @@ private fun LyricsPanel(
     plainScrollState: ScrollState,
     onSearchAgain: () -> Unit,
     modifier: Modifier = Modifier,
+    isTabActive: Boolean = true,
+    isLeaving: Boolean = false,
 ) {
     val ui by lyricsVm.ui.collectAsStateWithLifecycle()
     val settings by lyricsVm.settings.flow.collectAsStateWithLifecycle(initialValue = null)
@@ -1202,6 +1247,8 @@ private fun LyricsPanel(
                 dim = dim,
                 settings = s,
                 listState = lazyListState,
+                isTabActive = isTabActive,
+                isLeaving = isLeaving,
                 onSeek = { ms -> if (s?.lyricsTapToSeek != false) player.seekTo(ms) },
             )
         }
@@ -1220,6 +1267,8 @@ private fun SyncedLyricsList(
     listState: LazyListState,
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    isTabActive: Boolean = true,
+    isLeaving: Boolean = false,
 ) {
     val alignment = when (settings?.lyricsAlignment) {
         "LEFT" -> TextAlign.Start
@@ -1257,22 +1306,35 @@ private fun SyncedLyricsList(
         }
     }
 
-    LaunchedEffect(Unit) {
-        if (shouldAutoScroll(activeIndex, userScrolledAway, autoScroll)) {
-            val viewportHeight = listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
-            val targetOffset = -(viewportHeight * 0.35f).toInt()
-            listState.scrollToItem(activeIndex, targetOffset)
-        }
+    var isFirstLayout by remember(lyrics) { mutableStateOf(true) }
+    var wasTabActive by remember { mutableStateOf(false) }
+    var isReturningFromTab by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isTabActive) {
+        if (!wasTabActive && isTabActive && !isFirstLayout) isReturningFromTab = true
+        wasTabActive = isTabActive
     }
 
     var lastActiveIndex by remember { mutableIntStateOf(-1) }
 
-    LaunchedEffect(activeIndex, autoScroll, userScrolledAway) {
-        if (shouldAutoScroll(activeIndex, userScrolledAway, autoScroll)) {
+    LaunchedEffect(activeIndex, isTabActive, isLeaving, userScrolledAway, autoScroll) {
+        if (!shouldRunLyricsScroll(isTabActive, isLeaving, userScrolledAway) || activeIndex < 0 || !autoScroll) {
+            return@LaunchedEffect
+        }
+        val viewport = listState.layoutInfo.let { it.viewportEndOffset - it.viewportStartOffset }
+        val viewportHeight = if (viewport > 0) viewport else {
+            snapshotFlow { listState.layoutInfo.let { it.viewportEndOffset - it.viewportStartOffset } }.filter { it > 0 }.first()
+        }
+        val targetOffset = -(viewportHeight * 0.35f).toInt()
+
+        if (resolveReturnScrollAction(isFirstLayout, isReturningFromTab) == ScrollAction.SNAP) {
+            listState.scrollToItem(activeIndex, targetOffset)
+            isFirstLayout = false
+            isReturningFromTab = false
+            lastActiveIndex = activeIndex
+        } else {
             val lineDistance = if (lastActiveIndex >= 0) activeIndex - lastActiveIndex else 1
             lastActiveIndex = activeIndex
-            val viewportHeight = listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
-            val targetOffset = -(viewportHeight * 0.35f).toInt()
             val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
             if (itemInfo != null && kotlin.math.abs(lineDistance) <= 10) {
                 val delta = (itemInfo.offset - (viewportHeight * 0.35f).toInt()).toFloat()
