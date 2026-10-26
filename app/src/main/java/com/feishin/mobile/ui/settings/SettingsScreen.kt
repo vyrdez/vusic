@@ -422,12 +422,6 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
             buttonLabel = "Configure",
             onClick = { showLyricsSourcesDialog = true },
         )
-        SwitchRow(
-            "Prefer word-by-word lyrics",
-            s.lyricsPreferWordByWord,
-            vm::setLyricsPreferWordByWord,
-            description = "Word-timed lyrics beat line-synced lyrics across the chain.",
-        )
         val alignOptions = listOf("Left", "Center", "Right")
         ChoiceRow(
             "Lyrics text alignment",
@@ -495,12 +489,6 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
             s.lyricsTapToSeek,
             vm::setLyricsTapToSeek,
             description = "Tapping a line jumps playback to that line.",
-        )
-        SwitchRow(
-            "Highlight word by word",
-            s.lyricsWordHighlight,
-            vm::setLyricsWordHighlight,
-            description = "Only when word timing is available.",
         )
         SwitchRow(
             "Keep screen on",

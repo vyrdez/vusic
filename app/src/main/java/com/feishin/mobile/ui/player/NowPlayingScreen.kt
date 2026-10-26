@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -121,6 +122,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -1208,20 +1210,16 @@ private fun SyncedLyricsList(
 
     val pct = com.feishin.mobile.data.settings.SettingsStore.parseLyricsTextSizePercent(settings?.lyricsTextSize ?: "100%")
     val scale = pct / 100f
-    val inactiveStyle = MaterialTheme.typography.bodyMedium.copy(
-        fontSize = (16f * scale).sp,
-        lineHeight = (22f * scale).sp,
-    )
-    val activeStyle = MaterialTheme.typography.titleLarge.copy(
-        fontSize = (21f * scale).sp,
-        lineHeight = (28f * scale).sp,
+    val baseFontSize = 18f * scale
+    val baseLineHeight = 24f * scale
+    val lyricStyle = MaterialTheme.typography.titleMedium.copy(
+        fontSize = baseFontSize.sp,
+        lineHeight = baseLineHeight.sp,
         fontWeight = FontWeight.Bold,
     )
 
     val romanize = settings?.lyricsRomanize == true
-
     val autoScroll = settings?.lyricsAutoScroll != false
-    val wordHighlight = settings?.lyricsWordHighlight != false
     val userOffsetMs = settings?.lyricsSyncOffsetMs ?: 0
 
     val pos by player.position.collectAsStateWithLifecycle()
@@ -1241,18 +1239,38 @@ private fun SyncedLyricsList(
     }
 
     LaunchedEffect(Unit) {
-        if (activeIndex >= 0 && autoScroll) {
+        if (shouldAutoScroll(activeIndex, userScrolledAway, autoScroll)) {
             val viewportHeight = listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
-            val targetOffset = -(viewportHeight * 0.32f).toInt()
+            val targetOffset = -(viewportHeight * 0.35f).toInt()
             listState.scrollToItem(activeIndex, targetOffset)
         }
     }
 
+    var lastActiveIndex by remember { mutableIntStateOf(-1) }
+
     LaunchedEffect(activeIndex, autoScroll, userScrolledAway) {
-        if (activeIndex >= 0 && autoScroll && !userScrolledAway) {
+        if (shouldAutoScroll(activeIndex, userScrolledAway, autoScroll)) {
+            val lineDistance = if (lastActiveIndex >= 0) activeIndex - lastActiveIndex else 1
+            lastActiveIndex = activeIndex
             val viewportHeight = listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
-            val targetOffset = -(viewportHeight * 0.32f).toInt()
-            listState.animateScrollToItem(activeIndex, targetOffset)
+            val targetOffset = -(viewportHeight * 0.35f).toInt()
+            val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
+            if (itemInfo != null && kotlin.math.abs(lineDistance) <= 10) {
+                val delta = (itemInfo.offset - (viewportHeight * 0.35f).toInt()).toFloat()
+                if (kotlin.math.abs(delta) > 1f) {
+                    listState.animateScrollBy(
+                        value = delta,
+                        animationSpec = androidx.compose.animation.core.tween(
+                            durationMillis = computeScrollDurationMs(lineDistance),
+                            easing = androidx.compose.animation.core.FastOutSlowInEasing,
+                        ),
+                    )
+                }
+            } else if (kotlin.math.abs(lineDistance) > 10) {
+                listState.scrollToItem(activeIndex, targetOffset)
+            } else {
+                listState.animateScrollToItem(activeIndex, targetOffset)
+            }
         }
     }
 
@@ -1263,6 +1281,7 @@ private fun SyncedLyricsList(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(LyricsDisplayTokens.LineGap),
         ) {
             val showInterval = settings?.lyricsShowIntervalIndicator != false
             val firstLine = lyrics.lines.firstOrNull()
@@ -1279,12 +1298,16 @@ private fun SyncedLyricsList(
 
             itemsIndexed(lyrics.lines, key = { i, line -> "$i-${line.startMs}" }) { i, line ->
                 val active = i == activeIndex
-                val lineColor by animateColorAsState(
-                    targetValue = if (active) content else dim,
-                    animationSpec = androidx.compose.animation.core.tween(300),
-                    label = "lyrics-color",
+                val animatedAlpha by animateFloatAsState(
+                    targetValue = if (active) LyricsDisplayTokens.ActiveAlpha else LyricsDisplayTokens.InactiveAlpha,
+                    animationSpec = androidx.compose.animation.core.tween(250),
+                    label = "lyrics-alpha",
                 )
-                val activeWordIdx = if (active && wordHighlight) lyrics.wordIndexAt(i, effectivePosition) else -1
+                val animatedScale by animateFloatAsState(
+                    targetValue = if (active) LyricsDisplayTokens.ActiveScale else 1.0f,
+                    animationSpec = androidx.compose.animation.core.tween(250),
+                    label = "lyrics-scale",
+                )
                 val displayText = if (line.text.isBlank()) (if (showInterval) "♪" else "") else line.text
 
                 val respectAgent = settings?.lyricsRespectAgentPositioning == true
@@ -1301,32 +1324,20 @@ private fun SyncedLyricsList(
                     alignment
                 }
 
-                val textAnnotated = if (activeWordIdx >= 0 && line.words.isNotEmpty()) {
-                    buildAnnotatedString {
-                        line.words.forEachIndexed { wi, w ->
-                            val isCurrentWord = wi == activeWordIdx
-                            withStyle(
-                                SpanStyle(
-                                    color = if (isCurrentWord) content else dim,
-                                    fontWeight = if (isCurrentWord) FontWeight.Bold else FontWeight.Normal,
-                                ),
-                            ) {
-                                append(w.text + " ")
-                            }
-                        }
-                    }
-                } else {
-                    androidx.compose.ui.text.AnnotatedString(displayText)
-                }
-
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onSeek(line.startMs + lyrics.offsetMs) }
-                        .padding(vertical = 8.dp)
-                        .animateContentSize(
-                            animationSpec = androidx.compose.animation.core.tween(250)
-                        ),
+                        .graphicsLayer {
+                            alpha = animatedAlpha
+                            scaleX = animatedScale
+                            scaleY = animatedScale
+                            transformOrigin = when (lineAlignment) {
+                                TextAlign.Start -> TransformOrigin(0f, 0.5f)
+                                TextAlign.End -> TransformOrigin(1f, 0.5f)
+                                else -> TransformOrigin(0.5f, 0.5f)
+                            }
+                        },
                     horizontalAlignment = when (lineAlignment) {
                         TextAlign.Start -> Alignment.Start
                         TextAlign.End -> Alignment.End
@@ -1334,30 +1345,31 @@ private fun SyncedLyricsList(
                     },
                 ) {
                     Text(
-                        text = textAnnotated,
-                        color = lineColor,
-                        style = if (active) activeStyle else inactiveStyle,
+                        text = displayText,
+                        color = content,
+                        style = lyricStyle,
                         textAlign = lineAlignment,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     if (romanize && com.feishin.mobile.data.lyrics.Romanizer.hasRomanizableScript(line.text) && !line.romanizedText.isNullOrBlank()) {
-                        val romColor by animateColorAsState(
-                            targetValue = if (active) content.copy(alpha = 0.82f) else dim.copy(alpha = 0.65f),
-                            animationSpec = androidx.compose.animation.core.tween(300),
-                            label = "rom-color",
+                        val romAlpha by animateFloatAsState(
+                            targetValue = if (active) 0.85f else 0.35f,
+                            animationSpec = androidx.compose.animation.core.tween(250),
+                            label = "rom-alpha",
                         )
                         Text(
                             text = line.romanizedText,
-                            color = romColor,
-                            style = (if (active) activeStyle else inactiveStyle).copy(
-                                fontSize = ((if (active) 21f else 16f) * scale * 0.75f).sp,
-                                lineHeight = ((if (active) 28f else 22f) * scale * 0.75f).sp,
-                                fontWeight = FontWeight.Normal,
+                            color = content,
+                            style = lyricStyle.copy(
+                                fontSize = (baseFontSize * 0.75f).sp,
+                                lineHeight = (baseLineHeight * 0.75f).sp,
+                                fontWeight = FontWeight.Medium,
                             ),
                             textAlign = lineAlignment,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 2.dp),
+                                .padding(top = LyricsDisplayTokens.RomanizedGap)
+                                .graphicsLayer { alpha = romAlpha },
                         )
                     }
                 }

@@ -159,13 +159,13 @@ class SettingsStore internal constructor(
         val lyricsTextSize: String = "100%",
         val lyricsAutoScroll: Boolean = true,
         val lyricsTapToSeek: Boolean = true,
-        val lyricsWordHighlight: Boolean = true,
+        val lyricsWordHighlight: Boolean = false,
         val lyricsKeepScreenOn: Boolean = false,
         val lyricsSyncOffsetMs: Int = 0,
         val lyricsShowUnsynced: Boolean = true,
         val lyricsProviderOrder: List<String> = DEFAULT_LYRICS_PROVIDER_ORDER,
         val lyricsProviderEnabled: Set<String> = DEFAULT_LYRICS_PROVIDER_ENABLED,
-        val lyricsPreferWordByWord: Boolean = true,
+        val lyricsPreferWordByWord: Boolean = false,
         val lyricsRespectAgentPositioning: Boolean = false,
         val lyricsShowIntervalIndicator: Boolean = true,
         val lyricsRomanize: Boolean = false,
@@ -239,7 +239,7 @@ class SettingsStore internal constructor(
             lyricsTextSize = parseLyricsTextSizePercent(p[K.lyricsTextSize] ?: "100%").let { "${it}%" },
             lyricsAutoScroll = p[K.lyricsAutoScroll] ?: true,
             lyricsTapToSeek = p[K.lyricsTapToSeek] ?: true,
-            lyricsWordHighlight = p[K.lyricsWordHighlight] ?: true,
+            lyricsWordHighlight = false,
             lyricsKeepScreenOn = p[K.lyricsKeepScreenOn] ?: false,
             lyricsSyncOffsetMs = (p[K.lyricsSyncOffsetMs] ?: 0).coerceIn(-2000, 2000),
             lyricsShowUnsynced = p[K.lyricsShowUnsynced] ?: true,
@@ -251,7 +251,7 @@ class SettingsStore internal constructor(
             },
             lyricsProviderEnabled = p[K.lyricsProviderEnabled]?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
                 ?: DEFAULT_LYRICS_PROVIDER_ENABLED,
-            lyricsPreferWordByWord = p[K.lyricsPreferWordByWord] ?: true,
+            lyricsPreferWordByWord = false,
             lyricsRespectAgentPositioning = p[K.lyricsRespectAgentPositioning] ?: false,
             lyricsShowIntervalIndicator = p[K.lyricsShowIntervalIndicator] ?: true,
             lyricsRomanize = p[K.lyricsRomanize] ?: run {
@@ -353,7 +353,7 @@ class SettingsStore internal constructor(
     suspend fun setLyricsTextSize(v: String) = edit { it[K.lyricsTextSize] = v }
     suspend fun setLyricsAutoScroll(v: Boolean) = edit { it[K.lyricsAutoScroll] = v }
     suspend fun setLyricsTapToSeek(v: Boolean) = edit { it[K.lyricsTapToSeek] = v }
-    suspend fun setLyricsWordHighlight(v: Boolean) = edit { it[K.lyricsWordHighlight] = v }
+    suspend fun setLyricsWordHighlight(v: Boolean) = Unit
     suspend fun setLyricsKeepScreenOn(v: Boolean) = edit { it[K.lyricsKeepScreenOn] = v }
     suspend fun setLyricsSyncOffsetMs(v: Int) = edit { it[K.lyricsSyncOffsetMs] = v.coerceIn(-2000, 2000) }
     suspend fun setLyricsShowUnsynced(v: Boolean) = edit { it[K.lyricsShowUnsynced] = v }
@@ -362,7 +362,7 @@ class SettingsStore internal constructor(
         it[K.lyricsProviderOrderMigrated92] = true
     }
     suspend fun setLyricsProviderEnabled(enabled: Set<String>) = edit { it[K.lyricsProviderEnabled] = enabled.joinToString(",") }
-    suspend fun setLyricsPreferWordByWord(v: Boolean) = edit { it[K.lyricsPreferWordByWord] = v }
+    suspend fun setLyricsPreferWordByWord(v: Boolean) = Unit
     suspend fun setLyricsRespectAgentPositioning(v: Boolean) = edit { it[K.lyricsRespectAgentPositioning] = v }
     suspend fun setLyricsShowIntervalIndicator(v: Boolean) = edit { it[K.lyricsShowIntervalIndicator] = v }
     suspend fun setNowPlayingLyricsMode(v: Boolean) = edit { it[K.nowPlayingLyricsMode] = v }
