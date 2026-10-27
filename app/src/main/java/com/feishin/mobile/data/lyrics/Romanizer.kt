@@ -1,5 +1,6 @@
 package com.feishin.mobile.data.lyrics
 
+import com.atilika.kuromoji.ipadic.Token
 import com.feishin.mobile.core.network.LyricLine
 import com.feishin.mobile.core.network.Lyrics
 import java.io.DataInputStream
@@ -79,7 +80,8 @@ object Romanizer {
         return tokenizerInstance
     }
 
-    private const val MAX_CACHE_SIZE = 1000
+    private const val MAX_CACHE_SIZE = 2000
+    private const val CACHE_PREFIX = "v2:"
     private val lineCache = java.util.Collections.synchronizedMap(
         object : java.util.LinkedHashMap<String, String>(128, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean = size > MAX_CACHE_SIZE
@@ -121,7 +123,8 @@ object Romanizer {
         if (text.isBlank()) return null
         if (!hasRomanizableScript(text)) return null
 
-        val cached = lineCache[text]
+        val cacheKey = CACHE_PREFIX + text
+        val cached = lineCache[cacheKey]
         if (cached != null) return cached
 
         val hasKana = containsKana(text)
@@ -143,7 +146,7 @@ object Romanizer {
                 }
             }
         }
-        lineCache[text] = result
+        lineCache[cacheKey] = result
         return result
     }
 
@@ -349,6 +352,46 @@ object Romanizer {
         }
     }
 
+    private val CONJUNCTIVE_SURFACES = setOf("て", "で", "ちゃ", "じゃ")
+    private val TE_DE_SURFACES = setOf("て", "で")
+    private val VERB_ADJ_AUX = setOf("動詞", "形容詞", "助動詞")
+    private val VERB_ADJ_AUX_NOUN = setOf("動詞", "形容詞", "助動詞", "名詞")
+    private val NOUN_VERB_ADJ = setOf("名詞", "動詞", "形容詞")
+    private val COPULA_BASES = setOf("だ", "です")
+    private val EXCLUDED_GIVING_VERBS = setOf("くれる", "くださる", "もらう", "あげる")
+
+    private fun shouldJoin(prev: Token, curr: Token): Boolean {
+        val pSurf = prev.surface
+        val pRead = prev.reading
+        if (pSurf.endsWith('っ') || pSurf.endsWith('ッ') || (pRead != null && (pRead.endsWith('っ') || pRead.endsWith('ッ')))) {
+            return true
+        }
+
+        val cPos1 = curr.partOfSpeechLevel1
+        val cPos2 = curr.partOfSpeechLevel2
+        val pPos1 = prev.partOfSpeechLevel1
+
+        if (cPos1 == "助詞" && cPos2 == "接続助詞" && curr.surface in CONJUNCTIVE_SURFACES) {
+            return pPos1 in VERB_ADJ_AUX
+        }
+
+        if (cPos1 == "助動詞") {
+            val isCopula = curr.baseForm in COPULA_BASES && pPos1 !in VERB_ADJ_AUX
+            return !isCopula && (pPos1 in VERB_ADJ_AUX || pSurf in CONJUNCTIVE_SURFACES)
+        }
+
+        if ((cPos1 == "動詞" || cPos1 == "形容詞") && (cPos2 == "非自立" || cPos2 == "接尾")) {
+            return curr.baseForm !in EXCLUDED_GIVING_VERBS &&
+                (pPos1 in VERB_ADJ_AUX_NOUN || pSurf in TE_DE_SURFACES)
+        }
+
+        if (cPos1 == "名詞" && cPos2 == "接尾") {
+            return pPos1 in NOUN_VERB_ADJ
+        }
+
+        return false
+    }
+
     private fun romanizeJapanese(text: String): String {
         val tok = getTokenizer()
         val tokens = if (tok != null) runCatching { tok.tokenize(text) }.getOrNull() else null
@@ -356,30 +399,45 @@ object Romanizer {
             return katakanaToHepburn(text)
         }
         val words = mutableListOf<String>()
+        val currentGroup = mutableListOf<Token>()
+
+        fun flushGroup() {
+            if (currentGroup.isEmpty()) return
+            val kana = StringBuilder()
+            for (t in currentGroup) {
+                val pos1 = t.partOfSpeechLevel1
+                val surf = t.surface
+                if (pos1 == "助詞" && (surf == "は" || surf == "へ" || surf == "を")) {
+                    when (surf) {
+                        "は" -> kana.append("ワ")
+                        "へ" -> kana.append("エ")
+                        "を" -> kana.append("ヲ")
+                        else -> kana.append(surf)
+                    }
+                } else {
+                    val reading = t.reading
+                    val raw = if (!reading.isNullOrEmpty() && reading != "*") reading else surf
+                    kana.append(raw)
+                }
+            }
+            val rom = katakanaToHepburn(kana.toString()).trim()
+            if (rom.isNotEmpty()) {
+                words.add(rom)
+            }
+            currentGroup.clear()
+        }
 
         for (token in tokens) {
-            val surface = token.surface
-            if (surface.isBlank()) continue
-
-            val pos1 = token.partOfSpeechLevel1
-            val wordRom = if (pos1 == "助詞" && (surface == "は" || surface == "へ" || surface == "を")) {
-                when (surface) {
-                    "は" -> "wa"
-                    "へ" -> "e"
-                    "を" -> "o"
-                    else -> surface
-                }
+            if (token.surface.isBlank()) continue
+            val prev = currentGroup.lastOrNull()
+            if (prev != null && shouldJoin(prev, token)) {
+                currentGroup.add(token)
             } else {
-                val reading = token.reading
-                val raw = if (!reading.isNullOrEmpty() && reading != "*") reading else surface
-                katakanaToHepburn(raw)
-            }
-
-            val trimmed = wordRom.trim()
-            if (trimmed.isNotEmpty()) {
-                words.add(trimmed)
+                flushGroup()
+                currentGroup.add(token)
             }
         }
+        flushGroup()
 
         return words.joinToString(" ")
     }

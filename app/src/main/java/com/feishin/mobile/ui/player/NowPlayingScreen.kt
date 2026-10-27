@@ -1434,7 +1434,7 @@ private fun SyncedLyricsList(
                     )
                     if (romanize && com.feishin.mobile.data.lyrics.Romanizer.hasRomanizableScript(line.text) && !line.romanizedText.isNullOrBlank()) {
                         val romAlpha by animateFloatAsState(
-                            targetValue = if (active) 0.85f else 0.35f,
+                            targetValue = if (active) 0.70f else 0.28f,
                             animationSpec = androidx.compose.animation.core.tween(250),
                             label = "rom-alpha",
                         )
@@ -1442,14 +1442,14 @@ private fun SyncedLyricsList(
                             text = line.romanizedText,
                             color = content,
                             style = lyricStyle.copy(
-                                fontSize = (baseFontSize * 0.75f).sp,
-                                lineHeight = (baseLineHeight * 0.75f).sp,
-                                fontWeight = FontWeight.Medium,
+                                fontSize = (baseFontSize * 0.60f).sp,
+                                lineHeight = (baseLineHeight * 0.60f).sp,
+                                fontWeight = FontWeight.Normal,
                             ),
                             textAlign = lineAlignment,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = LyricsDisplayTokens.RomanizedGap)
+                                .padding(top = 3.dp)
                                 .graphicsLayer { alpha = romAlpha },
                         )
                     }
