@@ -169,11 +169,12 @@ class PlayerManager @Inject constructor(
         scope.launch {
             var ticks = 0
             while (true) {
-                delay(500)
+                val isPlaying = controller?.isPlaying == true
+                delay(if (isPlaying) 100 else 500)
                 val c = controller ?: continue
                 _position.value = c.currentPosition.coerceAtLeast(0)
                 _duration.value = c.duration.takeIf { it > 0 } ?: 0L
-                // Crossfade ramp + ReplayGain, recomputed on the same 500ms tick.
+                // Crossfade ramp + ReplayGain, recomputed on the same tick.
                 if (c.isPlaying) updateVolume(_position.value, _duration.value)
                 val cur = _current.value
                 val dur = _duration.value
@@ -193,7 +194,7 @@ class PlayerManager @Inject constructor(
                 // Persist position cheaply: every ~6s while playing. A single
                 // long in its own DataStore key, so a long session never churns
                 // the whole queue JSON; it never resurrects a cleared queue.
-                if (c.isPlaying && ++ticks % 12 == 0) savePosition()
+                if (c.isPlaying && ++ticks % 60 == 0) savePosition()
             }
         }
     }

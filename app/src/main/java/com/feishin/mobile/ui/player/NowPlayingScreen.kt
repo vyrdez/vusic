@@ -15,6 +15,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -117,6 +118,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -646,6 +648,8 @@ fun NowPlayingScreen(
                     lazyListState = lyricsLazyListState,
                     plainScrollState = plainLyricsScrollState,
                     onSearchAgain = { lyricsVm.searchAgain(current) },
+                    isTabActive = isTabActive,
+                    isLeaving = isLeaving,
                     modifier = Modifier.fillMaxSize().lyricsEdgeFade(),
                 )
             }
@@ -1297,25 +1301,25 @@ private fun SyncedLyricsList(
     val isDragged by listState.interactionSource.collectIsDraggedAsState()
     var userScrolledAway by remember { mutableStateOf(false) }
 
+    var isFirstLayout by rememberSaveable(lyrics.lines.hashCode()) { mutableStateOf(true) }
+    var wasTabActive by rememberSaveable(lyrics.lines.hashCode()) { mutableStateOf(false) }
+    var isReturningFromTab by rememberSaveable(lyrics.lines.hashCode()) { mutableStateOf(false) }
+    var lastScrolledIndex by rememberSaveable(lyrics.lines.hashCode()) { mutableIntStateOf(-1) }
+
     LaunchedEffect(isDragged) {
         if (isDragged) {
             userScrolledAway = true
+            lastScrolledIndex = -1
         } else if (userScrolledAway) {
             delay(3500)
             userScrolledAway = false
         }
     }
 
-    var isFirstLayout by remember(lyrics) { mutableStateOf(true) }
-    var wasTabActive by remember { mutableStateOf(false) }
-    var isReturningFromTab by remember { mutableStateOf(false) }
-
     LaunchedEffect(isTabActive) {
         if (!wasTabActive && isTabActive && !isFirstLayout) isReturningFromTab = true
         wasTabActive = isTabActive
     }
-
-    var lastActiveIndex by remember { mutableIntStateOf(-1) }
 
     LaunchedEffect(activeIndex, isTabActive, isLeaving, userScrolledAway, autoScroll) {
         if (!shouldRunLyricsScroll(isTabActive, isLeaving, userScrolledAway) || activeIndex < 0 || !autoScroll) {
@@ -1325,19 +1329,28 @@ private fun SyncedLyricsList(
         val viewportHeight = if (viewport > 0) viewport else {
             snapshotFlow { listState.layoutInfo.let { it.viewportEndOffset - it.viewportStartOffset } }.filter { it > 0 }.first()
         }
-        val targetOffset = -(viewportHeight * 0.35f).toInt()
+        val anchorPx = (viewportHeight * 0.35f).toInt()
+
+        if (!isFirstLayout && activeIndex == lastScrolledIndex) {
+            isReturningFromTab = false
+            return@LaunchedEffect
+        }
 
         if (resolveReturnScrollAction(isFirstLayout, isReturningFromTab) == ScrollAction.SNAP) {
-            listState.scrollToItem(activeIndex, targetOffset)
+            listState.scrollToItem(activeIndex, 0)
+            val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
+            if (itemInfo != null) {
+                listState.scrollBy((itemInfo.offset - anchorPx).toFloat())
+            }
             isFirstLayout = false
             isReturningFromTab = false
-            lastActiveIndex = activeIndex
+            lastScrolledIndex = activeIndex
         } else {
-            val lineDistance = if (lastActiveIndex >= 0) activeIndex - lastActiveIndex else 1
-            lastActiveIndex = activeIndex
+            val lineDistance = if (lastScrolledIndex >= 0) activeIndex - lastScrolledIndex else 1
+            lastScrolledIndex = activeIndex
             val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
             if (itemInfo != null && kotlin.math.abs(lineDistance) <= 10) {
-                val delta = (itemInfo.offset - (viewportHeight * 0.35f).toInt()).toFloat()
+                val delta = (itemInfo.offset - anchorPx).toFloat()
                 if (kotlin.math.abs(delta) > 1f) {
                     listState.animateScrollBy(
                         value = delta,
@@ -1347,10 +1360,10 @@ private fun SyncedLyricsList(
                         ),
                     )
                 }
-            } else if (kotlin.math.abs(lineDistance) > 10) {
-                listState.scrollToItem(activeIndex, targetOffset)
             } else {
-                listState.animateScrollToItem(activeIndex, targetOffset)
+                listState.scrollToItem(activeIndex, 0)
+                val newItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
+                if (newItem != null) listState.scrollBy((newItem.offset - anchorPx).toFloat())
             }
         }
     }
