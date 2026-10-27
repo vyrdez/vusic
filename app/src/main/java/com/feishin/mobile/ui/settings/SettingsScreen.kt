@@ -479,6 +479,35 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
                 }
             }
         }
+        // Option 6: Line gap stepper
+        val currentGapPct = s.lyricsLineGapPercent
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                Text("Line gap", style = MaterialTheme.typography.bodyLarge)
+                Text("Adjust spacing between lyric lines", style = MaterialTheme.typography.bodySmall, color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IconButton(
+                    onClick = { vm.setLyricsLineGapPercent((currentGapPct - 10).coerceIn(50, 200)) },
+                    enabled = currentGapPct > 50,
+                    modifier = Modifier.size(36.dp).background(com.feishin.mobile.ui.theme.VusicColors.SurfaceHigh, CircleShape),
+                ) {
+                    Icon(Icons.Default.Remove, contentDescription = "Decrease line gap", modifier = Modifier.size(18.dp))
+                }
+                Text(text = "$currentGapPct%", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 4.dp))
+                IconButton(
+                    onClick = { vm.setLyricsLineGapPercent((currentGapPct + 10).coerceIn(50, 200)) },
+                    enabled = currentGapPct < 200,
+                    modifier = Modifier.size(36.dp).background(com.feishin.mobile.ui.theme.VusicColors.SurfaceHigh, CircleShape),
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Increase line gap", modifier = Modifier.size(18.dp))
+                }
+            }
+        }
         SwitchRow(
             "Auto-scroll lyrics",
             s.lyricsAutoScroll,

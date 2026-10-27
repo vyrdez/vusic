@@ -242,6 +242,36 @@ fun LyricsMenuSheet(
                 }
             }
 
+            // Option 6: Line gap stepper
+            val currentGapPct = settings.lyricsLineGapPercent
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Line gap", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                    Text("Adjust spacing between lyric lines", style = MaterialTheme.typography.bodySmall, color = VusicColors.SecondaryText)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IconButton(
+                        onClick = { scope.launch { lyricsVm.settings.setLyricsLineGapPercent((currentGapPct - 10).coerceIn(50, 200)) } },
+                        enabled = currentGapPct > 50,
+                        modifier = Modifier.size(36.dp).background(VusicColors.SurfaceHigh, CircleShape),
+                    ) {
+                        Icon(Icons.Default.Remove, contentDescription = "Decrease line gap", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(18.dp))
+                    }
+                    Text(text = "$currentGapPct%", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp))
+                    IconButton(
+                        onClick = { scope.launch { lyricsVm.settings.setLyricsLineGapPercent((currentGapPct + 10).coerceIn(50, 200)) } },
+                        enabled = currentGapPct < 200,
+                        modifier = Modifier.size(36.dp).background(VusicColors.SurfaceHigh, CircleShape),
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Increase line gap", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+
             if (onTrackDetails != null) {
                 Spacer(Modifier.height(8.dp))
                 Row(

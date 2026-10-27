@@ -185,6 +185,8 @@ class SettingsViewModel @Inject constructor(
     fun setLyricsAutoScroll(v: Boolean) = viewModelScope.launch { store.setLyricsAutoScroll(v) }
     fun setLyricsTapToSeek(v: Boolean) = viewModelScope.launch { store.setLyricsTapToSeek(v) }
     fun setLyricsWordHighlight(v: Boolean) = viewModelScope.launch { store.setLyricsWordHighlight(v) }
+    fun setLyricsLineGapPercent(v: Int) = viewModelScope.launch { store.setLyricsLineGapPercent(v) }
+    fun resetLyricsLineGap() = viewModelScope.launch { store.resetLyricsLineGap() }
     fun setLyricsKeepScreenOn(v: Boolean) = viewModelScope.launch { store.setLyricsKeepScreenOn(v) }
     fun setLyricsSyncOffsetMs(v: Int) = viewModelScope.launch { store.setLyricsSyncOffsetMs(v) }
     fun setLyricsShowUnsynced(v: Boolean) = viewModelScope.launch { store.setLyricsShowUnsynced(v) }

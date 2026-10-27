@@ -101,6 +101,7 @@ class SettingsStore internal constructor(
         val lyricsRomanizeAutomatically = booleanPreferencesKey("lyrics_romanize_automatically")
         val lyricsRomanizedTrackIds = stringPreferencesKey("lyrics_romanized_track_ids")
         val lyricsDeRomanizedTrackIds = stringPreferencesKey("lyrics_deromanized_track_ids")
+        val lyricsLineGapPercent = intPreferencesKey("lyrics_line_gap_percent")
         val nowPlayingLyricsMode = booleanPreferencesKey("now_playing_lyrics_mode")
         // Device files settings (P9-B)
         val showDeviceFiles = booleanPreferencesKey("show_device_files")
@@ -170,6 +171,7 @@ class SettingsStore internal constructor(
         val lyricsRespectAgentPositioning: Boolean = false,
         val lyricsShowIntervalIndicator: Boolean = true,
         val lyricsRomanize: Boolean = false,
+        val lyricsLineGapPercent: Int = 100,
         val nowPlayingLyricsMode: Boolean = false,
         // Device files settings (P9-B)
         val showDeviceFiles: Boolean = false,
@@ -261,6 +263,7 @@ class SettingsStore internal constructor(
                 val trackIds = !p[K.lyricsRomanizedTrackIds].isNullOrBlank()
                 auto || trackIds
             },
+            lyricsLineGapPercent = parseLyricsLineGapPercent(p[K.lyricsLineGapPercent]),
             nowPlayingLyricsMode = p[K.nowPlayingLyricsMode] ?: false,
             showDeviceFiles = p[K.showDeviceFiles] ?: false,
             deviceFilesMinDurationSec = p[K.deviceFilesMinDurationSec] ?: 30,
@@ -309,6 +312,8 @@ class SettingsStore internal constructor(
                 else -> 100
             }
         }
+
+        fun parseLyricsLineGapPercent(raw: Int?): Int = (raw ?: 100).coerceIn(50, 200)
 
         fun isTrackRomanized(trackId: String, hasCjk: Boolean, settings: Settings): Boolean {
             return settings.lyricsRomanize && hasCjk
@@ -370,6 +375,8 @@ class SettingsStore internal constructor(
     suspend fun setLyricsRespectAgentPositioning(v: Boolean) = edit { it[K.lyricsRespectAgentPositioning] = v }
     suspend fun setLyricsShowIntervalIndicator(v: Boolean) = edit { it[K.lyricsShowIntervalIndicator] = v }
     suspend fun setNowPlayingLyricsMode(v: Boolean) = edit { it[K.nowPlayingLyricsMode] = v }
+    suspend fun setLyricsLineGapPercent(v: Int) = edit { it[K.lyricsLineGapPercent] = v.coerceIn(50, 200) }
+    suspend fun resetLyricsLineGap() = setLyricsLineGapPercent(100)
     suspend fun setLyricsRomanize(v: Boolean) = edit { it[K.lyricsRomanize] = v }
     suspend fun setLyricsRomanizeAutomatically(v: Boolean) = setLyricsRomanize(v)
     suspend fun resetLyricsProviders() = edit {

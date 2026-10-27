@@ -1362,7 +1362,7 @@ private fun SyncedLyricsList(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 24.dp, top = 32.dp, end = 24.dp, bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(LyricsDisplayTokens.LineGap),
+            verticalArrangement = Arrangement.spacedBy(LyricsDisplayTokens.lineGap(settings?.lyricsLineGapPercent ?: 100)),
         ) {
             val showInterval = settings?.lyricsShowIntervalIndicator != false
             val firstLine = lyrics.lines.firstOrNull()
