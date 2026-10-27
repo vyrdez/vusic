@@ -48,6 +48,7 @@ class DownloadsViewModel @Inject constructor(
     private val repo: DownloadRepository,
     private val settings: com.feishin.mobile.data.settings.SettingsStore,
     private val network: com.feishin.mobile.data.network.NetworkMonitor,
+    val messenger: com.feishin.mobile.ui.components.UiMessenger? = null,
 ) : ViewModel() {
 
     private val coverBytes = kotlinx.coroutines.flow.MutableStateFlow(0L)
@@ -133,6 +134,11 @@ class DownloadsViewModel @Inject constructor(
     fun clearAll() = viewModelScope.launch {
         repo.removeAll()
         refreshCoverSize()
+    }
+
+    fun clearQueue() = viewModelScope.launch {
+        repo.clearQueue()
+        messenger?.show("Download queue cleared")
     }
 
     fun clearCompleted() = viewModelScope.launch {

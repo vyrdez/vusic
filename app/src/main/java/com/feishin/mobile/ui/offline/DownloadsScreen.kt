@@ -24,12 +24,14 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -131,6 +133,30 @@ fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRep
     }
     val visibleDone = remember(doneIndices, done) { doneIndices.map { done[it] } }
 
+    var confirmClearQueue by remember { mutableStateOf(false) }
+    if (confirmClearQueue) {
+        AlertDialog(
+            onDismissRequest = { confirmClearQueue = false },
+            title = { Text("Clear download queue?") },
+            text = { Text("Clear ${active.size} downloads? Finished downloads are not affected.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmClearQueue = false
+                        vm.clearQueue()
+                    },
+                ) {
+                    Text("Clear", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearQueue = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current)) {
         item {
             Column(Modifier.fillMaxWidth().padding(16.dp)) {
@@ -192,7 +218,18 @@ fun DownloadsScreen(vm: DownloadsViewModel = hiltViewModel(), repo: MusicDataRep
             }
         }
         if (active.isNotEmpty()) {
-            item { SectionLabel("Downloading (${active.size})") }
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Downloading (${active.size})", style = MaterialTheme.typography.titleMedium)
+                    TextButton(onClick = { confirmClearQueue = true }) {
+                        Text("Clear all", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
             items(active, key = { "a${it.songId}" }) { row -> ActiveRow(row, vm, waitingReason) }
         }
         if (failed.isNotEmpty()) {

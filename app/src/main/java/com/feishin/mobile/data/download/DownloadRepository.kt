@@ -21,8 +21,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.map
 
 /** Snapshot of overall download activity, for banners and the notifications. */
@@ -268,6 +270,16 @@ class DownloadRepository @Inject constructor(
         dao.completed().forEach { row ->
             row.filePath?.let { runCatching { File(it).delete() } }
             dao.delete(row.songId)
+        }
+    }
+
+    suspend fun clearQueue() {
+        scheduler.cancelCurrent()
+        withContext(Dispatchers.IO) {
+            dao.partialFilePaths().forEach { path ->
+                runCatching { File(path).delete() }
+            }
+            dao.clearPending()
         }
     }
 

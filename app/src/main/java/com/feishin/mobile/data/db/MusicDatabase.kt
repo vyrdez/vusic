@@ -162,6 +162,12 @@ interface DownloadDao {
     )
     suspend fun markCompleted(id: String, filePath: String, size: Long, now: Long = System.currentTimeMillis())
 
+    @Query("DELETE FROM downloads WHERE status IN ('QUEUED', 'DOWNLOADING', 'PAUSED')")
+    suspend fun clearPending()
+
+    @Query("SELECT filePath FROM downloads WHERE status IN ('DOWNLOADING', 'PAUSED') AND filePath IS NOT NULL")
+    suspend fun partialFilePaths(): List<String>
+
     @Query("DELETE FROM downloads WHERE songId = :id")
     suspend fun delete(id: String)
 
