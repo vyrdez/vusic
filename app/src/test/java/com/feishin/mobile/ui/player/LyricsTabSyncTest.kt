@@ -7,7 +7,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** specs/section_h_spec.md: scroll retention, 35% anchor target, frame-0 index. */
+/** specs/section_h_spec.md & H2: scroll retention, 35% anchor target, padding math, frame-0 sync. */
 class LyricsTabSyncTest {
 
     @Test
@@ -17,8 +17,6 @@ class LyricsTabSyncTest {
         val lineChangedWhileAway = activeIndex != lastScrolledIndex
 
         assertFalse(lineChangedWhileAway)
-        val scrollDelta = if (lineChangedWhileAway) computeScrollOffset(activeIndex, 1000, 50) else 0
-        assertEquals(0, scrollDelta)
 
         val initialVisibleIndex = 5
         val initialScrollOffset = 18
@@ -32,18 +30,28 @@ class LyricsTabSyncTest {
     }
 
     @Test
-    fun testThirtyFivePercentTopAnchorTargetingWhenLineChanged() {
+    fun testUnifiedAnchorAndScrollOffsetMath() {
         val viewportHeight = 1000
-        val itemHeight = 60
-        val activeIndex = 10 // top at 600px, anchor at 350px -> offset 250px
+        val contentPaddingTopPx = 50 // 32.dp
 
-        val expectedOffset = (10 * itemHeight) - (viewportHeight * 0.35f).toInt()
-        val computedOffset = computeScrollOffset(activeIndex, viewportHeight, itemHeight)
-        assertEquals(expectedOffset, computedOffset)
-        assertEquals(250, computedOffset)
+        val anchorPx = computeLyricsAnchorPx(viewportHeight, 0.35f)
+        assertEquals(350, anchorPx)
 
-        val itemTop = activeIndex * itemHeight
-        assertEquals(250, computeScrollDelta(itemTop, itemHeight, viewportHeight))
+        val targetScrollOffset = computeLyricsScrollOffset(viewportHeight, contentPaddingTopPx, 0.35f)
+        // scrollOffset = -(anchorPx - contentPaddingTopPx) = -(350 - 50) = -300
+        assertEquals(-300, targetScrollOffset)
+
+        // In Compose: item top lands at contentPaddingTopPx - scrollOffset = 50 - (-300) = 350 == anchorPx
+        val itemTopOnScreen = contentPaddingTopPx - targetScrollOffset
+        assertEquals(anchorPx, itemTopOnScreen)
+
+        // Delta when item is already at anchorPx must be exactly 0
+        val deltaAtAnchor = computeLyricsScrollDelta(itemTopOffset = anchorPx, viewportHeight = viewportHeight, anchorFraction = 0.35f)
+        assertEquals(0f, deltaAtAnchor, 0.001f)
+
+        // Delta when item is below anchor (at 500px, needs to scroll up by 150px)
+        val deltaBelow = computeLyricsScrollDelta(itemTopOffset = 500, viewportHeight = viewportHeight, anchorFraction = 0.35f)
+        assertEquals(150f, deltaBelow, 0.001f)
     }
 
     @Test
@@ -56,7 +64,9 @@ class LyricsTabSyncTest {
         assertEquals(10, frame0ActiveIndex)
         assertTrue(frame0ActiveIndex != lastScrolledIndex)
 
-        val targetScroll = computeScrollOffset(frame0ActiveIndex, viewportHeight = 1000, itemHeight = 50)
-        assertEquals((10 * 50) - 350, targetScroll)
+        val viewportHeight = 1000
+        val contentPaddingTopPx = 48
+        val targetScrollOffset = computeLyricsScrollOffset(viewportHeight, contentPaddingTopPx)
+        assertEquals(-(350 - 48), targetScrollOffset)
     }
 }

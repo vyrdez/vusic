@@ -230,10 +230,13 @@ fun NowPlayingScreen(
     val lyricsUi by lyricsVm.ui.collectAsStateWithLifecycle()
     val lyricsSettings by lyricsVm.settings.flow.collectAsStateWithLifecycle(initialValue = null)
 
+    var lastScrolledLyricsIndex by rememberSaveable(current?.id) { mutableIntStateOf(-1) }
+
     LaunchedEffect(current?.id) {
         lyricsVm.load(current)
         lyricsLazyListState.scrollToItem(0)
         plainLyricsScrollState.scrollTo(0)
+        lastScrolledLyricsIndex = -1
     }
 
     val qItems by player.queue.collectAsStateWithLifecycle()
@@ -650,6 +653,8 @@ fun NowPlayingScreen(
                     onSearchAgain = { lyricsVm.searchAgain(current) },
                     isTabActive = isTabActive,
                     isLeaving = isLeaving,
+                    lastScrolledIndex = lastScrolledLyricsIndex,
+                    onUpdateLastScrolledIndex = { lastScrolledLyricsIndex = it },
                     modifier = Modifier.fillMaxSize().lyricsEdgeFade(),
                 )
             }
@@ -1135,6 +1140,8 @@ private fun LyricsPanel(
     modifier: Modifier = Modifier,
     isTabActive: Boolean = true,
     isLeaving: Boolean = false,
+    lastScrolledIndex: Int = -1,
+    onUpdateLastScrolledIndex: (Int) -> Unit = {},
 ) {
     val ui by lyricsVm.ui.collectAsStateWithLifecycle()
     val settings by lyricsVm.settings.flow.collectAsStateWithLifecycle(initialValue = null)
@@ -1253,6 +1260,8 @@ private fun LyricsPanel(
                 listState = lazyListState,
                 isTabActive = isTabActive,
                 isLeaving = isLeaving,
+                lastScrolledIndex = lastScrolledIndex,
+                onUpdateLastScrolledIndex = onUpdateLastScrolledIndex,
                 onSeek = { ms -> if (s?.lyricsTapToSeek != false) player.seekTo(ms) },
             )
         }
@@ -1273,6 +1282,8 @@ private fun SyncedLyricsList(
     modifier: Modifier = Modifier,
     isTabActive: Boolean = true,
     isLeaving: Boolean = false,
+    lastScrolledIndex: Int = -1,
+    onUpdateLastScrolledIndex: (Int) -> Unit = {},
 ) {
     val alignment = when (settings?.lyricsAlignment) {
         "LEFT" -> TextAlign.Start
@@ -1294,31 +1305,24 @@ private fun SyncedLyricsList(
     val autoScroll = settings?.lyricsAutoScroll != false
     val userOffsetMs = settings?.lyricsSyncOffsetMs ?: 0
 
+    val density = LocalDensity.current
+    val contentPaddingTopPx = with(density) { 32.dp.roundToPx() }
+
     val pos by player.position.collectAsStateWithLifecycle()
-    val effectivePosition = pos + userOffsetMs
+    val livePos = remember(pos) { player.livePositionMs() }
+    val effectivePosition = livePos + userOffsetMs
     val activeIndex = remember(lyrics, effectivePosition) { lyrics.lineIndexAt(effectivePosition) }
 
     val isDragged by listState.interactionSource.collectIsDraggedAsState()
     var userScrolledAway by remember { mutableStateOf(false) }
 
-    var isFirstLayout by rememberSaveable(lyrics.lines.hashCode()) { mutableStateOf(true) }
-    var wasTabActive by rememberSaveable(lyrics.lines.hashCode()) { mutableStateOf(false) }
-    var isReturningFromTab by rememberSaveable(lyrics.lines.hashCode()) { mutableStateOf(false) }
-    var lastScrolledIndex by rememberSaveable(lyrics.lines.hashCode()) { mutableIntStateOf(-1) }
-
     LaunchedEffect(isDragged) {
         if (isDragged) {
             userScrolledAway = true
-            lastScrolledIndex = -1
         } else if (userScrolledAway) {
             delay(3500)
             userScrolledAway = false
         }
-    }
-
-    LaunchedEffect(isTabActive) {
-        if (!wasTabActive && isTabActive && !isFirstLayout) isReturningFromTab = true
-        wasTabActive = isTabActive
     }
 
     LaunchedEffect(activeIndex, isTabActive, isLeaving, userScrolledAway, autoScroll) {
@@ -1329,43 +1333,34 @@ private fun SyncedLyricsList(
         val viewportHeight = if (viewport > 0) viewport else {
             snapshotFlow { listState.layoutInfo.let { it.viewportEndOffset - it.viewportStartOffset } }.filter { it > 0 }.first()
         }
-        val anchorPx = (viewportHeight * 0.35f).toInt()
+        val targetScrollOffset = computeLyricsScrollOffset(viewportHeight, contentPaddingTopPx, 0.35f)
 
-        if (!isFirstLayout && activeIndex == lastScrolledIndex) {
-            isReturningFromTab = false
+        // 1. If active line has not changed since the last scroll and user didn't scroll away, do not touch listState!
+        if (activeIndex == lastScrolledIndex) {
             return@LaunchedEffect
         }
 
-        if (resolveReturnScrollAction(isFirstLayout, isReturningFromTab) == ScrollAction.SNAP) {
-            listState.scrollToItem(activeIndex, 0)
-            val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
-            if (itemInfo != null) {
-                listState.scrollBy((itemInfo.offset - anchorPx).toFloat())
+        val lineDistance = if (lastScrolledIndex >= 0) activeIndex - lastScrolledIndex else 100
+        val isConsecutive = lineDistance in 1..10
+        val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
+
+        if (isConsecutive && itemInfo != null) {
+            // Normal sequential auto-scroll
+            val delta = computeLyricsScrollDelta(itemInfo.offset, viewportHeight, 0.35f)
+            if (kotlin.math.abs(delta) > 1f) {
+                listState.animateScrollBy(
+                    value = delta,
+                    animationSpec = androidx.compose.animation.core.tween(
+                        durationMillis = computeScrollDurationMs(lineDistance),
+                        easing = androidx.compose.animation.core.FastOutSlowInEasing,
+                    ),
+                )
             }
-            isFirstLayout = false
-            isReturningFromTab = false
-            lastScrolledIndex = activeIndex
         } else {
-            val lineDistance = if (lastScrolledIndex >= 0) activeIndex - lastScrolledIndex else 1
-            lastScrolledIndex = activeIndex
-            val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
-            if (itemInfo != null && kotlin.math.abs(lineDistance) <= 10) {
-                val delta = (itemInfo.offset - anchorPx).toFloat()
-                if (kotlin.math.abs(delta) > 1f) {
-                    listState.animateScrollBy(
-                        value = delta,
-                        animationSpec = androidx.compose.animation.core.tween(
-                            durationMillis = computeScrollDurationMs(lineDistance),
-                            easing = androidx.compose.animation.core.FastOutSlowInEasing,
-                        ),
-                    )
-                }
-            } else {
-                listState.scrollToItem(activeIndex, 0)
-                val newItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
-                if (newItem != null) listState.scrollBy((newItem.offset - anchorPx).toFloat())
-            }
+            // Initial load, seek jump, or re-entry after active line changed while away
+            listState.scrollToItem(activeIndex, targetScrollOffset)
         }
+        onUpdateLastScrolledIndex(activeIndex)
     }
 
     val coroutineScope = rememberCoroutineScope()

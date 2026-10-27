@@ -54,6 +54,7 @@ android {
         }
         debug {
             applicationIdSuffix = ""
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
 

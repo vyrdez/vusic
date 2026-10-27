@@ -132,6 +132,8 @@ class PlayerManager @Inject constructor(
     private val _position = MutableStateFlow(0L)
     val position: StateFlow<Long> = _position.asStateFlow()
 
+    fun livePositionMs(): Long = controller?.currentPosition?.coerceAtLeast(0) ?: _position.value
+
     private val _duration = MutableStateFlow(0L)
     val duration: StateFlow<Long> = _duration.asStateFlow()
 
