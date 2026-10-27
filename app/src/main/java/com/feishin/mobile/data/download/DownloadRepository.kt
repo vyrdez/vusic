@@ -217,7 +217,9 @@ class DownloadRepository @Inject constructor(
                 dao.setStatus(songId, DownloadStatus.PAUSED.name)
             }
         }
-        scheduler.cancelCurrent()
+        if (dao.nextQueued(1).isEmpty()) {
+            scheduler.cancelCurrent()
+        }
     }
 
     suspend fun resume(songId: String) {

@@ -59,6 +59,7 @@ class DownloadWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         DownloadNotifications.ensureChannel(applicationContext)
+        dao.requeueInterrupted()
         val root = repo.downloadsDir()
         var didWork = false
         var retryable = false
@@ -79,10 +80,9 @@ class DownloadWorker @AssistedInject constructor(
         }
 
         if (isStopped) {
-            // Stopped by the user: leave rows PAUSED so they can resume later.
-            return Result.success()
+            return if (dao.hasPending()) Result.retry() else Result.success()
         }
-        return if (retryable) Result.retry() else Result.success()
+        return if (retryable || dao.hasPending()) Result.retry() else Result.success()
     }
 
     override suspend fun getForegroundInfo(): ForegroundInfo {
@@ -165,6 +165,11 @@ class DownloadWorker @AssistedInject constructor(
         return try {
             client.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) {
+                    if (resp.code == 416) {
+                        if (partial.exists()) partial.delete()
+                        dao.setProgress(row.songId, 0L, 0f, null, DownloadStatus.QUEUED.name)
+                        return Outcome.RETRY
+                    }
                     dao.setStatus(row.songId, DownloadStatus.FAILED.name, "HTTP ${resp.code}")
                     return if (resp.code >= 500) Outcome.RETRY else Outcome.FAILED
                 }
@@ -190,7 +195,7 @@ class DownloadWorker @AssistedInject constructor(
                 partial.parentFile?.mkdirs()
                 if (!appending && partial.exists()) partial.delete()
                 resp.body?.byteStream()?.use { input ->
-                    partial.outputStream().use { out ->
+                    java.io.FileOutputStream(partial, appending).use { out ->
                         val buf = ByteArray(64 * 1024)
                         while (true) {
                             if (isStopped) throw IOException("stopped")
@@ -222,22 +227,24 @@ class DownloadWorker @AssistedInject constructor(
                 Outcome.DONE
             }
         } catch (e: IOException) {
-            if (isStopped) {
-                dao.setStatus(row.songId, DownloadStatus.PAUSED.name)
-                Outcome.PAUSED
+            val curBytes = if (partial.exists()) partial.length() else 0L
+            val p = DownloadStateMachine.progress(curBytes, row.expectedBytes)
+            val currentStatus = dao.byId(row.songId)?.statusEnum
+            val targetStatus = if (currentStatus == DownloadStatus.PAUSED) {
+                DownloadStatus.PAUSED.name
             } else {
-                // Never log the signed URL (u/t/s). Redact, debug-only.
-                if (com.feishin.mobile.data.remote.RedactingHttpLogger.ENABLED) {
-                    android.util.Log.w(
-                        "DownloadWorker",
-                        "transfer failed song=${row.songId} url=${
-                            com.feishin.mobile.data.remote.RedactingHttpLogger.redact(url)
-                        }",
-                    )
-                }
-                dao.setStatus(row.songId, DownloadStatus.FAILED.name, "Network error: ${e.message ?: e.javaClass.simpleName}")
-                Outcome.RETRY
+                DownloadStatus.QUEUED.name
             }
+            dao.setProgress(row.songId, curBytes, p, partial.absolutePath, targetStatus)
+            if (!isStopped && com.feishin.mobile.data.remote.RedactingHttpLogger.ENABLED) {
+                android.util.Log.w(
+                    "DownloadWorker",
+                    "transfer failed song=${row.songId} url=${
+                        com.feishin.mobile.data.remote.RedactingHttpLogger.redact(url)
+                    }",
+                )
+            }
+            if (targetStatus == DownloadStatus.PAUSED.name) Outcome.PAUSED else Outcome.RETRY
         } catch (e: Exception) {
             dao.setStatus(row.songId, DownloadStatus.FAILED.name, e.message ?: "Download failed")
             Outcome.FAILED

@@ -7,12 +7,23 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import com.feishin.mobile.core.common.CrashGuard
+import com.feishin.mobile.core.common.MobileDataPolicy
+import com.feishin.mobile.data.db.DownloadDao
+import com.feishin.mobile.data.network.NetworkMonitor
 import com.feishin.mobile.data.settings.SettingsStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /**
  * Enqueues the download worker as unique work so transfers survive the app being
@@ -23,7 +34,37 @@ import kotlinx.coroutines.flow.first
 class DownloadScheduler @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settings: SettingsStore,
+    private val dao: DownloadDao,
+    private val network: NetworkMonitor,
 ) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashGuard.handler)
+
+    init {
+        scope.launch {
+            combine(
+                network.isOnline,
+                network.unmetered,
+                network.roaming,
+                settings.flow.map { !it.downloadWifiOnly },
+            ) { online, unmetered, roaming, allowMobile ->
+                MobileDataPolicy.allows(
+                    online = online,
+                    unmetered = unmetered,
+                    roaming = roaming,
+                    allowMobileData = allowMobile,
+                )
+            }
+                .distinctUntilChanged()
+                .collect { allowed ->
+                    if (allowed) {
+                        dao.requeueInterrupted()
+                        if (dao.hasPending()) {
+                            reEvaluate()
+                        }
+                    }
+                }
+        }
+    }
     /** Starts (or continues) the download queue. */
     suspend fun enqueue() {
         val wifiOnly = runCatching { settings.flow.first().downloadWifiOnly }.getOrDefault(true)

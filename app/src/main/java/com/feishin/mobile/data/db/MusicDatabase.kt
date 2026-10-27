@@ -119,6 +119,18 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads WHERE status IN ('QUEUED','DOWNLOADING','PAUSED') ORDER BY enqueuedAt ASC")
     suspend fun pending(): List<DownloadEntity>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM downloads WHERE status IN ('QUEUED','DOWNLOADING'))")
+    suspend fun hasPending(): Boolean
+
+    @Query(
+        "UPDATE downloads SET status = 'QUEUED', error = NULL " +
+            "WHERE status = 'DOWNLOADING' OR (status = 'PAUSED' AND error = :waitingWifi) " +
+            "OR (status = 'FAILED' AND error LIKE 'Network error:%')",
+    )
+    suspend fun requeueInterrupted(
+        waitingWifi: String = com.feishin.mobile.core.common.MobileDataPolicy.WAITING_FOR_WIFI,
+    )
+
     @Query("SELECT * FROM downloads WHERE status = 'QUEUED' ORDER BY enqueuedAt ASC LIMIT :limit")
     suspend fun nextQueued(limit: Int): List<DownloadEntity>
 
