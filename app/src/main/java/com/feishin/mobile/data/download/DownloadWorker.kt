@@ -31,8 +31,8 @@ import okhttp3.Response
  * Transfers queued songs to app-private storage.
  *
  * Runs as unique WorkManager work with a foreground notification, so it keeps
- * going with the app closed. Up to [MAX_CONCURRENT] transfers run at once; partial
- * files resume with an HTTP Range request; a low-storage or Wi-Fi-only situation
+ * going with the app closed. Up to [SettingsStore.Settings.maxConcurrentDownloads] transfers
+ * run at once; partial files resume with an HTTP Range request; a low-storage or Wi-Fi-only situation
  * pauses instead of failing.
  */
 @HiltWorker
@@ -66,10 +66,10 @@ class DownloadWorker @AssistedInject constructor(
 
         try {
             while (!isStopped) {
-                val batch = dao.nextQueued(MAX_CONCURRENT)
+                val limit = settings.flow.first().maxConcurrentDownloads.coerceIn(1, 5)
+                val batch = dao.nextQueued(limit)
                 if (batch.isEmpty()) break
                 didWork = true
-                // Two at a time, so a slow server still makes parallel progress.
                 val outcomes = supervisorScope {
                     batch.map { row -> async(Dispatchers.IO) { transfer(row, root) } }.awaitAll()
                 }
@@ -298,9 +298,5 @@ class DownloadWorker @AssistedInject constructor(
         } finally {
             notifyLock.unlock()
         }
-    }
-
-    companion object {
-        const val MAX_CONCURRENT = 2
     }
 }

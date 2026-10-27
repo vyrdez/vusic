@@ -106,6 +106,7 @@ class SettingsStore internal constructor(
         val showDeviceFiles = booleanPreferencesKey("show_device_files")
         val deviceFilesMinDurationSec = intPreferencesKey("device_files_min_duration_sec")
         val libraryViewMode = stringPreferencesKey("library_view_mode")
+        val maxConcurrentDownloads = intPreferencesKey("max_concurrent_downloads")
     }
 
     data class Settings(
@@ -174,6 +175,7 @@ class SettingsStore internal constructor(
         val showDeviceFiles: Boolean = false,
         val deviceFilesMinDurationSec: Int = 30,
         val libraryViewMode: String = "SERVER",
+        val maxConcurrentDownloads: Int = 2,
         /** Per-tab sort choices, keyed by tab name. */
         val librarySorts: Map<String, com.feishin.mobile.core.common.SortChoice> = emptyMap(),
         /** Per-tab grid/list layout, keyed by tab name. */
@@ -263,6 +265,7 @@ class SettingsStore internal constructor(
             showDeviceFiles = p[K.showDeviceFiles] ?: false,
             deviceFilesMinDurationSec = p[K.deviceFilesMinDurationSec] ?: 30,
             libraryViewMode = p[K.libraryViewMode] ?: "SERVER",
+            maxConcurrentDownloads = (p[K.maxConcurrentDownloads] ?: 2).coerceIn(1, 5),
             librarySorts = p.asMap()
                 .filterKeys { it.name.startsWith(SORT_PREFIX) }
                 .mapNotNull { (k, v) ->
@@ -345,6 +348,7 @@ class SettingsStore internal constructor(
     suspend fun setTracksToCache(v: Int) = edit { it[K.tracksToCache] = v.coerceIn(1, 5) }
     suspend fun setCachePlayedSongs(v: Boolean) = edit { it[K.cachePlayedSongs] = v }
     suspend fun setCacheWifiOnly(v: Boolean) = edit { it[K.cacheWifiOnly] = v }
+    suspend fun setMaxConcurrentDownloads(v: Int) = edit { it[K.maxConcurrentDownloads] = v.coerceIn(1, 5) }
     suspend fun setMaxDownloadMb(v: Int) = edit { it[K.maxDownloadMb] = v.coerceAtLeast(0) }
     // Lyrics setters (P9-A)
     suspend fun setLyricsFetchOnline(v: Boolean) = edit { it[K.lyricsFetchOnline] = v }

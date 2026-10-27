@@ -173,6 +173,7 @@ class SettingsViewModel @Inject constructor(
     fun setCacheUpcoming(v: Boolean) = viewModelScope.launch { store.setCacheUpcoming(v) }
     fun setTracksToCache(v: Int) = viewModelScope.launch { store.setTracksToCache(v) }
     fun setCachePlayedSongs(v: Boolean) = viewModelScope.launch { store.setCachePlayedSongs(v) }
+    fun setMaxConcurrentDownloads(v: Int) = viewModelScope.launch { store.setMaxConcurrentDownloads(v) }
     fun setMaxDownloadMb(v: Int) = viewModelScope.launch {
         store.setMaxDownloadMb(v)
         refreshStorageStats()

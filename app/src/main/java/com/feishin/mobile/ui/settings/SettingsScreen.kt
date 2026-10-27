@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -971,7 +972,54 @@ private fun StorageScreen(
     SettingsCard {
         InfoRow("Songs", st?.downloadSongs?.toString() ?: "…", showDivider = true)
         InfoRow("Disk usage", st?.let { com.feishin.mobile.core.common.CacheSizePolicy.human(it.downloadBytes) } ?: "…", showDivider = true)
-        InfoRow("Concurrent downloads", st?.let { "${it.activeDownloads} active · ${it.queuedDownloads} queued" } ?: "…", showDivider = true)
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = com.feishin.mobile.ui.theme.VusicSpacing.RowMinHeight)
+                    .padding(vertical = com.feishin.mobile.ui.theme.VusicSpacing.RowVertical),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f).padding(end = 16.dp)) {
+                    Text("Simultaneous downloads", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        st?.let { "${it.activeDownloads} active · ${it.queuedDownloads} queued" } ?: "…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText,
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    IconButton(
+                        onClick = { vm.setMaxConcurrentDownloads(s.maxConcurrentDownloads - 1) },
+                        enabled = s.maxConcurrentDownloads > 1,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(com.feishin.mobile.ui.theme.VusicColors.SurfaceHigh, CircleShape),
+                    ) {
+                        Icon(Icons.Default.Remove, contentDescription = "Decrease simultaneous downloads", modifier = Modifier.size(18.dp))
+                    }
+                    Text(
+                        text = "${s.maxConcurrentDownloads}",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                    IconButton(
+                        onClick = { vm.setMaxConcurrentDownloads(s.maxConcurrentDownloads + 1) },
+                        enabled = s.maxConcurrentDownloads < 5,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(com.feishin.mobile.ui.theme.VusicColors.SurfaceHigh, CircleShape),
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Increase simultaneous downloads", modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+            SettingsDivider()
+        }
         ActionRow("Browse downloaded music", buttonLabel = "Browse", onClick = onOpenLibraryDownloads, showDivider = true)
         ActionRow("Download queue", buttonLabel = "Open", onClick = onOpenDownloads)
     }
