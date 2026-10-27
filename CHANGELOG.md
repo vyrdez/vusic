@@ -31,8 +31,9 @@
   - HTTP Range requests (`bytes=N-`) open files in append mode on HTTP 206 responses, avoiding file truncation.
 - **Lyrics tab sync and anchor drift**:
   - Retains exact scroll position when returning to the Lyrics tab while paused or when the active line has not changed.
+  - Fixes double-offset downward shift on tab re-entry by hoisting scroll tracking state to `NowPlayingScreen` and accounting for top content padding in the anchor offset calculation (0 px drift verified).
   - Properly wires `isTabActive` and `isLeaving` to freeze auto-scroll animations during tab exits or sheet dismiss.
-  - Tightened player position polling to 100 ms for instantaneous sync upon tab entry.
+  - Tightened player position polling to 100 ms and added live ExoPlayer position resolution for instantaneous sync upon tab entry.
 
 ## 1.2.2
 
