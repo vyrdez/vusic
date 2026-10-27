@@ -1,8 +1,10 @@
 package com.feishin.mobile.di
 
 import android.content.Context
+import android.net.Uri
 import coil.ImageLoader
 import coil.disk.DiskCache
+import coil.intercept.Interceptor
 import coil.memory.MemoryCache
 import com.feishin.mobile.data.remote.AuthInterceptor
 import com.feishin.mobile.data.remote.DynamicTrustManager
@@ -15,6 +17,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import java.io.File
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -92,6 +95,7 @@ object NetworkModule {
         @ApplicationContext ctx: Context,
         @javax.inject.Named("coil") coilClient: OkHttpClient,
         settings: com.feishin.mobile.data.settings.SettingsStore,
+        cachedCoverDao: com.feishin.mobile.data.db.CachedCoverDao,
     ): ImageLoader {
         // Same deal as the stream cache: the size is fixed at construction, so
         // a changed value takes effect on the next launch.
@@ -105,6 +109,7 @@ object NetworkModule {
         return ImageLoader.Builder(ctx)
             .okHttpClient(coilClient)
             .components {
+                add(OfflineCoverInterceptor(cachedCoverDao))
                 add(com.feishin.mobile.core.ui.LocalAudioCoverFetcher.Factory(ctx))
             }
             .crossfade(true)
@@ -114,5 +119,27 @@ object NetworkModule {
             .memoryCache { MemoryCache.Builder(ctx).maxSizePercent(0.25).build() }
             .diskCache { DiskCache.Builder().directory(ctx.cacheDir.resolve("coil")).maxSizeBytes(mb.toLong() * 1024 * 1024).build() }
             .build()
+    }
+}
+
+class OfflineCoverInterceptor(
+    private val cachedCoverDao: com.feishin.mobile.data.db.CachedCoverDao,
+) : Interceptor {
+    override suspend fun intercept(chain: Interceptor.Chain): coil.request.ImageResult {
+        val request = chain.request
+        val url = request.data?.toString() ?: ""
+        if (url.contains("getCoverArt")) {
+            val coverId = runCatching { Uri.parse(url).getQueryParameter("id") }.getOrNull()
+            if (!coverId.isNullOrBlank()) {
+                val path = cachedCoverDao.path(coverId)
+                if (path != null) {
+                    val file = File(path)
+                    if (file.exists() && file.length() > 0) {
+                        return chain.proceed(request.newBuilder().data(file).build())
+                    }
+                }
+            }
+        }
+        return chain.proceed(request)
     }
 }

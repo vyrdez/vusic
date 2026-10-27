@@ -173,6 +173,12 @@ interface DownloadDao {
 
     @Query("DELETE FROM downloads")
     suspend fun clear()
+
+    @Query("SELECT COUNT(*) FROM downloads WHERE coverArt = :coverArtId AND status = 'COMPLETED'")
+    suspend fun completedCoverCount(coverArtId: String): Int
+
+    @Query("SELECT DISTINCT coverArt FROM downloads WHERE status = 'COMPLETED' AND coverArt IS NOT NULL AND coverArt NOT IN (SELECT coverArtId FROM cached_covers)")
+    suspend fun missingCoverArtIds(): List<String>
 }
 
 @Dao
@@ -221,6 +227,9 @@ interface CachedCoverDao {
 
     @Query("SELECT sizeBytes FROM cached_covers")
     suspend fun allSizes(): List<Long>
+
+    @Query("DELETE FROM cached_covers WHERE coverArtId = :id")
+    suspend fun delete(id: String)
 
     @Query("DELETE FROM cached_covers")
     suspend fun clear()

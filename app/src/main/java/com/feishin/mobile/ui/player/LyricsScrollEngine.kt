@@ -6,6 +6,7 @@ import kotlin.math.abs
 
 object LyricsDisplayTokens {
     val LineGap: Dp = 22.dp
+    fun lineGap(percent: Int): Dp = (22f * (percent.coerceIn(50, 200) / 100f)).dp
     val RomanizedGap: Dp = 4.dp
     const val InactiveAlpha: Float = 0.40f
     const val ActiveAlpha: Float = 1.0f

@@ -50,6 +50,8 @@ class DownloadRepository @Inject constructor(
     private val creds: CredentialsStore,
     private val repo: MusicDataRepository,
     private val scheduler: DownloadScheduler,
+    private val network: com.feishin.mobile.data.network.NetworkMonitor,
+    @com.feishin.mobile.di.DownloadClient private val client: okhttp3.OkHttpClient,
 ) {
     val downloads: Flow<List<DownloadEntity>> = dao.observeAll()
     val completed: Flow<List<DownloadEntity>> = dao.observeCompleted()
@@ -235,12 +237,16 @@ class DownloadRepository @Inject constructor(
 
     /** Removes the row and its files (finished, partial, cached cover). */
     suspend fun remove(songId: String) {
-        dao.byId(songId)?.let { row ->
-            row.filePath?.let { runCatching { File(it).delete() } }
-            row.tempPath?.let { runCatching { File(it).delete() } }
-            row.coverArt?.let { id -> runCatching { File(covers.path(id) ?: return@runCatching).delete() } }
-        }
+        val row = dao.byId(songId)
+        row?.filePath?.let { runCatching { File(it).delete() } }
+        row?.tempPath?.let { runCatching { File(it).delete() } }
         dao.delete(songId)
+        row?.coverArt?.let { id ->
+            if (dao.completedCoverCount(id) == 0) {
+                covers.path(id)?.let { runCatching { File(it).delete() } }
+                covers.delete(id)
+            }
+        }
     }
 
     /**
@@ -270,6 +276,12 @@ class DownloadRepository @Inject constructor(
         dao.completed().forEach { row ->
             row.filePath?.let { runCatching { File(it).delete() } }
             dao.delete(row.songId)
+            row.coverArt?.let { id ->
+                if (dao.completedCoverCount(id) == 0) {
+                    covers.path(id)?.let { runCatching { File(it).delete() } }
+                    covers.delete(id)
+                }
+            }
         }
     }
 
@@ -335,6 +347,38 @@ class DownloadRepository @Inject constructor(
     suspend fun clearCoverCache() {
         covers.clear()
         runCatching { coversDir().deleteRecursively(); coversDir().mkdirs() }
+    }
+
+    suspend fun fetchAndStoreCover(coverArtId: String): Boolean = withContext(Dispatchers.IO) {
+        val existing = covers.path(coverArtId)
+        if (existing != null && File(existing).exists()) return@withContext true
+        val url = signedCoverUrl(coverArtId) ?: return@withContext false
+        runCatching {
+            val req = okhttp3.Request.Builder().url(url).build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use false
+                val f = File(coversDir(), "$coverArtId.jpg")
+                resp.body?.byteStream()?.use { input -> f.outputStream().use { input.copyTo(it) } }
+                if (f.length() > 0) {
+                    storeCover(coverArtId, f)
+                    true
+                } else false
+            }
+        }.getOrDefault(false)
+    }
+
+    suspend fun backfillMissingCovers() = withContext(Dispatchers.IO) {
+        val allowed = com.feishin.mobile.core.common.MobileDataPolicy.allows(
+            online = network.isOnline.value,
+            unmetered = network.unmetered.value,
+            roaming = network.roaming.value,
+            allowMobileData = !settings.settingsNow().downloadWifiOnly,
+        )
+        if (!allowed) return@withContext
+        val missing = dao.missingCoverArtIds()
+        for (coverId in missing) {
+            fetchAndStoreCover(coverId)
+        }
     }
 
     // ---------- policy helpers ----------

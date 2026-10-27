@@ -254,17 +254,10 @@ class DownloadWorker @AssistedInject constructor(
     /** Artwork must live on disk too, so Now Playing and notifications work offline. */
     private suspend fun downloadCover(row: DownloadEntity) {
         val coverId = row.coverArt ?: return
-        val existing = covers.path(coverId)
-        if (existing != null && File(existing).exists()) return
-        val url = repo.signedCoverUrl(coverId) ?: return
         runCatching {
-            val req = Request.Builder().url(url).build()
-            client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@use
-                val f = File(repo.coversDir(), "$coverId.jpg")
-                resp.body?.byteStream()?.use { input -> f.outputStream().use { input.copyTo(it) } }
-                if (f.length() > 0) repo.storeCover(coverId, f)
-            }
+            repo.fetchAndStoreCover(coverId)
+        }.onFailure { e ->
+            android.util.Log.w("DownloadWorker", "Cover download failed for $coverId: ${e.message}")
         }
     }
 
