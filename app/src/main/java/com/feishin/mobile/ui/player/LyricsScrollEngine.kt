@@ -11,6 +11,18 @@ object LyricsDisplayTokens {
     const val InactiveAlpha: Float = 0.40f
     const val ActiveAlpha: Float = 1.0f
     const val ActiveScale: Float = 1.06f
+    const val AnimationDurationMs: Int = 420
+    const val StaggerDelayMs: Int = 35
+
+    fun alphaForDistance(distance: Int): Float = when (abs(distance)) {
+        0 -> 1.0f
+        1 -> 0.42f
+        2 -> 0.22f
+        else -> 0.10f
+    }
+
+    fun romajiAlpha(lineAlpha: Float, isActive: Boolean): Float =
+        lineAlpha * (if (isActive) 0.70f else 0.85f)
 }
 
 fun computeScrollOffset(targetIndex: Int, viewportHeight: Int, itemHeight: Int, anchorRatio: Float = 0.35f): Int {

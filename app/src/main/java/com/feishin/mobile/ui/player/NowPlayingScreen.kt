@@ -1379,14 +1379,21 @@ private fun SyncedLyricsList(
 
             itemsIndexed(lyrics.lines, key = { i, line -> "$i-${line.startMs}" }) { i, line ->
                 val active = i == activeIndex
+                val d = if (activeIndex >= 0) kotlin.math.abs(i - activeIndex) else 3
                 val animatedAlpha by animateFloatAsState(
-                    targetValue = if (active) LyricsDisplayTokens.ActiveAlpha else LyricsDisplayTokens.InactiveAlpha,
-                    animationSpec = androidx.compose.animation.core.tween(250),
+                    targetValue = LyricsDisplayTokens.alphaForDistance(d),
+                    animationSpec = androidx.compose.animation.core.tween(
+                        durationMillis = LyricsDisplayTokens.AnimationDurationMs,
+                        easing = androidx.compose.animation.core.FastOutSlowInEasing,
+                    ),
                     label = "lyrics-alpha",
                 )
                 val animatedScale by animateFloatAsState(
                     targetValue = if (active) LyricsDisplayTokens.ActiveScale else 1.0f,
-                    animationSpec = androidx.compose.animation.core.tween(250),
+                    animationSpec = androidx.compose.animation.core.tween(
+                        durationMillis = LyricsDisplayTokens.AnimationDurationMs,
+                        easing = androidx.compose.animation.core.FastOutSlowInEasing,
+                    ),
                     label = "lyrics-scale",
                 )
                 val displayText = if (line.text.isBlank()) (if (showInterval) "♪" else "") else line.text
@@ -1434,8 +1441,11 @@ private fun SyncedLyricsList(
                     )
                     if (romanize && com.feishin.mobile.data.lyrics.Romanizer.hasRomanizableScript(line.text) && !line.romanizedText.isNullOrBlank()) {
                         val romAlpha by animateFloatAsState(
-                            targetValue = if (active) 0.70f else 0.28f,
-                            animationSpec = androidx.compose.animation.core.tween(250),
+                            targetValue = LyricsDisplayTokens.romajiAlpha(LyricsDisplayTokens.alphaForDistance(d), active),
+                            animationSpec = androidx.compose.animation.core.tween(
+                                durationMillis = LyricsDisplayTokens.AnimationDurationMs,
+                                easing = androidx.compose.animation.core.FastOutSlowInEasing,
+                            ),
                             label = "rom-alpha",
                         )
                         Text(
