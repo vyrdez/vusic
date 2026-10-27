@@ -38,7 +38,9 @@ chips, mixes), Library tabs (playlists, downloads, albums, artists, songs) with
 per-tab sort and grid/list layouts, search with recent searches, artist and
 album pages, Favorites, a Cached collection, and an optional Device Files mode
 with Songs, Albums and Artists tabs for local music. You can download songs or whole
-albums for offline playback, and offline scrobbles and stars are queued and
+albums for offline playback together with their cover art (stored persistently and loaded offline-first
+with reference-counted pruning), configure simultaneous downloads (1–5), clear the download queue in one batch,
+and rely on automatic resume over HTTP Range after connection drops. Offline scrobbles and stars are queued and
 replayed with their original timestamps when you reconnect.
 
 It also ships an Android Auto service (Home, Library, Favorites, Downloads
@@ -52,10 +54,10 @@ switching, and a refresh-rate preference (Auto/Max/Standard 60 Hz).
 When online lyrics sources (BetterLyrics, LRCLIB, KuGou) are enabled, Vusic queries
 the enabled providers sequentially for synced lyrics using smart bilingual title and artist variants
 with duration-first matching (±3 s). A single global "Romanize lyrics" setting provides on-device
-word-spaced Hepburn transliteration for Japanese (via Kuromoji IPADIC morphological analysis) without macrons,
-plus Revised Romanization for Korean and Pinyin for Chinese.
-Lyrics are displayed with clean whole-line highlighting, bold typography, generous line spacing, and a smooth
-continuous scroll engine. A lookup sends only the song's title, artist, album name,
+word-spaced Hepburn transliteration for Japanese (via Kuromoji IPADIC morphological analysis with word-joining rules)
+without macrons, plus Revised Romanization for Korean and Pinyin for Chinese.
+Lyrics are displayed with clean whole-line highlighting, bold typography, an adjustable line gap (50–200%),
+distance-based opacity falloff, and a smooth continuous scroll engine that stays perfectly in sync when switching tabs. A lookup sends only the song's title, artist, album name,
 and duration. Your server URL, username, internal song IDs, and local file paths are never sent.
 As with any HTTP request, external providers see the IP address the request originates from.
 Negative lookups are cached locally with expiry, and online lookups are skipped entirely in Offline

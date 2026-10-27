@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.2.3
+
+### Added
+- **Offline cover art download**:
+  - Automatically downloads and stores cover art in a persistent offline art directory when songs, albums, or playlists are downloaded.
+  - Offline-first Coil image loader reads local cached covers before network requests.
+  - Reference-counted cover deletion ensures art is kept while any downloaded song uses it.
+  - Low-priority background backfill fetches missing covers for previously downloaded tracks.
+- **Configurable simultaneous downloads**:
+  - New "Simultaneous downloads" stepper (1–5, default 2) in Settings > Storage > Downloaded music.
+  - Dynamic slot limiter starts extra queued downloads when increased and avoids canceling active downloads when decreased.
+- **Clear all download queue**:
+  - "Clear all" button in the download queue header with a confirmation dialog.
+  - Cancels queued and active jobs in a single batch, deletes partial files, and resets track states.
+- **Adjustable lyrics line gap**:
+  - Stepper row (50% to 200% in 10% steps, default 100% = 22 dp) in both Lyrics menu and Settings > Lyrics.
+  - Scales line-to-line spacing smoothly without affecting the gap to romaji sub-lines.
+- **Cleaner, smaller romaji with morphological word joining**:
+  - 6-rule Kuromoji morphological joining joins verb/adjective endings, auxiliaries (`shira nai` -> `shiranai`, `aishi te` -> `aishite`), and non-independent verbs while keeping particles separate.
+  - Smaller 60% text size, regular weight, and 70% active opacity.
+- **Modern fluid lyrics animation**:
+  - Distance-based opacity falloff curve (dist 0 = 1.0, dist 1 = 0.42, dist 2 = 0.22, dist 3+ = 0.10) with 1.06x active scale.
+  - 420 ms FastOutSlowInEasing transition for fluid line gliding.
+
+### Fixed
+- **Download auto-resume after Wi-Fi disconnect and reconnect**:
+  - Interrupted downloads remain in queued/paused state without being marked failed.
+  - WorkManager jobs re-enqueued automatically when network reconnects via `MobileDataPolicy` observer.
+  - HTTP Range requests (`bytes=N-`) open files in append mode on HTTP 206 responses, avoiding file truncation.
+- **Lyrics tab sync and anchor drift**:
+  - Retains exact scroll position when returning to the Lyrics tab while paused or when the active line has not changed.
+  - Properly wires `isTabActive` and `isLeaving` to freeze auto-scroll animations during tab exits or sheet dismiss.
+  - Tightened player position polling to 100 ms for instantaneous sync upon tab entry.
+
 ## 1.2.2
 
 ### Added

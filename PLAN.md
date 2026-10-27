@@ -1505,3 +1505,35 @@ Version 1.2.2 (versionCode 10) — `applicationId com.feishin.mobile` unchanged.
   - Static queue strip: Hoisted top bar and single `PlayingFromBottom` strip outside `AnimatedContent` so strip remains completely static during tab transitions.
   - Lyrics movement on exit / collapse fixed: Auto-scroll cancelled and frozen during tab exit transitions, drag gestures, or sheet collapse. Snaps directly to active line upon return once viewport is measured (`viewportHeight > 0`) without animated scrolling from top.
   - Edge fade: 56 dp vertical gradient alpha mask (`DstIn`) applied to the lyrics list container. All pure functions covered in `LyricsTabCorrectionsTest.kt`.
+
+## Phase 9.3 status: downloads fixes & lyrics polish (1.2.3)
+
+Version 1.2.3 (versionCode 11) — `applicationId com.feishin.mobile` unchanged.
+
+- **P9.3-D resume downloads** (`DownloadWorker.kt`, `DownloadScheduler.kt`, `DownloadRepository.kt`, `MusicDatabase.kt`, `DownloadResumeTest.kt`):
+  - Root cause: Worker returned `Result.success()` on stop/disconnect, marking work finished so WorkManager never rescheduled; network errors set status to `FAILED`, which `nextQueued()` skipped; HTTP 206 opened file with `FileOutputStream(partial, false)`, truncating data.
+  - Fix: Returning `Result.retry()` when stopped or pending; auto-resume observer on `MobileDataPolicy.allows()`; append-mode `FileOutputStream(partial, true)` for HTTP 206 Range requests; socket drop preserves byte progress in `QUEUED`.
+- **P9.3-G romaji look** (`Romanizer.kt`, `NowPlayingScreen.kt`, `RomanizerJoiningTest.kt`):
+  - 6-rule Kuromoji morphological token joining joins verb/adj endings, auxiliaries (`shiranai`, `aishite`), and non-independent verbs, while keeping particles separate. Kana readings accumulated prior to Hepburn transliteration.
+  - Typography updated to 60% base font size, regular weight, 70% active opacity, and 3 dp gap.
+- **P9.3-C simultaneous downloads** (`SettingsStore.kt`, `SettingsViewModel.kt`, `DownloadWorker.kt`, `SettingsScreen.kt`, `ConcurrentDownloadsTest.kt`):
+  - Added `maxConcurrentDownloads` (1–5, default 2) to DataStore.
+  - Dynamic slot limiter in `DownloadWorker` starts new downloads when increased without canceling running ones when decreased.
+  - Settings > Storage displays minus/plus stepper row on the right with live active/queued helper text.
+- **P9.3-B clear download queue** (`DownloadsScreen.kt`, `DownloadsViewModel.kt`, `DownloadRepository.kt`, `MusicDatabase.kt`, `ClearDownloadQueueTest.kt`):
+  - Added "Clear all" button with confirmation dialog in the download queue header.
+  - Batched cancellation of active/queued work, partial file cleanup, and state reset in a single transaction.
+- **P9.3-E lyrics line gap** (`SettingsStore.kt`, `LyricsMenuSheet.kt`, `SettingsScreen.kt`, `NowPlayingScreen.kt`, `LyricsScrollEngine.kt`, `LyricsLineGapTest.kt`):
+  - Added continuous `lyricsLineGapPercent` setting (50%–200%, default 100% = 22 dp) with steppers in Lyrics menu and Settings > Lyrics.
+  - Dynamically scales line-to-line spacing while preserving romaji subline clearance and viewport anchor math.
+- **P9.3-A download covers** (`DownloadWorker.kt`, `DownloadRepository.kt`, `NetworkModule.kt`, `MusicDatabase.kt`, `OfflineCoverStoreTest.kt`):
+  - Persistent offline cover store in `download_covers`, keyed by `coverArtId` and de-duplicated across tracks.
+  - Offline-first Coil image loader interceptor serves local cover files without network access.
+  - Reference-counted deletion prunes cover files only when no remaining downloaded song uses them.
+  - Resumable low-priority background backfill for previously downloaded tracks.
+- **P9.3-F lyrics animation** (`LyricsScrollEngine.kt`, `NowPlayingScreen.kt`, `LyricsAnimationTest.kt`):
+  - Target metrics from video analysis: distance-based opacity falloff curve (dist 0 = 1.0, dist 1 = 0.42, dist 2 = 0.22, dist 3+ = 0.10) with 1.06x active scale.
+  - 420 ms FastOutSlowInEasing transition for fluid line gliding.
+- **P9.3-H lyrics tab sync and anchor** (`NowPlayingScreen.kt`, `PlayerManager.kt`, `LyricsTabSyncTest.kt`):
+  - Root cause: `isTabActive` and `isLeaving` were computed but not passed to `LyricsPanel`, causing re-entry to run false `SNAP` with mismatched negative offset while `AnimatedContent` had disposed child state.
+  - Fix: Wires `isTabActive` / `isLeaving`; preserves exact scroll position on return when active line is unchanged; unifies 35% viewport anchor targeting; tightens player position polling to 100 ms.
