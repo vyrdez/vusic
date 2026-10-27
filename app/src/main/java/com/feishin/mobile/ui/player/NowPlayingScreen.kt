@@ -1218,7 +1218,7 @@ private fun LyricsPanel(
                                     modifier = Modifier.fillMaxWidth(),
                                 )
                                 if (s?.lyricsRomanize == true && com.feishin.mobile.data.lyrics.Romanizer.hasRomanizableScript(pLine)) {
-                                    val rom = remember(pLine) { com.feishin.mobile.data.lyrics.Romanizer.romanizeLine(pLine) }
+                                    val rom = remember(pLine) { runCatching { com.feishin.mobile.data.lyrics.Romanizer.romanizeLine(pLine) }.getOrNull() }
                                     if (!rom.isNullOrBlank()) {
                                         Text(
                                             rom,

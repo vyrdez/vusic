@@ -75,3 +75,8 @@
 
 # --- kotlinx.coroutines ---
 -dontwarn kotlinx.coroutines.**
+
+# --- Kuromoji IPADIC ---
+# Kuromoji loads dictionary .bin resources relative to its package name via getResourceAsStream
+-keep class com.atilika.kuromoji.** { *; }
+-dontwarn com.atilika.kuromoji.**

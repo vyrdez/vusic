@@ -62,8 +62,21 @@ object Romanizer {
 
     private val CJK_REGEX = Regex("[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}\\p{IsHangul}]")
 
-    private val tokenizer: com.atilika.kuromoji.ipadic.Tokenizer by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        com.atilika.kuromoji.ipadic.Tokenizer()
+    private var tokenizerInstance: com.atilika.kuromoji.ipadic.Tokenizer? = null
+    private var tokenizerInitFailed = false
+
+    @Synchronized
+    private fun getTokenizer(): com.atilika.kuromoji.ipadic.Tokenizer? {
+        if (tokenizerInitFailed) return null
+        if (tokenizerInstance == null) {
+            try {
+                tokenizerInstance = com.atilika.kuromoji.ipadic.Tokenizer()
+            } catch (t: Throwable) {
+                tokenizerInitFailed = true
+                android.util.Log.e("Romanizer", "Failed to initialize Kuromoji tokenizer", t)
+            }
+        }
+        return tokenizerInstance
     }
 
     private const val MAX_CACHE_SIZE = 1000
@@ -118,8 +131,9 @@ object Romanizer {
             hasHangul -> romanizeKorean(text)
             hasKana -> romanizeJapanese(text)
             else -> {
-                val tokens = tokenizer.tokenize(text)
-                val allKnownJp = tokens.isNotEmpty() && tokens.all {
+                val tok = getTokenizer()
+                val tokens = if (tok != null) runCatching { tok.tokenize(text) }.getOrNull() else null
+                val allKnownJp = !tokens.isNullOrEmpty() && tokens.all {
                     it.isKnown && !it.reading.isNullOrBlank() && it.reading != "*"
                 }
                 if (allKnownJp) {
@@ -336,7 +350,11 @@ object Romanizer {
     }
 
     private fun romanizeJapanese(text: String): String {
-        val tokens = tokenizer.tokenize(text)
+        val tok = getTokenizer()
+        val tokens = if (tok != null) runCatching { tok.tokenize(text) }.getOrNull() else null
+        if (tokens.isNullOrEmpty()) {
+            return katakanaToHepburn(text)
+        }
         val words = mutableListOf<String>()
 
         for (token in tokens) {
