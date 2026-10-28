@@ -23,10 +23,31 @@ fun shouldRunLyricsScroll(
     userScrolledAway: Boolean,
 ): Boolean = isLyricsTabActive && !isScreenLeaving && !userScrolledAway
 
+fun isLyricsTabReadyToScroll(showLyrics: Boolean, lyricsMode: Boolean): Boolean =
+    showLyrics && lyricsMode
+
 fun resolveReturnScrollAction(
     isFirstLayout: Boolean,
     isReturningFromTab: Boolean,
 ): ScrollAction = if (isFirstLayout || isReturningFromTab) ScrollAction.SNAP else ScrollAction.ANIMATE
+
+fun resolveLyricsScrollStep(
+    isFirstEntryInComposition: Boolean,
+    activeIndex: Int,
+    lastScrolledIndex: Int,
+    isTargetItemVisible: Boolean,
+): ScrollAction? {
+    if (activeIndex < 0) return null
+    if (isFirstEntryInComposition) {
+        return resolveReturnScrollAction(
+            isFirstLayout = lastScrolledIndex < 0,
+            isReturningFromTab = lastScrolledIndex >= 0,
+        )
+    }
+    if (activeIndex == lastScrolledIndex) return null
+    val lineDistance = if (lastScrolledIndex >= 0) activeIndex - lastScrolledIndex else Int.MAX_VALUE
+    return if (lineDistance in 1..10 && isTargetItemVisible) ScrollAction.ANIMATE else ScrollAction.SNAP
+}
 
 /**
  * Pixel distance from the top of the lyrics viewport where the active line's top edge

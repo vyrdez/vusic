@@ -87,4 +87,111 @@ class LyricsTabCorrectionsTest {
     fun steadyStateAnimatesLineToLine() {
         assertEquals(ScrollAction.ANIMATE, resolveReturnScrollAction(isFirstLayout = false, isReturningFromTab = false))
     }
+
+    // Section C tests: tab ready check & scroll step resolution (C1 - C4)
+    @Test
+    fun tabReadyToScrollImmediatelyDuringEnterTransition() {
+        assertTrue(isLyricsTabReadyToScroll(showLyrics = true, lyricsMode = true))
+        assertFalse(isLyricsTabReadyToScroll(showLyrics = true, lyricsMode = false))
+        assertFalse(isLyricsTabReadyToScroll(showLyrics = false, lyricsMode = true))
+        assertFalse(isLyricsTabReadyToScroll(showLyrics = false, lyricsMode = false))
+    }
+
+    @Test
+    fun firstEntryInCompositionAlwaysSnaps() {
+        // Initial layout (lastScrolledIndex == -1)
+        assertEquals(
+            ScrollAction.SNAP,
+            resolveLyricsScrollStep(
+                isFirstEntryInComposition = true,
+                activeIndex = 5,
+                lastScrolledIndex = -1,
+                isTargetItemVisible = false,
+            ),
+        )
+        // Returning from tab (lastScrolledIndex >= 0, lineDistance in 1..10)
+        assertEquals(
+            ScrollAction.SNAP,
+            resolveLyricsScrollStep(
+                isFirstEntryInComposition = true,
+                activeIndex = 6,
+                lastScrolledIndex = 5,
+                isTargetItemVisible = true,
+            ),
+        )
+        // Returning from tab when activeIndex == lastScrolledIndex
+        assertEquals(
+            ScrollAction.SNAP,
+            resolveLyricsScrollStep(
+                isFirstEntryInComposition = true,
+                activeIndex = 5,
+                lastScrolledIndex = 5,
+                isTargetItemVisible = true,
+            ),
+        )
+        // Negative activeIndex returns null
+        assertEquals(
+            null,
+            resolveLyricsScrollStep(
+                isFirstEntryInComposition = true,
+                activeIndex = -1,
+                lastScrolledIndex = 5,
+                isTargetItemVisible = true,
+            ),
+        )
+    }
+
+    @Test
+    fun steadyStateConsecutiveAnimatesAndFarJumpSnaps() {
+        // Consecutive line advancement with target visible -> ANIMATE
+        assertEquals(
+            ScrollAction.ANIMATE,
+            resolveLyricsScrollStep(
+                isFirstEntryInComposition = false,
+                activeIndex = 6,
+                lastScrolledIndex = 5,
+                isTargetItemVisible = true,
+            ),
+        )
+        // Consecutive line advancement but target item not visible -> SNAP
+        assertEquals(
+            ScrollAction.SNAP,
+            resolveLyricsScrollStep(
+                isFirstEntryInComposition = false,
+                activeIndex = 6,
+                lastScrolledIndex = 5,
+                isTargetItemVisible = false,
+            ),
+        )
+        // Far jump (distance > 10) -> SNAP
+        assertEquals(
+            ScrollAction.SNAP,
+            resolveLyricsScrollStep(
+                isFirstEntryInComposition = false,
+                activeIndex = 20,
+                lastScrolledIndex = 5,
+                isTargetItemVisible = true,
+            ),
+        )
+        // Same line in steady state -> null (no scroll)
+        assertEquals(
+            null,
+            resolveLyricsScrollStep(
+                isFirstEntryInComposition = false,
+                activeIndex = 5,
+                lastScrolledIndex = 5,
+                isTargetItemVisible = true,
+            ),
+        )
+        // Negative activeIndex -> null
+        assertEquals(
+            null,
+            resolveLyricsScrollStep(
+                isFirstEntryInComposition = false,
+                activeIndex = -1,
+                lastScrolledIndex = 5,
+                isTargetItemVisible = true,
+            ),
+        )
+    }
 }

@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -85,6 +86,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
@@ -641,7 +643,7 @@ fun NowPlayingScreen(
                 }
             }
             } else {
-                val isTabActive = showLyrics && lyricsMode && !transition.isRunning
+                val isTabActive = isLyricsTabReadyToScroll(showLyrics, lyricsMode)
                 val isLeaving = !lyricsMode || dragOffset.value > 0f
                 LyricsPanel(
                     lyricsVm = lyricsVm,
@@ -651,6 +653,7 @@ fun NowPlayingScreen(
                     lazyListState = lyricsLazyListState,
                     plainScrollState = plainLyricsScrollState,
                     onSearchAgain = { lyricsVm.searchAgain(current) },
+                    settings = lyricsSettings,
                     isTabActive = isTabActive,
                     isLeaving = isLeaving,
                     lastScrolledIndex = lastScrolledLyricsIndex,
@@ -1138,13 +1141,13 @@ private fun LyricsPanel(
     plainScrollState: ScrollState,
     onSearchAgain: () -> Unit,
     modifier: Modifier = Modifier,
+    settings: com.feishin.mobile.data.settings.SettingsStore.Settings? = null,
     isTabActive: Boolean = true,
     isLeaving: Boolean = false,
     lastScrolledIndex: Int = -1,
     onUpdateLastScrolledIndex: (Int) -> Unit = {},
 ) {
     val ui by lyricsVm.ui.collectAsStateWithLifecycle()
-    val settings by lyricsVm.settings.flow.collectAsStateWithLifecycle(initialValue = null)
     val s = settings
 
     val ctx = LocalContext.current
@@ -1325,42 +1328,62 @@ private fun SyncedLyricsList(
         }
     }
 
+    var isFirstEntry by remember { mutableStateOf(true) }
+    var isInitialSnapComplete by remember { mutableStateOf(!autoScroll || activeIndex < 0 || lyrics.lines.isEmpty()) }
+
+    LaunchedEffect(Unit) {
+        delay(500L)
+        isInitialSnapComplete = true
+    }
+
     LaunchedEffect(activeIndex, isTabActive, isLeaving, userScrolledAway, autoScroll) {
         if (!shouldRunLyricsScroll(isTabActive, isLeaving, userScrolledAway) || activeIndex < 0 || !autoScroll) {
+            if (!autoScroll || activeIndex < 0) {
+                isInitialSnapComplete = true
+            }
             return@LaunchedEffect
         }
         val viewport = listState.layoutInfo.let { it.viewportEndOffset - it.viewportStartOffset }
         val viewportHeight = if (viewport > 0) viewport else {
-            snapshotFlow { listState.layoutInfo.let { it.viewportEndOffset - it.viewportStartOffset } }.filter { it > 0 }.first()
+            withTimeoutOrNull(400L) {
+                snapshotFlow { listState.layoutInfo.let { it.viewportEndOffset - it.viewportStartOffset } }
+                    .filter { it > 0 }
+                    .first()
+            } ?: listState.layoutInfo.let { it.viewportEndOffset - it.viewportStartOffset }.takeIf { it > 0 } ?: with(density) { 600.dp.roundToPx() }
         }
         val targetScrollOffset = computeLyricsScrollOffset(viewportHeight, contentPaddingTopPx, 0.35f)
 
-        // 1. If active line has not changed since the last scroll and user didn't scroll away, do not touch listState!
-        if (activeIndex == lastScrolledIndex) {
-            return@LaunchedEffect
-        }
-
-        val lineDistance = if (lastScrolledIndex >= 0) activeIndex - lastScrolledIndex else 100
-        val isConsecutive = lineDistance in 1..10
         val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
+        val action = resolveLyricsScrollStep(isFirstEntry, activeIndex, lastScrolledIndex, itemInfo != null)
 
-        if (isConsecutive && itemInfo != null) {
-            // Normal sequential auto-scroll
-            val delta = computeLyricsScrollDelta(itemInfo.offset, viewportHeight, 0.35f)
-            if (kotlin.math.abs(delta) > 1f) {
-                listState.animateScrollBy(
-                    value = delta,
-                    animationSpec = androidx.compose.animation.core.tween(
-                        durationMillis = computeScrollDurationMs(lineDistance),
-                        easing = androidx.compose.animation.core.FastOutSlowInEasing,
-                    ),
-                )
+        when (action) {
+            ScrollAction.SNAP -> {
+                listState.scrollToItem(activeIndex, targetScrollOffset)
+                isFirstEntry = false
+                isInitialSnapComplete = true
+                onUpdateLastScrolledIndex(activeIndex)
             }
-        } else {
-            // Initial load, seek jump, or re-entry after active line changed while away
-            listState.scrollToItem(activeIndex, targetScrollOffset)
+            ScrollAction.ANIMATE -> {
+                if (itemInfo != null) {
+                    val delta = computeLyricsScrollDelta(itemInfo.offset, viewportHeight, 0.35f)
+                    if (kotlin.math.abs(delta) > 1f) {
+                        listState.animateScrollBy(
+                            value = delta,
+                            animationSpec = androidx.compose.animation.core.tween(
+                                durationMillis = computeScrollDurationMs(activeIndex - lastScrolledIndex),
+                                easing = androidx.compose.animation.core.FastOutSlowInEasing,
+                            ),
+                        )
+                    }
+                }
+                isFirstEntry = false
+                isInitialSnapComplete = true
+                onUpdateLastScrolledIndex(activeIndex)
+            }
+            null -> {
+                isInitialSnapComplete = true
+            }
         }
-        onUpdateLastScrolledIndex(activeIndex)
     }
 
     val coroutineScope = rememberCoroutineScope()
@@ -1368,7 +1391,9 @@ private fun SyncedLyricsList(
     Box(modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = if (isInitialSnapComplete) 1f else 0f },
             contentPadding = PaddingValues(start = 24.dp, top = 32.dp, end = 24.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(LyricsDisplayTokens.lineGap(settings?.lyricsLineGapPercent ?: 100)),
         ) {
@@ -1390,7 +1415,7 @@ private fun SyncedLyricsList(
                 val d = if (activeIndex >= 0) kotlin.math.abs(i - activeIndex) else 3
                 val animatedAlpha by animateFloatAsState(
                     targetValue = LyricsDisplayTokens.alphaForDistance(d),
-                    animationSpec = androidx.compose.animation.core.tween(
+                    animationSpec = if (isFirstEntry) snap() else androidx.compose.animation.core.tween(
                         durationMillis = LyricsDisplayTokens.AnimationDurationMs,
                         easing = androidx.compose.animation.core.FastOutSlowInEasing,
                     ),
@@ -1398,7 +1423,7 @@ private fun SyncedLyricsList(
                 )
                 val animatedScale by animateFloatAsState(
                     targetValue = if (active) LyricsDisplayTokens.ActiveScale else 1.0f,
-                    animationSpec = androidx.compose.animation.core.tween(
+                    animationSpec = if (isFirstEntry) snap() else androidx.compose.animation.core.tween(
                         durationMillis = LyricsDisplayTokens.AnimationDurationMs,
                         easing = androidx.compose.animation.core.FastOutSlowInEasing,
                     ),
@@ -1450,7 +1475,7 @@ private fun SyncedLyricsList(
                     if (romanize && com.feishin.mobile.data.lyrics.Romanizer.hasRomanizableScript(line.text) && !line.romanizedText.isNullOrBlank()) {
                         val romAlpha by animateFloatAsState(
                             targetValue = LyricsDisplayTokens.romajiAlpha(LyricsDisplayTokens.alphaForDistance(d), active),
-                            animationSpec = androidx.compose.animation.core.tween(
+                            animationSpec = if (isFirstEntry) snap() else androidx.compose.animation.core.tween(
                                 durationMillis = LyricsDisplayTokens.AnimationDurationMs,
                                 easing = androidx.compose.animation.core.FastOutSlowInEasing,
                             ),
