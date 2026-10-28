@@ -109,6 +109,11 @@ class PlayerService : MediaLibraryService() {
         java.util.concurrent.ConcurrentHashMap<String, Boolean>(),
     )
 
+    /** songId -> retried flag, guarding against infinite network retry loops. */
+    private val retriedMediaIds = java.util.Collections.newSetFromMap(
+        java.util.concurrent.ConcurrentHashMap<String, Boolean>(),
+    )
+
     override fun onCreate() {
         super.onCreate()
         VLog.d(TAG, "service onCreate")
@@ -164,6 +169,11 @@ class PlayerService : MediaLibraryService() {
         exo.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val id = mediaItem?.mediaId ?: return
+                // Prune other retried IDs when moving to a different track
+                val old = retriedMediaIds.toSet()
+                for (oldId in old) {
+                    if (oldId != id) retriedMediaIds.remove(oldId)
+                }
                 // "Now playing" scrobble + reset the submission rule for the new track (never for local files).
                 if (!isLocal(mediaItem)) {
                     scope.launch { repo.scrobble(id, submission = false) }
@@ -183,6 +193,9 @@ class PlayerService : MediaLibraryService() {
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) {
+                    player?.currentMediaItem?.mediaId?.let { retriedMediaIds.remove(it) }
+                }
                 pushWidget()
             }
 
@@ -206,12 +219,53 @@ class PlayerService : MediaLibraryService() {
                             p.seekToNextMediaItem()
                             p.prepare()
                             p.play()
+                        } else {
+                            playerManager.notifyPlaybackFailed(item.mediaMetadata.title?.toString())
                         }
                     }
-                } else if (isLocal(item) && p.hasNextMediaItem()) {
-                    p.seekToNextMediaItem()
-                    p.prepare()
-                    p.play()
+                } else if (!isLocal(item)) {
+                    // Case B: Stream URI failed
+                    val uriStr = item.localConfiguration?.uri?.toString().orEmpty()
+                    val key = com.feishin.mobile.core.common.StableCacheKey.keyFor(uriStr)
+                    runCatching { cache.removeResource(key) }
+                    scope.launch { cachedTracks.remove(item.mediaId) }
+
+                    val pos = p.currentPosition
+                    val alreadyRetried = retriedMediaIds.contains(item.mediaId)
+                    if (PlaybackRecovery.shouldRetryFromNetwork(error.errorCode, alreadyRetried)) {
+                        retriedMediaIds.add(item.mediaId)
+                        scope.launch {
+                            val track = TrackMediaItems.toTrack(item)
+                            val qId = TrackMediaItems.queueIdOf(item) ?: -1L
+                            val streamItem = track?.let { resolveTrack(it, qId, forceNetwork = true) }
+                            if (streamItem != null && p.currentMediaItemIndex == idx) {
+                                p.replaceMediaItem(idx, streamItem)
+                                if (pos > 0) p.seekTo(idx, pos)
+                                p.prepare()
+                                p.play()
+                            } else if (p.hasNextMediaItem()) {
+                                p.seekToNextMediaItem()
+                                p.prepare()
+                                p.play()
+                            } else {
+                                playerManager.notifyPlaybackFailed(item.mediaMetadata.title?.toString())
+                            }
+                        }
+                    } else if (p.hasNextMediaItem()) {
+                        p.seekToNextMediaItem()
+                        p.prepare()
+                        p.play()
+                    } else {
+                        playerManager.notifyPlaybackFailed(item.mediaMetadata.title?.toString())
+                    }
+                } else if (isLocal(item)) {
+                    if (p.hasNextMediaItem()) {
+                        p.seekToNextMediaItem()
+                        p.prepare()
+                        p.play()
+                    } else {
+                        playerManager.notifyPlaybackFailed(item.mediaMetadata.title?.toString())
+                    }
                 }
             }
         })
@@ -409,9 +463,13 @@ class PlayerService : MediaLibraryService() {
      * offline with nothing downloaded (the item is then dropped, never a dead
      * entry that errors in the car).
      */
-    private suspend fun resolveTrack(track: Track, queueIdHint: Long = -1L): MediaItem? {
+    private suspend fun resolveTrack(
+        track: Track,
+        queueIdHint: Long = -1L,
+        forceNetwork: Boolean = false,
+    ): MediaItem? {
         val deviceUri = track.localUri
-        val local = if (deviceUri == null) downloads.localFile(track.id) else null
+        val local = if (deviceUri == null && !forceNetwork) downloads.localFile(track.id) else null
         val uriStr = deviceUri ?: if (local != null) {
             PlaybackSource.localUri(local.absolutePath)
         } else {

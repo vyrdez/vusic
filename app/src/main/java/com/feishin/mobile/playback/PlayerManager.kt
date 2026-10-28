@@ -8,6 +8,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -79,6 +80,7 @@ class PlayerManager @Inject constructor(
     private val prefetch: PrefetchManager,
     private val cachedTracks: com.feishin.mobile.data.cache.CachedTrackStore,
     private val streamCache: androidx.media3.datasource.cache.SimpleCache,
+    private val messenger: com.feishin.mobile.ui.components.UiMessenger,
 ) {
     // MUST stay on Dispatchers.Main: every command here (setMediaItems, seekTo,
     // play, currentPosition, ...) touches the MediaController, which throws
@@ -279,6 +281,13 @@ class PlayerManager @Inject constructor(
 
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     if (playbackState != Player.STATE_IDLE) _isPlaying.value = c.isPlaying
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    VLog.w(TAG, "onPlayerError: ${error.message}", error)
+                    if (c.playbackState == Player.STATE_IDLE && !c.hasNextMediaItem()) {
+                        notifyPlaybackFailed(_current.value?.title)
+                    }
                 }
             })
             if (c.mediaItemCount > 0) {
@@ -1070,10 +1079,17 @@ class PlayerManager @Inject constructor(
         scope.launch { settings.setNowPlayingLyricsMode(false) }
     }
 
+    fun notifyPlaybackFailed(songTitle: String? = null) {
+        val title = songTitle ?: _current.value?.title
+        val message = if (!title.isNullOrBlank()) "Playback failed: $title" else "Playback failed"
+        messenger.show(message)
+    }
+
     fun playAt(index: Int) {
         val c = controller ?: return
         if (index in _queue.value.indices) {
             c.seekTo(index, 0)
+            if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
             c.play()
             _currentIndex.value = index
             _current.value = _queue.value[index].song
@@ -1088,6 +1104,7 @@ class PlayerManager @Inject constructor(
             if (c.isPlaying || c.playWhenReady) {
                 c.pause()
             } else {
+                if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
                 c.play()
             }
             return
@@ -1095,6 +1112,7 @@ class PlayerManager @Inject constructor(
         val index = _queue.value.indexOfFirst { it.queueId == queueId }
         if (index >= 0) {
             c.seekTo(index, 0L)
+            if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
             c.play()
             _currentIndex.value = index
             _current.value = _queue.value[index].song
@@ -1106,7 +1124,12 @@ class PlayerManager @Inject constructor(
 
     fun togglePlayPause() {
         val c = controller ?: return
-        if (c.isPlaying) c.pause() else c.play()
+        if (c.isPlaying) {
+            c.pause()
+        } else {
+            if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
+            c.play()
+        }
     }
 
     fun pause() {
@@ -1123,7 +1146,9 @@ class PlayerManager @Inject constructor(
     @Volatile private var gaplessEnabled: Boolean = true
 
     fun resume() {
-        controller?.play()
+        val c = controller ?: return
+        if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
+        c.play()
     }
 
     fun skipToNext() = controller?.seekToNextMediaItem()

@@ -215,11 +215,30 @@ class PrefetchManager @Inject constructor(
                 .setCache(cache)
                 .setUpstreamDataSourceFactory { upstream }
                 .setCacheKeyFactory { spec -> StableCacheKey.keyFor(spec.uri.toString()) }
+                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
                 .createDataSource()
             val writer = CacheWriter(cds, dataSpec, ByteArray(DEFAULT_BUFFER), null)
             // Returns only once EOF is reached: the song is whole.
             writer.cache()
             val bytes = runCatching { cache.getCachedBytes(key, 0L, Long.MAX_VALUE) }.getOrDefault(0L)
+            val headerBytes = runCatching {
+                cache.getCachedSpans(key).firstOrNull()?.file?.let { f ->
+                    if (f.exists()) {
+                        f.inputStream().use { input ->
+                            val buf = ByteArray(512)
+                            val read = input.read(buf)
+                            if (read > 0) buf.copyOf(read) else null
+                        }
+                    } else null
+                }
+            }.getOrNull()
+
+            if (PlaybackRecovery.isInvalidCachedPayload(bytes, headerBytes)) {
+                runCatching { cache.removeResource(key) }
+                VLog.w(TAG, "prefetch rejected corrupt or error body song=${track.id} key=$key bytes=$bytes")
+                return
+            }
+
             cachedTracks.recordCached(track, key, bytes)
             VLog.d(TAG, "prefetch complete song=${track.id} key=$key bytes=$bytes")
         } catch (e: Exception) {
