@@ -2172,5 +2172,935 @@
     "seen": 1793152989.3975976,
     "ast_hash": "83dc66240afaed8e01bb4f68fc80861f",
     "semantic_hash": "83dc66240afaed8e01bb4f68fc80861f"
+  },
+  ".agent/skills/android-benchmark-comparison/SKILL.md": {
+    "mtime": 1792652887.6046867,
+    "seen": 1793153426.472617,
+    "ast_hash": "7b3744217d4874be3b53c75bcfce0a82",
+    "semantic_hash": ""
+  },
+  ".agent/skills/anr-audit-and-fix/SKILL.md": {
+    "mtime": 1792652773.349767,
+    "seen": 1793153426.4726207,
+    "ast_hash": "b2cd50a4df0ab7542b3799defb839294",
+    "semantic_hash": ""
+  },
+  ".agent/skills/anr-audit-and-fix/references/anr_trace_report_template.md": {
+    "mtime": 1792652773.351276,
+    "seen": 1793153426.472623,
+    "ast_hash": "b93cc9e3e93cdb9b1189a69a41083c24",
+    "semantic_hash": ""
+  },
+  ".agent/skills/anr-audit-and-fix/references/risk_analysis_guide.md": {
+    "mtime": 1792652773.3517766,
+    "seen": 1793153426.4726245,
+    "ast_hash": "d8417255690265e6ec490eb40acbd574",
+    "semantic_hash": ""
+  },
+  ".agent/skills/anr-audit-and-fix/references/trace_analysis_guide.md": {
+    "mtime": 1792652773.3522809,
+    "seen": 1793153426.4726267,
+    "ast_hash": "2f8fed28aa05f078334d38b1adcb4814",
+    "semantic_hash": ""
+  },
+  ".agent/skills/brand-identity/SKILL.md": {
+    "mtime": 1792652671.4296932,
+    "seen": 1793153426.4726286,
+    "ast_hash": "9aa167ea9ef54a13502d34e84b985fe1",
+    "semantic_hash": ""
+  },
+  ".agent/skills/brand-identity/resources/tech-stack.md": {
+    "mtime": 1792652671.4500833,
+    "seen": 1793153426.4726303,
+    "ast_hash": "a3f7ca9f5dd157fe9c7e5d46a73b7ae3",
+    "semantic_hash": ""
+  },
+  ".agent/skills/brand-identity/resources/voice-tone.md": {
+    "mtime": 1792652671.4516027,
+    "seen": 1793153426.4726322,
+    "ast_hash": "02c3d10f418d4eb5af6cfba775659333",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-animations/SKILL.md": {
+    "mtime": 1792652887.6056862,
+    "seen": 1793153426.4726338,
+    "ast_hash": "e8a024651ab2c4c2c0bc82432b022051",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-animations/references/animated-content.md": {
+    "mtime": 1792652887.6061864,
+    "seen": 1793153426.4726362,
+    "ast_hash": "15aa5caccb85034ec96dc8360f91b956",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-component-design/SKILL.md": {
+    "mtime": 1792652887.6071868,
+    "seen": 1793153426.472638,
+    "ast_hash": "91ecc6cb60997f00e38dade2155a8dfc",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-component-design/references/modifier-layout.md": {
+    "mtime": 1792652887.6081867,
+    "seen": 1793153426.4726396,
+    "ast_hash": "9b1852cab9d59ee08bd58d7436223d0e",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-component-design/references/slot-apis.md": {
+    "mtime": 1792652887.6086867,
+    "seen": 1793153426.4726415,
+    "ast_hash": "ab04c233343a11a61a48cb9fac22883c",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-focus-navigation/SKILL.md": {
+    "mtime": 1792652887.6096869,
+    "seen": 1793153426.4726439,
+    "ast_hash": "ea482e77accfed7aa65cabe01160e768",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-performance/SKILL.md": {
+    "mtime": 1792652887.6101863,
+    "seen": 1793153426.4726455,
+    "ast_hash": "85c9f3b99ad81d10fcb9f5137ec6fd70",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-performance/references/composition-contracts.md": {
+    "mtime": 1792652887.6122065,
+    "seen": 1793153426.4726474,
+    "ast_hash": "a2efc67027575d47859fccb499eb70b8",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-performance/references/deferred-reads.md": {
+    "mtime": 1792652887.6127062,
+    "seen": 1793153426.4726496,
+    "ast_hash": "6b6de796f79bb2dd6b8dfebf4e5917f8",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-performance/references/diagnosis.md": {
+    "mtime": 1792652887.6137066,
+    "seen": 1793153426.4726512,
+    "ast_hash": "3ce7f86f63bcc2b918aff1a9de7057f6",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-performance/references/stability.md": {
+    "mtime": 1792652887.6147048,
+    "seen": 1793153426.472653,
+    "ast_hash": "ddeb8e40c4a8e83d876ec533efcb84d8",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-state-and-effects/SKILL.md": {
+    "mtime": 1792652887.6162019,
+    "seen": 1793153426.4726548,
+    "ast_hash": "17d46c878e92cce88accba6cac9e7b66",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-state-and-effects/references/local-state.md": {
+    "mtime": 1792652887.617203,
+    "seen": 1793153426.4726567,
+    "ast_hash": "0303360679e7253e394da470487bb9b5",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-state-and-effects/references/side-effects.md": {
+    "mtime": 1792652887.6182034,
+    "seen": 1793153426.4726582,
+    "ast_hash": "9ca3cbb372fb1cbca8d1b07e73bddb50",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-state-and-effects/references/state-hoisting.md": {
+    "mtime": 1792652887.6187038,
+    "seen": 1793153426.4726598,
+    "ast_hash": "9f5ae488c4253b148b2f714a7703c196",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-styles/SKILL.md": {
+    "mtime": 1792652969.0678322,
+    "seen": 1793153426.4726613,
+    "ast_hash": "3cc8b6247eed078470b50f237535a0ed",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-styles/references/android/develop/ui/compose/designsystems/custom.md": {
+    "mtime": 1792652773.3070612,
+    "seen": 1793153426.4726627,
+    "ast_hash": "53318e438ee283313a9e0200fc2a5913",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-styles/references/android/develop/ui/compose/styles/fundamentals.md": {
+    "mtime": 1792652773.308573,
+    "seen": 1793153426.4726648,
+    "ast_hash": "8af340403871f496a6ac57cab46eae73",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-styles/references/android/develop/ui/compose/styles/state-animations.md": {
+    "mtime": 1792652773.308573,
+    "seen": 1793153426.4726667,
+    "ast_hash": "4a18f0ea42e96bb4b2177b99e6ebdf99",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-styles/references/android/develop/ui/compose/styles/styles-vs-modifiers.md": {
+    "mtime": 1792652773.3095782,
+    "seen": 1793153426.4726684,
+    "ast_hash": "f8eae8133984689d352e4a76fd1f8ac3",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-styles/references/android/develop/ui/compose/styles/theming.md": {
+    "mtime": 1792652773.3095782,
+    "seen": 1793153426.4726703,
+    "ast_hash": "2ac42f4bac5a644e36a06a8f2a0a541e",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-ui-testing-patterns/SKILL.md": {
+    "mtime": 1792652887.6197045,
+    "seen": 1793153426.472672,
+    "ast_hash": "1840a92f2f2d3b89956d42d6156b8abe",
+    "semantic_hash": ""
+  },
+  ".agent/skills/compose-ui-testing-patterns/references/interaction-state.md": {
+    "mtime": 1792652887.6207035,
+    "seen": 1793153426.472674,
+    "ast_hash": "a743cbf4bff191a62d82e7850c9785b0",
+    "semantic_hash": ""
+  },
+  ".agent/skills/design-md/README.md": {
+    "mtime": 1792652671.4132156,
+    "seen": 1793153426.4726753,
+    "ast_hash": "1935631d1b4b1688ea04d813b5d2b3f1",
+    "semantic_hash": ""
+  },
+  ".agent/skills/design-md/SKILL.md": {
+    "mtime": 1792652671.431205,
+    "seen": 1793153426.4726768,
+    "ast_hash": "4b266b875f3395ac7f4ca794d6cab5f6",
+    "semantic_hash": ""
+  },
+  ".agent/skills/design-md/examples/DESIGN.md": {
+    "mtime": 1792652671.4041562,
+    "seen": 1793153426.4726787,
+    "ast_hash": "40dd3711ad93801345ba8d0317feb28b",
+    "semantic_hash": ""
+  },
+  ".agent/skills/enhance-prompt/README.md": {
+    "mtime": 1792652671.4147346,
+    "seen": 1793153426.4726803,
+    "ast_hash": "97e41614fb6390ce873689cd9065d409",
+    "semantic_hash": ""
+  },
+  ".agent/skills/enhance-prompt/SKILL.md": {
+    "mtime": 1792652671.4327137,
+    "seen": 1793153426.4726822,
+    "ast_hash": "6b8d09d5631e94be48010ba277c1b5ce",
+    "semantic_hash": ""
+  },
+  ".agent/skills/enhance-prompt/references/KEYWORDS.md": {
+    "mtime": 1792652671.4061801,
+    "seen": 1793153426.4726841,
+    "ast_hash": "d7ff2f16f32d39ff2d9a2cbb825f45d1",
+    "semantic_hash": ""
+  },
+  ".agent/skills/error-handling-patterns/SKILL.md": {
+    "mtime": 1792652671.4357347,
+    "seen": 1793153426.4726858,
+    "ast_hash": "5cd5d7c322520d522782a5156659855e",
+    "semantic_hash": ""
+  },
+  ".agent/skills/glance-canonical-layouts/SKILL.md": {
+    "mtime": 1792652773.4387589,
+    "seen": 1793153426.4726872,
+    "ast_hash": "faf72166f9af0a4c27091aac276575d9",
+    "semantic_hash": ""
+  },
+  ".agent/skills/gradle-run/SKILL.md": {
+    "mtime": 1792652887.6297176,
+    "seen": 1793153426.4726892,
+    "ast_hash": "6573fa25410ec7fb530cc1b288c96b85",
+    "semantic_hash": ""
+  },
+  ".agent/skills/gradle-run/references/subagent-selection.md": {
+    "mtime": 1792652887.6312177,
+    "seen": 1793153426.4726913,
+    "ast_hash": "8e247b46b1236e8e958621e7121fc10c",
+    "semantic_hash": ""
+  },
+  ".agent/skills/jetpack-compose-performance/SKILL.md": {
+    "mtime": 1792652773.2842941,
+    "seen": 1793153426.472693,
+    "ast_hash": "c7ae48e3f8b3745ce69e2a41fe6c9e1e",
+    "semantic_hash": ""
+  },
+  ".agent/skills/jetpack-compose-performance/references/android/develop/ui/compose/custom-modifiers.md": {
+    "mtime": 1792652773.287255,
+    "seen": 1793153426.4726949,
+    "ast_hash": "20943d75c23d9c11a34968359c0bab1c",
+    "semantic_hash": ""
+  },
+  ".agent/skills/jetpack-compose-performance/references/android/develop/ui/compose/performance/backwards-write.md": {
+    "mtime": 1792652773.28826,
+    "seen": 1793153426.4726965,
+    "ast_hash": "a0a598eeff09edaa8ca50f163d39f658",
+    "semantic_hash": ""
+  },
+  ".agent/skills/jetpack-compose-performance/references/android/develop/ui/compose/performance/stability/strongskipping.md": {
+    "mtime": 1792652773.2887669,
+    "seen": 1793153426.4726987,
+    "ast_hash": "32305987dbcac836c32d2196eca3cde9",
+    "semantic_hash": ""
+  },
+  ".agent/skills/jetpack-compose-performance/references/animation.md": {
+    "mtime": 1792652773.2897713,
+    "seen": 1793153426.4727,
+    "ast_hash": "7d3769b9902705de6c3d8b047cc40b48",
+    "semantic_hash": ""
+  },
+  ".agent/skills/jetpack-compose-performance/references/effects-and-threading.md": {
+    "mtime": 1792652773.2902775,
+    "seen": 1793153426.472702,
+    "ast_hash": "9d82a37d0ecbe7d47a451f4fe2f62580",
+    "semantic_hash": ""
+  },
+  ".agent/skills/jetpack-compose-performance/references/graphics-performance.md": {
+    "mtime": 1792652773.2907798,
+    "seen": 1793153426.4727035,
+    "ast_hash": "b1a66d3922c8eaa0df3fa626c4f9e4ba",
+    "semantic_hash": ""
+  },
+  ".agent/skills/jetpack-compose-performance/references/layouts.md": {
+    "mtime": 1792652773.291286,
+    "seen": 1793153426.4727051,
+    "ast_hash": "d7fd32debb0ec818e19841b1d1a0a0ec",
+    "semantic_hash": ""
+  },
+  ".agent/skills/jetpack-compose-performance/references/lazy-layouts.md": {
+    "mtime": 1792652773.2922912,
+    "seen": 1793153426.4727068,
+    "ast_hash": "fc5943d9e9a55f6fc8763f11be53b11a",
+    "semantic_hash": ""
+  },
+  ".agent/skills/jetpack-compose-performance/references/state-and-stability.md": {
+    "mtime": 1792652773.2922912,
+    "seen": 1793153426.472709,
+    "ast_hash": "55f4f757a10a1483c2c727785ce6638d",
+    "semantic_hash": ""
+  },
+  ".agent/skills/kotlin-api-design/SKILL.md": {
+    "mtime": 1792652887.6412392,
+    "seen": 1793153426.4727106,
+    "ast_hash": "861e0bc4839e460cd2872a4b6c2edf50",
+    "semantic_hash": ""
+  },
+  ".agent/skills/kotlin-api-design/references/functions.md": {
+    "mtime": 1792652887.642244,
+    "seen": 1793153426.4727128,
+    "ast_hash": "b5e9e2d4692382394b41296fa7c159d1",
+    "semantic_hash": ""
+  },
+  ".agent/skills/kotlin-api-design/references/multiplatform-boundaries.md": {
+    "mtime": 1792652887.6427495,
+    "seen": 1793153426.4727144,
+    "ast_hash": "73f614bb89f112b8cb9ff872e6907d88",
+    "semantic_hash": ""
+  },
+  ".agent/skills/kotlin-api-design/references/value-classes.md": {
+    "mtime": 1792652887.6432514,
+    "seen": 1793153426.4727163,
+    "ast_hash": "796e2072783121e6d65824e0f8dc8785",
+    "semantic_hash": ""
+  },
+  ".agent/skills/kotlin-concurrency-and-flow/SKILL.md": {
+    "mtime": 1792652887.6452508,
+    "seen": 1793153426.4727178,
+    "ast_hash": "5c5b05ecc09b039b6ecd27f5811c6c38",
+    "semantic_hash": ""
+  },
+  ".agent/skills/kotlin-concurrency-and-flow/references/flow-state-events.md": {
+    "mtime": 1792652887.6462507,
+    "seen": 1793153426.4727197,
+    "ast_hash": "872ba883ec2e66f0bcf7b52e3419027f",
+    "semantic_hash": ""
+  },
+  ".agent/skills/kotlin-concurrency-and-flow/references/structured-concurrency.md": {
+    "mtime": 1792652887.646751,
+    "seen": 1793153426.472721,
+    "ast_hash": "8dc229b0f1a7d8f39c1f13aa20311e80",
+    "semantic_hash": ""
+  },
+  ".agent/skills/media3-cast-integration/SKILL.md": {
+    "mtime": 1792652773.3121092,
+    "seen": 1793153426.472723,
+    "ast_hash": "fdd341d341d956f760a75a4fa23400bf",
+    "semantic_hash": ""
+  },
+  ".agent/skills/media3-cast-integration/references/android/media/media3/cast/create-castplayer.md": {
+    "mtime": 1792652773.3151386,
+    "seen": 1793153426.4727244,
+    "ast_hash": "e280a3772746995ab4cf1172cde1ee8b",
+    "semantic_hash": ""
+  },
+  ".agent/skills/media3-cast-integration/references/android/media/media3/cast/customize-castoptions.md": {
+    "mtime": 1792652773.3156447,
+    "seen": 1793153426.472726,
+    "ast_hash": "eceef2f163e1e684ff709bc3257cf421",
+    "semantic_hash": ""
+  },
+  ".agent/skills/media3-cast-integration/references/android/media/media3/cast/index.md": {
+    "mtime": 1792652773.3161473,
+    "seen": 1793153426.4727275,
+    "ast_hash": "7d90086611bfde039b062f312daad425",
+    "semantic_hash": ""
+  },
+  ".agent/skills/reviewing-code/SKILL.md": {
+    "mtime": 1792652671.443037,
+    "seen": 1793153426.4727292,
+    "ast_hash": "9dba4b2b1e1d6c9614479eed31649ba3",
+    "semantic_hash": ""
+  },
+  ".agent/skills/token-efficiency/CORE.md": {
+    "mtime": 1792652828.8163188,
+    "seen": 1793153426.4727309,
+    "ast_hash": "187cc7d852d3dc93109ad0be72a2c940",
+    "semantic_hash": ""
+  },
+  ".agent/skills/token-efficiency/SKILL.md": {
+    "mtime": 1792652828.8168113,
+    "seen": 1793153426.4727323,
+    "ast_hash": "88442bd773764712d6213349fe6b3899",
+    "semantic_hash": ""
+  },
+  ".agents/skills/android-benchmark-comparison/SKILL.md": {
+    "mtime": 1792652887.6046867,
+    "seen": 1793153426.4727345,
+    "ast_hash": "7b3744217d4874be3b53c75bcfce0a82",
+    "semantic_hash": ""
+  },
+  ".agents/skills/anr-audit-and-fix/SKILL.md": {
+    "mtime": 1792652773.349767,
+    "seen": 1793153426.472736,
+    "ast_hash": "b2cd50a4df0ab7542b3799defb839294",
+    "semantic_hash": ""
+  },
+  ".agents/skills/anr-audit-and-fix/references/anr_trace_report_template.md": {
+    "mtime": 1792652773.351276,
+    "seen": 1793153426.4727378,
+    "ast_hash": "b93cc9e3e93cdb9b1189a69a41083c24",
+    "semantic_hash": ""
+  },
+  ".agents/skills/anr-audit-and-fix/references/risk_analysis_guide.md": {
+    "mtime": 1792652773.3517766,
+    "seen": 1793153426.4727392,
+    "ast_hash": "d8417255690265e6ec490eb40acbd574",
+    "semantic_hash": ""
+  },
+  ".agents/skills/anr-audit-and-fix/references/trace_analysis_guide.md": {
+    "mtime": 1792652773.3522809,
+    "seen": 1793153426.472741,
+    "ast_hash": "2f8fed28aa05f078334d38b1adcb4814",
+    "semantic_hash": ""
+  },
+  ".agents/skills/brand-identity/SKILL.md": {
+    "mtime": 1792652671.4296932,
+    "seen": 1793153426.4727423,
+    "ast_hash": "9aa167ea9ef54a13502d34e84b985fe1",
+    "semantic_hash": ""
+  },
+  ".agents/skills/brand-identity/resources/tech-stack.md": {
+    "mtime": 1792652671.4500833,
+    "seen": 1793153426.4727442,
+    "ast_hash": "a3f7ca9f5dd157fe9c7e5d46a73b7ae3",
+    "semantic_hash": ""
+  },
+  ".agents/skills/brand-identity/resources/voice-tone.md": {
+    "mtime": 1792652671.4516027,
+    "seen": 1793153426.4727461,
+    "ast_hash": "02c3d10f418d4eb5af6cfba775659333",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-animations/SKILL.md": {
+    "mtime": 1792652887.6056862,
+    "seen": 1793153426.4727478,
+    "ast_hash": "e8a024651ab2c4c2c0bc82432b022051",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-animations/references/animated-content.md": {
+    "mtime": 1792652887.6061864,
+    "seen": 1793153426.4727497,
+    "ast_hash": "15aa5caccb85034ec96dc8360f91b956",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-component-design/SKILL.md": {
+    "mtime": 1792652887.6071868,
+    "seen": 1793153426.4727516,
+    "ast_hash": "91ecc6cb60997f00e38dade2155a8dfc",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-component-design/references/modifier-layout.md": {
+    "mtime": 1792652887.6081867,
+    "seen": 1793153426.4727535,
+    "ast_hash": "9b1852cab9d59ee08bd58d7436223d0e",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-component-design/references/slot-apis.md": {
+    "mtime": 1792652887.6086867,
+    "seen": 1793153426.4727552,
+    "ast_hash": "ab04c233343a11a61a48cb9fac22883c",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-focus-navigation/SKILL.md": {
+    "mtime": 1792652887.6096869,
+    "seen": 1793153426.4727566,
+    "ast_hash": "ea482e77accfed7aa65cabe01160e768",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-performance/SKILL.md": {
+    "mtime": 1792652887.6101863,
+    "seen": 1793153426.4727585,
+    "ast_hash": "85c9f3b99ad81d10fcb9f5137ec6fd70",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-performance/references/composition-contracts.md": {
+    "mtime": 1792652887.6122065,
+    "seen": 1793153426.47276,
+    "ast_hash": "a2efc67027575d47859fccb499eb70b8",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-performance/references/deferred-reads.md": {
+    "mtime": 1792652887.6127062,
+    "seen": 1793153426.4727619,
+    "ast_hash": "6b6de796f79bb2dd6b8dfebf4e5917f8",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-performance/references/diagnosis.md": {
+    "mtime": 1792652887.6137066,
+    "seen": 1793153426.4727633,
+    "ast_hash": "3ce7f86f63bcc2b918aff1a9de7057f6",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-performance/references/stability.md": {
+    "mtime": 1792652887.6147048,
+    "seen": 1793153426.4727652,
+    "ast_hash": "ddeb8e40c4a8e83d876ec533efcb84d8",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-state-and-effects/SKILL.md": {
+    "mtime": 1792652887.6162019,
+    "seen": 1793153426.4727669,
+    "ast_hash": "17d46c878e92cce88accba6cac9e7b66",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-state-and-effects/references/local-state.md": {
+    "mtime": 1792652887.617203,
+    "seen": 1793153426.4727685,
+    "ast_hash": "0303360679e7253e394da470487bb9b5",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-state-and-effects/references/side-effects.md": {
+    "mtime": 1792652887.6182034,
+    "seen": 1793153426.4727702,
+    "ast_hash": "9ca3cbb372fb1cbca8d1b07e73bddb50",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-state-and-effects/references/state-hoisting.md": {
+    "mtime": 1792652887.6187038,
+    "seen": 1793153426.472772,
+    "ast_hash": "9f5ae488c4253b148b2f714a7703c196",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-styles/SKILL.md": {
+    "mtime": 1792652969.0678322,
+    "seen": 1793153426.4727733,
+    "ast_hash": "3cc8b6247eed078470b50f237535a0ed",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-styles/references/android/develop/ui/compose/designsystems/custom.md": {
+    "mtime": 1792652773.3070612,
+    "seen": 1793153426.4727752,
+    "ast_hash": "53318e438ee283313a9e0200fc2a5913",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-styles/references/android/develop/ui/compose/styles/fundamentals.md": {
+    "mtime": 1792652773.308573,
+    "seen": 1793153426.4727767,
+    "ast_hash": "8af340403871f496a6ac57cab46eae73",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-styles/references/android/develop/ui/compose/styles/state-animations.md": {
+    "mtime": 1792652773.308573,
+    "seen": 1793153426.4727786,
+    "ast_hash": "4a18f0ea42e96bb4b2177b99e6ebdf99",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-styles/references/android/develop/ui/compose/styles/styles-vs-modifiers.md": {
+    "mtime": 1792652773.3095782,
+    "seen": 1793153426.4727802,
+    "ast_hash": "f8eae8133984689d352e4a76fd1f8ac3",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-styles/references/android/develop/ui/compose/styles/theming.md": {
+    "mtime": 1792652773.3095782,
+    "seen": 1793153426.4727821,
+    "ast_hash": "2ac42f4bac5a644e36a06a8f2a0a541e",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-ui-testing-patterns/SKILL.md": {
+    "mtime": 1792652887.6197045,
+    "seen": 1793153426.4727836,
+    "ast_hash": "1840a92f2f2d3b89956d42d6156b8abe",
+    "semantic_hash": ""
+  },
+  ".agents/skills/compose-ui-testing-patterns/references/interaction-state.md": {
+    "mtime": 1792652887.6207035,
+    "seen": 1793153426.4727852,
+    "ast_hash": "a743cbf4bff191a62d82e7850c9785b0",
+    "semantic_hash": ""
+  },
+  ".agents/skills/design-md/README.md": {
+    "mtime": 1792652671.4132156,
+    "seen": 1793153426.4727867,
+    "ast_hash": "1935631d1b4b1688ea04d813b5d2b3f1",
+    "semantic_hash": ""
+  },
+  ".agents/skills/design-md/SKILL.md": {
+    "mtime": 1792652671.431205,
+    "seen": 1793153426.4727883,
+    "ast_hash": "4b266b875f3395ac7f4ca794d6cab5f6",
+    "semantic_hash": ""
+  },
+  ".agents/skills/design-md/examples/DESIGN.md": {
+    "mtime": 1792652671.4041562,
+    "seen": 1793153426.47279,
+    "ast_hash": "40dd3711ad93801345ba8d0317feb28b",
+    "semantic_hash": ""
+  },
+  ".agents/skills/enhance-prompt/README.md": {
+    "mtime": 1792652671.4147346,
+    "seen": 1793153426.4727912,
+    "ast_hash": "97e41614fb6390ce873689cd9065d409",
+    "semantic_hash": ""
+  },
+  ".agents/skills/enhance-prompt/SKILL.md": {
+    "mtime": 1792652671.4327137,
+    "seen": 1793153426.472793,
+    "ast_hash": "6b8d09d5631e94be48010ba277c1b5ce",
+    "semantic_hash": ""
+  },
+  ".agents/skills/enhance-prompt/references/KEYWORDS.md": {
+    "mtime": 1792652671.4061801,
+    "seen": 1793153426.4727948,
+    "ast_hash": "d7ff2f16f32d39ff2d9a2cbb825f45d1",
+    "semantic_hash": ""
+  },
+  ".agents/skills/error-handling-patterns/SKILL.md": {
+    "mtime": 1792652671.4357347,
+    "seen": 1793153426.472797,
+    "ast_hash": "5cd5d7c322520d522782a5156659855e",
+    "semantic_hash": ""
+  },
+  ".agents/skills/glance-canonical-layouts/SKILL.md": {
+    "mtime": 1792652773.4387589,
+    "seen": 1793153426.4727988,
+    "ast_hash": "faf72166f9af0a4c27091aac276575d9",
+    "semantic_hash": ""
+  },
+  ".agents/skills/gradle-run/SKILL.md": {
+    "mtime": 1792652887.6297176,
+    "seen": 1793153426.4728005,
+    "ast_hash": "6573fa25410ec7fb530cc1b288c96b85",
+    "semantic_hash": ""
+  },
+  ".agents/skills/gradle-run/references/subagent-selection.md": {
+    "mtime": 1792652887.6312177,
+    "seen": 1793153426.4728022,
+    "ast_hash": "8e247b46b1236e8e958621e7121fc10c",
+    "semantic_hash": ""
+  },
+  ".agents/skills/jetpack-compose-performance/SKILL.md": {
+    "mtime": 1792652773.2842941,
+    "seen": 1793153426.472804,
+    "ast_hash": "c7ae48e3f8b3745ce69e2a41fe6c9e1e",
+    "semantic_hash": ""
+  },
+  ".agents/skills/jetpack-compose-performance/references/android/develop/ui/compose/custom-modifiers.md": {
+    "mtime": 1792652773.287255,
+    "seen": 1793153426.4728057,
+    "ast_hash": "20943d75c23d9c11a34968359c0bab1c",
+    "semantic_hash": ""
+  },
+  ".agents/skills/jetpack-compose-performance/references/android/develop/ui/compose/performance/backwards-write.md": {
+    "mtime": 1792652773.28826,
+    "seen": 1793153426.472808,
+    "ast_hash": "a0a598eeff09edaa8ca50f163d39f658",
+    "semantic_hash": ""
+  },
+  ".agents/skills/jetpack-compose-performance/references/android/develop/ui/compose/performance/stability/strongskipping.md": {
+    "mtime": 1792652773.2887669,
+    "seen": 1793153426.47281,
+    "ast_hash": "32305987dbcac836c32d2196eca3cde9",
+    "semantic_hash": ""
+  },
+  ".agents/skills/jetpack-compose-performance/references/animation.md": {
+    "mtime": 1792652773.2897713,
+    "seen": 1793153426.4728122,
+    "ast_hash": "7d3769b9902705de6c3d8b047cc40b48",
+    "semantic_hash": ""
+  },
+  ".agents/skills/jetpack-compose-performance/references/effects-and-threading.md": {
+    "mtime": 1792652773.2902775,
+    "seen": 1793153426.4728146,
+    "ast_hash": "9d82a37d0ecbe7d47a451f4fe2f62580",
+    "semantic_hash": ""
+  },
+  ".agents/skills/jetpack-compose-performance/references/graphics-performance.md": {
+    "mtime": 1792652773.2907798,
+    "seen": 1793153426.4728174,
+    "ast_hash": "b1a66d3922c8eaa0df3fa626c4f9e4ba",
+    "semantic_hash": ""
+  },
+  ".agents/skills/jetpack-compose-performance/references/layouts.md": {
+    "mtime": 1792652773.291286,
+    "seen": 1793153426.4728196,
+    "ast_hash": "d7fd32debb0ec818e19841b1d1a0a0ec",
+    "semantic_hash": ""
+  },
+  ".agents/skills/jetpack-compose-performance/references/lazy-layouts.md": {
+    "mtime": 1792652773.2922912,
+    "seen": 1793153426.472822,
+    "ast_hash": "fc5943d9e9a55f6fc8763f11be53b11a",
+    "semantic_hash": ""
+  },
+  ".agents/skills/jetpack-compose-performance/references/state-and-stability.md": {
+    "mtime": 1792652773.2922912,
+    "seen": 1793153426.4728239,
+    "ast_hash": "55f4f757a10a1483c2c727785ce6638d",
+    "semantic_hash": ""
+  },
+  ".agents/skills/kotlin-api-design/SKILL.md": {
+    "mtime": 1792652887.6412392,
+    "seen": 1793153426.4728253,
+    "ast_hash": "861e0bc4839e460cd2872a4b6c2edf50",
+    "semantic_hash": ""
+  },
+  ".agents/skills/kotlin-api-design/references/functions.md": {
+    "mtime": 1792652887.642244,
+    "seen": 1793153426.4728272,
+    "ast_hash": "b5e9e2d4692382394b41296fa7c159d1",
+    "semantic_hash": ""
+  },
+  ".agents/skills/kotlin-api-design/references/multiplatform-boundaries.md": {
+    "mtime": 1792652887.6427495,
+    "seen": 1793153426.4728289,
+    "ast_hash": "73f614bb89f112b8cb9ff872e6907d88",
+    "semantic_hash": ""
+  },
+  ".agents/skills/kotlin-api-design/references/value-classes.md": {
+    "mtime": 1792652887.6432514,
+    "seen": 1793153426.472831,
+    "ast_hash": "796e2072783121e6d65824e0f8dc8785",
+    "semantic_hash": ""
+  },
+  ".agents/skills/kotlin-concurrency-and-flow/SKILL.md": {
+    "mtime": 1792652887.6452508,
+    "seen": 1793153426.4728343,
+    "ast_hash": "5c5b05ecc09b039b6ecd27f5811c6c38",
+    "semantic_hash": ""
+  },
+  ".agents/skills/kotlin-concurrency-and-flow/references/flow-state-events.md": {
+    "mtime": 1792652887.6462507,
+    "seen": 1793153426.472836,
+    "ast_hash": "872ba883ec2e66f0bcf7b52e3419027f",
+    "semantic_hash": ""
+  },
+  ".agents/skills/kotlin-concurrency-and-flow/references/structured-concurrency.md": {
+    "mtime": 1792652887.646751,
+    "seen": 1793153426.4728382,
+    "ast_hash": "8dc229b0f1a7d8f39c1f13aa20311e80",
+    "semantic_hash": ""
+  },
+  ".agents/skills/media3-cast-integration/SKILL.md": {
+    "mtime": 1792652773.3121092,
+    "seen": 1793153426.472841,
+    "ast_hash": "fdd341d341d956f760a75a4fa23400bf",
+    "semantic_hash": ""
+  },
+  ".agents/skills/media3-cast-integration/references/android/media/media3/cast/create-castplayer.md": {
+    "mtime": 1792652773.3151386,
+    "seen": 1793153426.472843,
+    "ast_hash": "e280a3772746995ab4cf1172cde1ee8b",
+    "semantic_hash": ""
+  },
+  ".agents/skills/media3-cast-integration/references/android/media/media3/cast/customize-castoptions.md": {
+    "mtime": 1792652773.3156447,
+    "seen": 1793153426.472845,
+    "ast_hash": "eceef2f163e1e684ff709bc3257cf421",
+    "semantic_hash": ""
+  },
+  ".agents/skills/media3-cast-integration/references/android/media/media3/cast/index.md": {
+    "mtime": 1792652773.3161473,
+    "seen": 1793153426.472847,
+    "ast_hash": "7d90086611bfde039b062f312daad425",
+    "semantic_hash": ""
+  },
+  ".agents/skills/reviewing-code/SKILL.md": {
+    "mtime": 1792652671.443037,
+    "seen": 1793153426.472849,
+    "ast_hash": "9dba4b2b1e1d6c9614479eed31649ba3",
+    "semantic_hash": ""
+  },
+  ".agents/skills/token-efficiency/CORE.md": {
+    "mtime": 1792652828.8163188,
+    "seen": 1793153426.4728508,
+    "ast_hash": "187cc7d852d3dc93109ad0be72a2c940",
+    "semantic_hash": ""
+  },
+  ".agents/skills/token-efficiency/SKILL.md": {
+    "mtime": 1792652828.8168113,
+    "seen": 1793153426.4728527,
+    "ast_hash": "88442bd773764712d6213349fe6b3899",
+    "semantic_hash": ""
+  },
+  ".commandcode/taste/taste.md": {
+    "mtime": 1792722819.850009,
+    "seen": 1793153426.4728549,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "AGENTS.md": {
+    "mtime": 1793152960.7685277,
+    "seen": 1793153426.4728565,
+    "ast_hash": "f36539ecc9af68f33ebd72770ce4a19e",
+    "semantic_hash": ""
+  },
+  "CHANGELOG.md": {
+    "mtime": 1793111670.5570714,
+    "seen": 1793153426.4728584,
+    "ast_hash": "1bb7614f347d1821bedb149b45a0ef6c",
+    "semantic_hash": ""
+  },
+  "GEMINI.md": {
+    "mtime": 1792653151.8133833,
+    "seen": 1793153426.4728599,
+    "ast_hash": "d353b17e3db3e93c6146726864324896",
+    "semantic_hash": ""
+  },
+  "PLAN.md": {
+    "mtime": 1793110662.223319,
+    "seen": 1793153426.472862,
+    "ast_hash": "78f47fe7dcea55a6cef02259bffccdf0",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1793097999.0366569,
+    "seen": 1793153426.472864,
+    "ast_hash": "aa380aa0972829c72e9932f67957df15",
+    "semantic_hash": ""
+  },
+  "SECURITY.md": {
+    "mtime": 1792158009.5338986,
+    "seen": 1793153426.4728656,
+    "ast_hash": "df9767981b5b05dd86716ac7eb284a69",
+    "semantic_hash": ""
+  },
+  "baselineprofile/src/main/baseline-prof.txt": {
+    "mtime": 1792123676.883098,
+    "seen": 1793153426.4728675,
+    "ast_hash": "e240e2175472bc6588f2dc6d2fad06ca",
+    "semantic_hash": ""
+  },
+  "docs/RELEASING.md": {
+    "mtime": 1792158195.3750994,
+    "seen": 1793153426.4728694,
+    "ast_hash": "0e3e00145db11233fcd3e8e3bcf1d33c",
+    "semantic_hash": ""
+  },
+  "docs/perf/after.md": {
+    "mtime": 1792130935.1376636,
+    "seen": 1793153426.4728715,
+    "ast_hash": "362a397098d0a1a50ec6526597dae59d",
+    "semantic_hash": ""
+  },
+  "docs/perf/baseline.md": {
+    "mtime": 1792130515.8396995,
+    "seen": 1793153426.4728732,
+    "ast_hash": "4a1950181de9641653ae4e49c6319f28",
+    "semantic_hash": ""
+  },
+  "docs/perf/downloads-8.4.md": {
+    "mtime": 1792565218.8442638,
+    "seen": 1793153426.4728754,
+    "ast_hash": "b92162e0d000b75100791b57e85a8d09",
+    "semantic_hash": ""
+  },
+  "docs/perf/library-8.3.md": {
+    "mtime": 1792461707.8520007,
+    "seen": 1793153426.4728777,
+    "ast_hash": "e790e31c4c8093d7ce0cd4c2bb48935d",
+    "semantic_hash": ""
+  },
+  "docs/perf/playlist-add-9.1.md": {
+    "mtime": 1792671713.2128084,
+    "seen": 1793153426.47288,
+    "ast_hash": "13a2181d10c776607ab44aad105c3a2e",
+    "semantic_hash": ""
+  },
+  "docs/perf/shuffle-9.1.md": {
+    "mtime": 1792671001.6248624,
+    "seen": 1793153426.472882,
+    "ast_hash": "291443b0ad75cfa241bb25c7644f9066",
+    "semantic_hash": ""
+  },
+  "session-cfe500a5-af3b-4283-9511-bdf627ca4ca2.md": {
+    "mtime": 1792750176.4426472,
+    "seen": 1793153426.472884,
+    "ast_hash": "97c30d62fe596bf622dff771f8ea1141",
+    "semantic_hash": ""
+  },
+  "tools/lyrics_probe.txt": {
+    "mtime": 1792999693.531796,
+    "seen": 1793153426.4728863,
+    "ast_hash": "6f65c7271b0fd3aa609626ab30857375",
+    "semantic_hash": ""
+  },
+  "assets/gallery/01-home.png": {
+    "mtime": 1792381048.6821897,
+    "seen": 1793153426.4728882,
+    "ast_hash": "8beaf556069367eaae0fb777645ad493",
+    "semantic_hash": ""
+  },
+  "assets/gallery/02-library.png": {
+    "mtime": 1792381048.7742133,
+    "seen": 1793153426.4728901,
+    "ast_hash": "05b0e1662f9b80dae5d792a7e16072f0",
+    "semantic_hash": ""
+  },
+  "assets/gallery/03-playlist.png": {
+    "mtime": 1792381048.8507876,
+    "seen": 1793153426.472892,
+    "ast_hash": "e382aad4afcea881b0acccebb64115a7",
+    "semantic_hash": ""
+  },
+  "assets/gallery/04-now-playing.png": {
+    "mtime": 1792381048.9375825,
+    "seen": 1793153426.4728937,
+    "ast_hash": "1dc5bd6cb35e5dde5daef18812bf0348",
+    "semantic_hash": ""
+  },
+  "assets/gallery/05-lyrics.png": {
+    "mtime": 1792381196.4889593,
+    "seen": 1793153426.4728954,
+    "ast_hash": "052b387c32b10e4f2c0ac97eceb3ca60",
+    "semantic_hash": ""
+  },
+  "assets/gallery/06-queue.png": {
+    "mtime": 1792381049.1051612,
+    "seen": 1793153426.472897,
+    "ast_hash": "87d54514231ccb0052ae460245209abe",
+    "semantic_hash": ""
+  },
+  "assets/gallery/07-storage.png": {
+    "mtime": 1792381049.1680522,
+    "seen": 1793153426.4728985,
+    "ast_hash": "6c5a884d4c2d4a932f4941b388b1f367",
+    "semantic_hash": ""
+  },
+  "assets/vusic-icon.svg": {
+    "mtime": 1792380448.6143174,
+    "seen": 1793153426.4729006,
+    "ast_hash": "4cc7c1be41757bfac565c3a38c1c9c93",
+    "semantic_hash": ""
   }
 }
