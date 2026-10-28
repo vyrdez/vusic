@@ -25,3 +25,4 @@ gradlew.bat text eol=crlf
 # ProGuard / manifest files
 *.pro text
 *.cfg text
+graphify-out/graph.json merge=graphify
