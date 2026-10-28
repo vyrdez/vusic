@@ -188,11 +188,30 @@ class PlayerService : MediaLibraryService() {
 
             override fun onPlayerError(error: PlaybackException) {
                 stopTicker()
-                val currentItem = player?.currentMediaItem
-                if (isLocal(currentItem) && player?.hasNextMediaItem() == true) {
-                    player?.seekToNextMediaItem()
-                    player?.prepare()
-                    player?.play()
+                val p = player ?: return
+                val item = p.currentMediaItem ?: return
+                val idx = p.currentMediaItemIndex
+
+                if (item.localConfiguration?.uri?.scheme == "file" && !isLocal(item)) {
+                    scope.launch {
+                        downloads.remove(item.mediaId)
+                        val track = TrackMediaItems.toTrack(item)
+                        val qId = TrackMediaItems.queueIdOf(item) ?: -1L
+                        val streamItem = track?.let { resolveTrack(it, qId) }
+                        if (streamItem != null && p.currentMediaItemIndex == idx) {
+                            p.replaceMediaItem(idx, streamItem)
+                            p.prepare()
+                            p.play()
+                        } else if (p.hasNextMediaItem()) {
+                            p.seekToNextMediaItem()
+                            p.prepare()
+                            p.play()
+                        }
+                    }
+                } else if (isLocal(item) && p.hasNextMediaItem()) {
+                    p.seekToNextMediaItem()
+                    p.prepare()
+                    p.play()
                 }
             }
         })

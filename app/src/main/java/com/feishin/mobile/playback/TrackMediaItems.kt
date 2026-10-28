@@ -5,6 +5,7 @@ package com.feishin.mobile.playback
 import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import com.feishin.mobile.core.common.PlaybackSource
 import com.feishin.mobile.domain.model.Track
 
 /** Pure, Android-free description of a track's media payload. */
@@ -107,6 +108,11 @@ object TrackMediaItems {
         return MediaItem.Builder()
             .setMediaId(info.mediaId)
             .setUri(info.streamUrl)
+            .apply {
+                if (info.streamUrl.startsWith("file://")) {
+                    PlaybackSource.mimeTypeForPath(info.streamUrl)?.let { setMimeType(it) }
+                }
+            }
             .setMediaMetadata(metadata)
             .build()
     }

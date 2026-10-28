@@ -17,15 +17,18 @@ import com.feishin.mobile.domain.model.AlbumDetail
 import com.feishin.mobile.domain.model.PlaylistDetail
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
+import com.feishin.mobile.core.common.PlaybackSource
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Snapshot of overall download activity, for banners and the notifications. */
 data class DownloadProgress(
@@ -53,6 +56,37 @@ class DownloadRepository @Inject constructor(
     private val network: com.feishin.mobile.data.network.NetworkMonitor,
     @com.feishin.mobile.di.DownloadClient private val client: okhttp3.OkHttpClient,
 ) {
+    init {
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching { runStartupAudit() }
+        }
+    }
+
+    suspend fun runStartupAudit() = withContext(Dispatchers.IO) {
+        val completed = dao.completed()
+        for (row in completed) {
+            val file = row.filePath?.let { File(it) }
+            if (isCorruptDownloadedFile(file)) {
+                file?.let { runCatching { it.delete() } }
+                remove(row.songId)
+            }
+        }
+    }
+
+    companion object {
+        fun isCorruptDownloadedFile(file: File?): Boolean {
+            if (file == null || !file.exists()) return true
+            if (file.length() < DownloadStateMachine.MIN_VALID_AUDIO_BYTES) return true
+            return runCatching {
+                val buf = ByteArray(16)
+                val read = file.inputStream().use { it.read(buf) }
+                if (read <= 0) return true
+                val text = String(buf, 0, read).trimStart()
+                text.startsWith("{") || text.startsWith("<")
+            }.getOrDefault(true)
+        }
+    }
+
     val downloads: Flow<List<DownloadEntity>> = dao.observeAll()
     val completed: Flow<List<DownloadEntity>> = dao.observeCompleted()
 
@@ -90,8 +124,12 @@ class DownloadRepository @Inject constructor(
     suspend fun localFile(songId: String): File? {
         val row = dao.byId(songId) ?: return null
         if (row.statusEnum != DownloadStatus.COMPLETED) return null
-        val f = File(row.filePath ?: return null)
-        return if (f.exists() && f.length() > 0) f else null
+        val path = row.filePath ?: return null
+        return if (PlaybackSource.isPlayableLocalFile(path, { File(it).exists() }, { File(it).length() })) {
+            File(path)
+        } else {
+            null
+        }
     }
 
     suspend fun completedIds(): Set<String> = dao.completedIds().toSet()
@@ -101,7 +139,11 @@ class DownloadRepository @Inject constructor(
     suspend fun completedPathMap(): Map<String, String> =
         dao.completed().mapNotNull { e ->
             val p = e.filePath
-            if (p != null) e.songId to p else null
+            if (p != null && PlaybackSource.isPlayableLocalFile(p, { File(it).exists() }, { File(it).length() })) {
+                e.songId to p
+            } else {
+                null
+            }
         }.toMap()
 
     /** Actively transferring rows (for the Storage screen counters). */

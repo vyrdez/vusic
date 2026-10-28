@@ -8,6 +8,33 @@ import com.feishin.mobile.data.db.DownloadStatus
  */
 object DownloadStateMachine {
 
+    const val MIN_VALID_AUDIO_BYTES = 8_192L
+
+    fun isValidAudioResponse(code: Int, contentType: String?, contentLength: Long): Boolean {
+        if (code !in 200..299) return false
+        val ct = contentType?.lowercase()?.trim()
+        if (ct != null) {
+            if (ct.startsWith("application/json") ||
+                ct.startsWith("application/xml") ||
+                ct.startsWith("text/xml") ||
+                ct.startsWith("text/html")
+            ) {
+                return false
+            }
+        }
+        if (contentLength in 0 until MIN_VALID_AUDIO_BYTES) {
+            return false
+        }
+        return true
+    }
+
+    fun resolvedExtension(trackSuffix: String?, quality: StreamQuality): String =
+        if (!quality.isOriginal && quality.format != "raw") {
+            quality.format
+        } else {
+            trackSuffix?.takeIf { it.isNotBlank() }?.lowercase()?.removePrefix(".") ?: "mp3"
+        }
+
     private val allowed: Map<DownloadStatus, Set<DownloadStatus>> = mapOf(
         DownloadStatus.QUEUED to setOf(
             DownloadStatus.DOWNLOADING, DownloadStatus.PAUSED, DownloadStatus.FAILED,

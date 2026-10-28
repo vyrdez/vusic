@@ -132,18 +132,24 @@ class DownloadWorker @AssistedInject constructor(
         }
         dao.setStatus(row.songId, DownloadStatus.DOWNLOADING.name)
 
-        val ext = row.suffix?.takeIf { it.isNotBlank() } ?: "bin"
+        val quality = repo.downloadQuality()
+        val ext = DownloadStateMachine.resolvedExtension(row.suffix, quality)
         val target = File(root, "${row.songId}.$ext")
         val partial = File(repo.partialDir(), "${row.songId}.part")
 
-        // Already finished on disk: just record it.
-        if (target.exists() && target.length() > 0) {
-            dao.markCompleted(row.songId, target.absolutePath, target.length())
-            downloadCover(row)
-            return Outcome.DONE
+        // Already finished on disk: just record it if valid, otherwise delete.
+        if (target.exists()) {
+            val valid = target.length() >= DownloadStateMachine.MIN_VALID_AUDIO_BYTES &&
+                (row.expectedBytes <= 0 || !quality.isOriginal || target.length() == row.expectedBytes)
+            if (valid) {
+                dao.markCompleted(row.songId, target.absolutePath, target.length())
+                downloadCover(row)
+                return Outcome.DONE
+            } else {
+                target.delete()
+            }
         }
 
-        val quality = repo.downloadQuality()
         val url = repo.signedUrlFor(row, quality)
             ?: return Outcome.FAILED.also {
                 dao.setStatus(row.songId, DownloadStatus.FAILED.name, "Not signed in")
@@ -153,7 +159,7 @@ class DownloadWorker @AssistedInject constructor(
         val useRange = DownloadStateMachine.resumeDecision(
             bytesDownloaded = existing,
             expectedBytes = row.expectedBytes,
-            rangeSupported = true,
+            rangeSupported = quality.isOriginal,
         )
         val startAt = if (useRange) existing else 0L
         if (!useRange && partial.exists()) partial.delete()
@@ -173,8 +179,33 @@ class DownloadWorker @AssistedInject constructor(
                     dao.setStatus(row.songId, DownloadStatus.FAILED.name, "HTTP ${resp.code}")
                     return if (resp.code >= 500) Outcome.RETRY else Outcome.FAILED
                 }
-                val appending = resp.code == 206 && startAt > 0
-                val total = resp.body?.contentLength()?.let { if (it > 0) it + (if (appending) startAt else 0) else 0L } ?: 0L
+                val cr = resp.header("Content-Range")
+                val crMatches = cr != null && cr.trim().lowercase().startsWith("bytes $startAt-")
+                val appending = resp.code == 206 && startAt > 0 && crMatches
+
+                if (resp.code == 206 && !appending) {
+                    if (partial.exists()) partial.delete()
+                    dao.setStatus(row.songId, DownloadStatus.FAILED.name, "Mismatched Content-Range")
+                    return Outcome.FAILED
+                }
+
+                val effectiveStartAt = if (appending) startAt else 0L
+                if (!appending && partial.exists()) {
+                    partial.delete()
+                }
+
+                val checkLength = if (appending) {
+                    resp.body?.contentLength()?.let { if (it >= 0) it + effectiveStartAt else -1L } ?: -1L
+                } else {
+                    resp.body?.contentLength() ?: -1L
+                }
+                if (!DownloadStateMachine.isValidAudioResponse(resp.code, resp.header("Content-Type"), checkLength)) {
+                    if (partial.exists()) partial.delete()
+                    dao.setStatus(row.songId, DownloadStatus.FAILED.name, "Invalid audio response")
+                    return Outcome.FAILED
+                }
+
+                val total = resp.body?.contentLength()?.let { if (it > 0) it + effectiveStartAt else 0L } ?: 0L
                 if (total > 0 && !CacheSizePolicy.fits(total, repo.freeBytes())) {
                     dao.setStatus(row.songId, DownloadStatus.PAUSED.name, "Not enough storage")
                     return Outcome.PAUSED
@@ -186,14 +217,13 @@ class DownloadWorker @AssistedInject constructor(
                     dao.setStatus(row.songId, DownloadStatus.PAUSED.name, "Low storage")
                     return Outcome.PAUSED
                 }
-                if (total > 0 && repo.overDownloadCap(total - startAt)) {
+                if (total > 0 && repo.overDownloadCap(total - effectiveStartAt)) {
                     dao.setStatus(row.songId, DownloadStatus.PAUSED.name, "Storage limit reached")
                     return Outcome.PAUSED
                 }
                 val expected = if (total > 0) total else row.expectedBytes
-                var written = if (appending) startAt else 0L
+                var written = effectiveStartAt
                 partial.parentFile?.mkdirs()
-                if (!appending && partial.exists()) partial.delete()
                 resp.body?.byteStream()?.use { input ->
                     java.io.FileOutputStream(partial, appending).use { out ->
                         val buf = ByteArray(64 * 1024)
@@ -208,18 +238,50 @@ class DownloadWorker @AssistedInject constructor(
                     }
                 }
                 if (expected > 0 && written < expected) {
-                    // Server cut the stream short: retry with Range later.
-                    dao.setProgress(row.songId, written, DownloadStateMachine.progress(written, expected), partial.absolutePath, DownloadStatus.QUEUED.name)
-                    return Outcome.RETRY
+                    if (quality.isOriginal) {
+                        // Server cut the stream short: retry with Range later.
+                        dao.setProgress(row.songId, written, DownloadStateMachine.progress(written, expected), partial.absolutePath, DownloadStatus.QUEUED.name)
+                        return Outcome.RETRY
+                    } else {
+                        if (partial.exists()) partial.delete()
+                        dao.setStatus(row.songId, DownloadStatus.FAILED.name, "Stream truncated")
+                        return Outcome.FAILED
+                    }
                 }
+                if (expected > 0 && written != expected) {
+                    if (partial.exists()) partial.delete()
+                    dao.setStatus(row.songId, DownloadStatus.FAILED.name, "Length mismatch")
+                    return Outcome.FAILED
+                }
+                if (partial.length() < DownloadStateMachine.MIN_VALID_AUDIO_BYTES) {
+                    if (partial.exists()) partial.delete()
+                    dao.setStatus(row.songId, DownloadStatus.FAILED.name, "Corrupt or empty file")
+                    return Outcome.FAILED
+                }
+
+                val isCorrupt = runCatching {
+                    val buf = ByteArray(16)
+                    val r = partial.inputStream().use { it.read(buf) }
+                    if (r > 0) {
+                        val head = String(buf, 0, r).trimStart()
+                        head.startsWith("{") || head.startsWith("<")
+                    } else true
+                }.getOrDefault(true)
+                if (isCorrupt) {
+                    if (partial.exists()) partial.delete()
+                    dao.setStatus(row.songId, DownloadStatus.FAILED.name, "Invalid audio payload")
+                    return Outcome.FAILED
+                }
+
                 target.parentFile?.mkdirs()
                 if (target.exists()) target.delete()
                 if (!partial.renameTo(target)) {
                     partial.copyTo(target, overwrite = true)
                     partial.delete()
                 }
-                if (target.length() <= 0) {
-                    dao.setStatus(row.songId, DownloadStatus.FAILED.name, "Empty file")
+                if (target.length() < DownloadStateMachine.MIN_VALID_AUDIO_BYTES) {
+                    if (target.exists()) target.delete()
+                    dao.setStatus(row.songId, DownloadStatus.FAILED.name, "Corrupt or empty file")
                     return Outcome.FAILED
                 }
                 dao.markCompleted(row.songId, target.absolutePath, target.length())

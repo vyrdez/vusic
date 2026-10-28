@@ -3,6 +3,7 @@ package com.feishin.mobile.core.common
 import com.feishin.mobile.data.db.DownloadStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -242,6 +243,51 @@ class PlaybackSourceTest {
     fun localUri_addsSchemeOnce() {
         assertEquals("file:///data/song.flac", PlaybackSource.localUri("/data/song.flac"))
         assertEquals("file:///data/song.flac", PlaybackSource.localUri("file:///data/song.flac"))
+    }
+
+    @Test
+    fun isPlayableLocalFile_validation() {
+        val fileCheck: (String) -> Boolean = { it == "/valid/song.flac" || it == "/valid/song.part" || it == "/valid/song.tmp" || it == "/tiny/song.flac" }
+        val lenCheck: (String) -> Long = {
+            when (it) {
+                "/valid/song.flac" -> 50_000L
+                "/valid/song.part" -> 50_000L
+                "/valid/song.tmp" -> 50_000L
+                "/tiny/song.flac" -> 500L
+                else -> 0L
+            }
+        }
+
+        // Rejects null and missing
+        assertFalse(PlaybackSource.isPlayableLocalFile(null, fileCheck, lenCheck))
+        assertFalse(PlaybackSource.isPlayableLocalFile("/missing/song.flac", fileCheck, lenCheck))
+
+        // Rejects .part and .tmp
+        assertFalse(PlaybackSource.isPlayableLocalFile("/valid/song.part", fileCheck, lenCheck))
+        assertFalse(PlaybackSource.isPlayableLocalFile("/valid/song.tmp", fileCheck, lenCheck))
+
+        // Rejects < 8192 bytes
+        assertFalse(PlaybackSource.isPlayableLocalFile("/tiny/song.flac", fileCheck, lenCheck))
+
+        // Accepts valid file
+        assertTrue(PlaybackSource.isPlayableLocalFile("/valid/song.flac", fileCheck, lenCheck))
+    }
+
+    @Test
+    fun mimeTypeForPath_resolvesAudioMimeTypes() {
+        assertEquals("audio/flac", PlaybackSource.mimeTypeForPath("/music/song.flac"))
+        assertEquals("audio/flac", PlaybackSource.mimeTypeForPath("file:///storage/song.FLAC"))
+        assertEquals("audio/mpeg", PlaybackSource.mimeTypeForPath("/music/song.mp3"))
+        assertEquals("audio/ogg", PlaybackSource.mimeTypeForPath("/music/song.opus"))
+        assertEquals("audio/ogg", PlaybackSource.mimeTypeForPath("file:///song.ogg"))
+        assertEquals("audio/mp4", PlaybackSource.mimeTypeForPath("/music/song.m4a"))
+        assertEquals("audio/mp4", PlaybackSource.mimeTypeForPath("/music/song.aac"))
+        assertEquals("audio/mp4", PlaybackSource.mimeTypeForPath("/music/song.mp4"))
+        assertEquals("audio/wav", PlaybackSource.mimeTypeForPath("/music/song.wav"))
+
+        assertNull(PlaybackSource.mimeTypeForPath("/music/song.bin"))
+        assertNull(PlaybackSource.mimeTypeForPath("/music/song"))
+        assertNull(PlaybackSource.mimeTypeForPath(null))
     }
 }
 
