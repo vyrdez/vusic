@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.2.4
+
+### Fixed
+- **Playback recovery for downloaded tracks and corrupted cache**:
+  - Validates minimum audio payload size (>=8 KB) and Content-Type during downloads, rejecting Subsonic JSON/XML error bodies and truncated files.
+  - Automatically evicts corrupt/partial cache entries on player errors and transparently falls back to network streaming if a local download fails to play.
+  - Strict local file existence and size validation before resolving downloaded tracks.
+  - Resolves correct container file extensions and sets explicit audio MIME hints on local `MediaItem`s.
+  - Fixes player permanently freezing at `0:00/--:--` in `STATE_IDLE` by automatically preparing ExoPlayer before playback commands.
+  - Hardens `PrefetchManager` with error-ignoring cache flags and discards tiny error payloads before persisting.
+- **Lyrics tab zero-pop-in entry and immediate snap**:
+  - Removes tab-transition delay blocking auto-scroll, enabling immediate scroll positioning during the 300 ms enter animation.
+  - Eliminates first-entry layout shifting by gating lyrics rendering until the initial scroll snap completes.
+  - Seeds active-line scale and opacity targets with instant snap animation on initial composition, avoiding unwanted 420 ms pop-in tweens.
+  - Hoists lyrics settings into `LyricsPanel` to prevent single-frame uninitialized metric re-evaluations.
+
 ## 1.2.3
 
 ### Added
