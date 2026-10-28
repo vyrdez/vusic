@@ -2409,21 +2409,21 @@
   },
   ".agent/skills/gradle-run/SKILL.md": {
     "mtime": 1792652887.6297176,
-    "seen": 1793153426.4726892,
+    "seen": 1793154596.664126,
     "ast_hash": "6573fa25410ec7fb530cc1b288c96b85",
-    "semantic_hash": ""
+    "semantic_hash": "6573fa25410ec7fb530cc1b288c96b85"
   },
   ".agent/skills/gradle-run/references/subagent-selection.md": {
     "mtime": 1792652887.6312177,
-    "seen": 1793153426.4726913,
+    "seen": 1793154596.6641316,
     "ast_hash": "8e247b46b1236e8e958621e7121fc10c",
-    "semantic_hash": ""
+    "semantic_hash": "8e247b46b1236e8e958621e7121fc10c"
   },
   ".agent/skills/jetpack-compose-performance/SKILL.md": {
     "mtime": 1792652773.2842941,
-    "seen": 1793153426.472693,
+    "seen": 1793154596.664134,
     "ast_hash": "c7ae48e3f8b3745ce69e2a41fe6c9e1e",
-    "semantic_hash": ""
+    "semantic_hash": "c7ae48e3f8b3745ce69e2a41fe6c9e1e"
   },
   ".agent/skills/jetpack-compose-performance/references/android/develop/ui/compose/custom-modifiers.md": {
     "mtime": 1792652773.287255,
@@ -2445,27 +2445,27 @@
   },
   ".agent/skills/jetpack-compose-performance/references/animation.md": {
     "mtime": 1792652773.2897713,
-    "seen": 1793153426.4727,
+    "seen": 1793154596.6641364,
     "ast_hash": "7d3769b9902705de6c3d8b047cc40b48",
-    "semantic_hash": ""
+    "semantic_hash": "7d3769b9902705de6c3d8b047cc40b48"
   },
   ".agent/skills/jetpack-compose-performance/references/effects-and-threading.md": {
     "mtime": 1792652773.2902775,
-    "seen": 1793153426.472702,
+    "seen": 1793154596.664139,
     "ast_hash": "9d82a37d0ecbe7d47a451f4fe2f62580",
-    "semantic_hash": ""
+    "semantic_hash": "9d82a37d0ecbe7d47a451f4fe2f62580"
   },
   ".agent/skills/jetpack-compose-performance/references/graphics-performance.md": {
     "mtime": 1792652773.2907798,
-    "seen": 1793153426.4727035,
+    "seen": 1793154596.6641407,
     "ast_hash": "b1a66d3922c8eaa0df3fa626c4f9e4ba",
-    "semantic_hash": ""
+    "semantic_hash": "b1a66d3922c8eaa0df3fa626c4f9e4ba"
   },
   ".agent/skills/jetpack-compose-performance/references/layouts.md": {
     "mtime": 1792652773.291286,
-    "seen": 1793153426.4727051,
+    "seen": 1793154596.6641428,
     "ast_hash": "d7fd32debb0ec818e19841b1d1a0a0ec",
-    "semantic_hash": ""
+    "semantic_hash": "d7fd32debb0ec818e19841b1d1a0a0ec"
   },
   ".agent/skills/jetpack-compose-performance/references/lazy-layouts.md": {
     "mtime": 1792652773.2922912,
@@ -2799,21 +2799,21 @@
   },
   ".agents/skills/gradle-run/SKILL.md": {
     "mtime": 1792652887.6297176,
-    "seen": 1793153426.4728005,
+    "seen": 1793154596.664145,
     "ast_hash": "6573fa25410ec7fb530cc1b288c96b85",
-    "semantic_hash": ""
+    "semantic_hash": "6573fa25410ec7fb530cc1b288c96b85"
   },
   ".agents/skills/gradle-run/references/subagent-selection.md": {
     "mtime": 1792652887.6312177,
-    "seen": 1793153426.4728022,
+    "seen": 1793154596.6641474,
     "ast_hash": "8e247b46b1236e8e958621e7121fc10c",
-    "semantic_hash": ""
+    "semantic_hash": "8e247b46b1236e8e958621e7121fc10c"
   },
   ".agents/skills/jetpack-compose-performance/SKILL.md": {
     "mtime": 1792652773.2842941,
-    "seen": 1793153426.472804,
+    "seen": 1793154596.6641495,
     "ast_hash": "c7ae48e3f8b3745ce69e2a41fe6c9e1e",
-    "semantic_hash": ""
+    "semantic_hash": "c7ae48e3f8b3745ce69e2a41fe6c9e1e"
   },
   ".agents/skills/jetpack-compose-performance/references/android/develop/ui/compose/custom-modifiers.md": {
     "mtime": 1792652773.287255,
@@ -2835,27 +2835,27 @@
   },
   ".agents/skills/jetpack-compose-performance/references/animation.md": {
     "mtime": 1792652773.2897713,
-    "seen": 1793153426.4728122,
+    "seen": 1793154596.6641521,
     "ast_hash": "7d3769b9902705de6c3d8b047cc40b48",
-    "semantic_hash": ""
+    "semantic_hash": "7d3769b9902705de6c3d8b047cc40b48"
   },
   ".agents/skills/jetpack-compose-performance/references/effects-and-threading.md": {
     "mtime": 1792652773.2902775,
-    "seen": 1793153426.4728146,
+    "seen": 1793154596.6641543,
     "ast_hash": "9d82a37d0ecbe7d47a451f4fe2f62580",
-    "semantic_hash": ""
+    "semantic_hash": "9d82a37d0ecbe7d47a451f4fe2f62580"
   },
   ".agents/skills/jetpack-compose-performance/references/graphics-performance.md": {
     "mtime": 1792652773.2907798,
-    "seen": 1793153426.4728174,
+    "seen": 1793154596.6641567,
     "ast_hash": "b1a66d3922c8eaa0df3fa626c4f9e4ba",
-    "semantic_hash": ""
+    "semantic_hash": "b1a66d3922c8eaa0df3fa626c4f9e4ba"
   },
   ".agents/skills/jetpack-compose-performance/references/layouts.md": {
     "mtime": 1792652773.291286,
-    "seen": 1793153426.4728196,
+    "seen": 1793154596.6641588,
     "ast_hash": "d7fd32debb0ec818e19841b1d1a0a0ec",
-    "semantic_hash": ""
+    "semantic_hash": "d7fd32debb0ec818e19841b1d1a0a0ec"
   },
   ".agents/skills/jetpack-compose-performance/references/lazy-layouts.md": {
     "mtime": 1792652773.2922912,
@@ -2961,39 +2961,39 @@
   },
   "AGENTS.md": {
     "mtime": 1793152960.7685277,
-    "seen": 1793153426.4728565,
+    "seen": 1793154596.6641607,
     "ast_hash": "f36539ecc9af68f33ebd72770ce4a19e",
-    "semantic_hash": ""
+    "semantic_hash": "f36539ecc9af68f33ebd72770ce4a19e"
   },
   "CHANGELOG.md": {
     "mtime": 1793111670.5570714,
-    "seen": 1793153426.4728584,
+    "seen": 1793154596.664163,
     "ast_hash": "1bb7614f347d1821bedb149b45a0ef6c",
-    "semantic_hash": ""
+    "semantic_hash": "1bb7614f347d1821bedb149b45a0ef6c"
   },
   "GEMINI.md": {
     "mtime": 1792653151.8133833,
-    "seen": 1793153426.4728599,
+    "seen": 1793154596.664165,
     "ast_hash": "d353b17e3db3e93c6146726864324896",
-    "semantic_hash": ""
+    "semantic_hash": "d353b17e3db3e93c6146726864324896"
   },
   "PLAN.md": {
     "mtime": 1793110662.223319,
-    "seen": 1793153426.472862,
+    "seen": 1793154596.6641676,
     "ast_hash": "78f47fe7dcea55a6cef02259bffccdf0",
-    "semantic_hash": ""
+    "semantic_hash": "78f47fe7dcea55a6cef02259bffccdf0"
   },
   "README.md": {
     "mtime": 1793097999.0366569,
-    "seen": 1793153426.472864,
+    "seen": 1793154596.66417,
     "ast_hash": "aa380aa0972829c72e9932f67957df15",
-    "semantic_hash": ""
+    "semantic_hash": "aa380aa0972829c72e9932f67957df15"
   },
   "SECURITY.md": {
     "mtime": 1792158009.5338986,
-    "seen": 1793153426.4728656,
+    "seen": 1793154596.6641717,
     "ast_hash": "df9767981b5b05dd86716ac7eb284a69",
-    "semantic_hash": ""
+    "semantic_hash": "df9767981b5b05dd86716ac7eb284a69"
   },
   "baselineprofile/src/main/baseline-prof.txt": {
     "mtime": 1792123676.883098,
@@ -3045,9 +3045,9 @@
   },
   "session-cfe500a5-af3b-4283-9511-bdf627ca4ca2.md": {
     "mtime": 1792750176.4426472,
-    "seen": 1793153426.472884,
+    "seen": 1793154596.6641738,
     "ast_hash": "97c30d62fe596bf622dff771f8ea1141",
-    "semantic_hash": ""
+    "semantic_hash": "97c30d62fe596bf622dff771f8ea1141"
   },
   "tools/lyrics_probe.txt": {
     "mtime": 1792999693.531796,
