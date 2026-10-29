@@ -1,22 +1,22 @@
 # Graph Report - Feishin  (2026-10-29)
 
 ## Corpus Check
-- 515 files · ~737,450 words
+- 517 files · ~738,361 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 122 file(s) not represented in the graph (top: .xml 108, (none) 3, .toml 2)
 
 ## Summary
-- 6309 nodes · 15706 edges · 347 communities (197 shown, 150 thin omitted)
+- 6328 nodes · 15754 edges · 334 communities (197 shown, 137 thin omitted)
 - Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 521 edges (avg confidence: 0.84)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `670795d4`
+- Built from commit: `7bac0ad9`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- withcontext
+- ImageTextListAppWidget.kt
 - DeviceFilesViewModel.kt
 - SettingsScreen.kt
 - Color Science Utilities
@@ -26,16 +26,17 @@
 - SearchToolBarLayout.kt
 - FakeMusicRepo
 - ui layer (Compose NavHost, screens, viewmodels, components)
-- LibraryScreen.kt
-- DynamicTrustManager
+- DetailScreens.kt
+- NowPlayingScreen
 - Settings Preferences Store
-- LayoutComponents.kt
+- Action
+- ImageGridLayout.kt
 - .select
 - SettingsViewModel
-- .redact
+- .actionStartDemoActivity
 - Lyrics Model Parsing
 - Canonical Layout Demo
-- TrackActionsSheet.kt
+- UiMessenger
 - Download Repository
 - Expressive Toolbar Layouts
 - Playlist Ordering
@@ -45,14 +46,13 @@
 - Gradle Run Process Tests
 - TextWithImageLayout.kt
 - Test
-- EmbeddedLyricsExtractorTest.kt
 - Add UI elements
 - PlaybackSource
 - Test
 - FullBleedImageLayout.kt
 - Gradle Run Script Helpers
 - ReplayGain Normalization
-- LyricsMenuSheet.kt
+- .remember
 - NowPlayingScreen.kt
 - Music Data Repository
 - LibraryViewModel
@@ -61,13 +61,13 @@
 - Feature Checklist
 - Mobile Data Policy
 - Stream Quality Policy
-- Download State Machine
+- DownloadWorker
 - LRCLIB Lyrics Provider
 - Gradle Process Lifecycle Tests
 - Queue Handoff Gestures
 - Download DAO Queries
 - Release Feature Summary
-- DownloadsScreen.kt
+- DeviceFilesScreen.kt
 - Network Monitoring
 - Shuffle Plan
 - Track
@@ -79,7 +79,7 @@
 - Radio Programmer
 - LongTextLayout
 - Lyrics Scroll Corrections
-- DownloadModule.kt
+- .plan
 - Mini Player Gestures
 - WidgetUpdater.kt
 - Gradle Run Status Tests
@@ -91,13 +91,13 @@
 - Navigation Routes Rules
 - Project Module Overview
 - Design System: Furniture Collections List
-- SettingsStore.kt
+- ThemeMode
 - Cache Limit Tests
 - LibraryComponents.kt
-- Android Auto Callbacks
-- Action
-- SubsonicAuth
-- Test
+- M45Test.kt
+- ImageGridAppWidget.kt
+- PlaylistSort
+- AuthRepository
 - DownloadScheduler.kt
 - Lyrics Matching Tests
 - Auto Browse Tree
@@ -120,9 +120,9 @@
 - PlaylistEvents
 - Image Grid Data Repository
 - Image Text List Repository
-- ImageTextListAppWidget.kt
+- TextWithImageAppWidget.kt
 - .singleMove
-- Artist Info Parsing Tests
+- MainViewModel
 - Playback Progress Formatting
 - Usage Bar Math
 - Database Module Providers
@@ -130,16 +130,17 @@
 - SortChoice
 - compose-state-and-effects/SKILL.md
 - TestState
-- RoundedScrollingLazyColumn.kt
+- LoginScreen.kt
 - Cache Refresh Policy
 - Queue Highlight Logic
 - Queue Store Persistence Tests
 - glancetheme
 - Queue Reorder Commit
 - LRC Lyrics Parser
-- Credentials Store Auth
+- DownloadsViewModel
 - Cache Eviction Limits
 - Player Dependency Module
+- resolveDark
 - CI Build Workflow
 - Performance Optimization Docs
 - Compose Animation References
@@ -147,7 +148,6 @@
 - Test
 - NowPlayingTouchTest
 - KuGou Lyrics Provider
-- M7.0a baseline (release build, commit `ef69329`)
 - Login Error Mapping
 - RomanizerTest.kt
 - Bug Report Template
@@ -155,16 +155,16 @@
 - Rules
 - Font Sizing Utilities
 - DownloadStatus
-- DownloadGroupEntity
+- .choose
 - FakeCachedTrackDao
 - Android Skill Definitions
 - Adjective Palettes
 - Artist Track Ordering
 - Pager Peek Math
-- FakeActionListDataRepository.kt
+- FilterInputStream
 - MetadataCache
-- Listener
-- data layer (Retrofit Subsonic API, stores, Room, repositories)
+- .onControllerReady
+- M7.0a baseline (release build, commit `ef69329`)
 - Playback Layer Design
 - LyricsRepository.kt
 - Media Playback Service
@@ -176,9 +176,9 @@
 - LibraryOrdering
 - Performance Benchmark: Add to Playlist Speed & Optimistic UI (Phase 9.1-G)
 - Process Heartbeat Termination
-- .d
+- LayoutComponents.kt
 - ImageUtils.kt
-- Cover Art URL Builder
+- MainActivity
 - Lyrics Cache Key
 - Lyrics Pick Upgrade
 - Local Audio Cover Fetcher
@@ -186,7 +186,7 @@
 - Offline Cover Store
 - DTO Parsing Tests
 - QueueStore.kt
-- CI Build Steps
+- PlaylistSortKey
 - HomeViewModel
 - PlayerManager
 - Lyrics Provider Chain
@@ -195,7 +195,7 @@
 - Pass Through Overscroll
 - DeviceFilesFilter
 - Progress Update Throttle
-- Stream URL Provider
+- PendingActionType
 - Lyrics menu
 - Clear Download Queue
 - Queue Radio State Tests
@@ -204,30 +204,31 @@
 - Project Assumptions and Verification Log
 - player
 - compose-component-design/SKILL.md
-- .actionStartDemoActivity
+- DownloadResumeTest
 - LyricsSource
 - Metrolist-inspired lyrics display
-- resolveDark
+- .partition
 - FakeTextWithImageRepository
 - Gradle Run Skill
 - QueueStoreShuffleTest.kt
-- CoilBitmapLoader
+- RefreshRateMode
+- .w
 - Download Concurrency Tests
 - Image Aspect Ratio Utils
-- MainActivity
+- .pushWidget
 - MessageHost
 - FakeCheckListDataRepository
 - QueueTapToggleTest
 - LyricsQueueStripTest
 - Kotlin value class vs data class
 - Compose Styles Skill
-- AuthRepository
+- KrcLyricsParserTest.kt
 - Implementation Guidelines
 - Stitch DESIGN.md Skill
 - Enhance Prompt for Stitch
 - Graphify Agent Docs
 - Gradle Run Skill Metadata
-- .keyFor
+- PrefetchWindowTest
 - Error Handling Patterns
 - Error Handling Patterns
 - Device Files Browser
@@ -236,8 +237,7 @@
 - Common situations using `Modifier.Node`
 - SettingsRoute
 - .results
-- LayoutMode
-- RefreshRateMode
+- LyricsRepository
 - Lyrics Provider Catalog
 - Dark Tone Spec
 - Android Benchmark Comparison
@@ -246,8 +246,7 @@
 - Redacting HTTP Logger
 - Settings DataStore
 - Token Efficiency Skill
-- LoginViewModel
-- ActionListAppWidget.kt
+- r
 - QualityPolicy
 - WidgetActionReceiver.kt
 - risk_analysis_guide.md
@@ -271,18 +270,14 @@
 - Subagent selection and handoff
 - backwards-write.md
 - 1. Lazy layout directives
-- KrcLyricsParserTest
 - compose-animations/SKILL.md
-- .shuffledTail
-- DownloadResumeTest
 - Compose recomposition performance
 - 4. Strong skipping mode and stability
 - Kotlin Multiplatform: expect/actual boundaries
 - Kotlin coroutines: structured concurrency
 - Token-Efficient Computer Use
 - Library open times — 8.3 (cache-first tabs)
-- HomeScreen.kt
-- WidgetPush.kt
+- Motion
 - Stitch Design System Documentation Skill
 - Stitch Enhance Prompt Skill
 - effects-and-threading.md
@@ -291,7 +286,6 @@
 - Compose state deferred reads
 - Compose stability diagnostics
 - 1. Phase deferral for animations (skip Composition to Draw and Layout)
-- .partition
 - RomanizerJoiningTest
 - RememberLyricsTabTest.kt
 - Compose performance
@@ -304,8 +298,7 @@
 - StorageLimits
 - CacheModule.kt
 - .startScan
-- PlayerService
-- PendingActionType
+- PlayerService.kt
 - NowPlayingBarTint.kt
 
 ## God Nodes (most connected - your core abstractions)
@@ -313,7 +306,7 @@
 2. `PlayerManager` - 127 edges
 3. `MusicDataRepository` - 121 edges
 4. `SettingsViewModel` - 106 edges
-5. `Track` - 86 edges
+5. `Track` - 89 edges
 6. `Lyrics` - 83 edges
 7. `DownloadRepository` - 71 edges
 8. `RoundedCornerShape` - 56 edges
@@ -367,23 +360,19 @@
 - **Compose Phase Deferral Pattern** — agent_skills_jetpack_compose_performance_skill_phase_deferral, agent_skills_jetpack_compose_performance_references_animation_animation, agent_skills_jetpack_compose_performance_references_layouts_layouts, agent_skills_jetpack_compose_performance_references_graphics_performance_draw_with_cache [INFERRED 0.85]
 - **Lyrics tab UI experience** — changelog_lyrics_display, changelog_fluid_lyrics_animation, changelog_lyrics_edge_fade, changelog_lyrics_tab_sync, changelog_queue_bottom_strip, changelog_lyrics_menu, changelog_lyrics_line_gap, changelog_now_playing_screen [INFERRED 0.85]
 
-## Communities (347 total, 150 thin omitted)
-
-### Community 0 - "withcontext"
-Cohesion: 0.21
-Nodes (3): ImageGridAppWidget, ImageGridAppWidgetReceiver, WidgetContent()
+## Communities (334 total, 137 thin omitted)
 
 ### Community 1 - "DeviceFilesViewModel.kt"
 Cohesion: 0.10
 Nodes (3): DeviceFilesState, DeviceFilesViewModel, ContentObserver
 
 ### Community 2 - "SettingsScreen.kt"
-Cohesion: 0.06
-Nodes (30): SegmentedControl(), SettingControlRow(), SettingRowText(), SettingsActionButton(), SettingsControlBlock(), SettingsNote(), UsageLegendRow(), RowText() (+22 more)
+Cohesion: 0.05
+Nodes (31): SegmentedControl(), SettingControlRow(), SettingRowText(), SettingsActionButton(), SettingsControlBlock(), SettingsNote(), UsageLegendRow(), RowText() (+23 more)
 
 ### Community 3 - "Color Science Utilities"
 Cohesion: 0.06
-Nodes (12): Contrast, Hsl, NowPlayingColors, NowPlayingPalette, PlayingColors, PlayingScheme, PlayingSchemeCache, DarkToneSpecTest (+4 more)
+Nodes (15): Contrast, Hsl, NowPlayingColors, NowPlayingPalette, PlayingColors, PlayingScheme, animatedPlayingScheme(), PlayingSchemeCache (+7 more)
 
 ### Community 4 - "Playlist Batching Lyrics Parsing"
 Cohesion: 0.06
@@ -394,64 +383,72 @@ Cohesion: 0.08
 Nodes (44): AlbumDetailDto, AlbumDto, AlbumDtoListSerializer, AlbumList2Dto, AlbumListDto, ArtistDetailDto, ArtistDto, ArtistDtoListSerializer (+36 more)
 
 ### Community 6 - "Components.kt"
-Cohesion: 0.06
-Nodes (65): RoundedCornerShape, FULL, MEDIUM, IconButton(), AlbumCard(), ArtistCard(), ClickableName(), CoverImage() (+57 more)
+Cohesion: 0.08
+Nodes (40): RoundedCornerShape, FULL, MEDIUM, C. Parameter unwrapping and equality propagation pitfall (`ImmutableList`), Scope guard: when parameter unwrapping is *not* an issue, AlbumCard(), ArtistCard(), ClickableName() (+32 more)
 
 ### Community 7 - "SearchToolBarLayout.kt"
-Cohesion: 0.08
-Nodes (15): SearchBar(), SearchIconButton(), SearchToolBarButton, SearchToolBarLayout(), SearchToolBarLayoutDimens, SearchToolBarLayoutSize, HeaderTwoRowGrid, HorizontalRow (+7 more)
+Cohesion: 0.11
+Nodes (13): SearchBar(), SearchIconButton(), SearchToolBarButton, SearchToolBarLayout(), SearchToolBarLayoutDimens, SearchToolBarLayoutSize, HeaderTwoRowGrid, HorizontalRow (+5 more)
 
 ### Community 9 - "ui layer (Compose NavHost, screens, viewmodels, components)"
-Cohesion: 0.19
-Nodes (15): CrashGuard, DataStore Preferences settings, LocalMiniClearance, MiniPlayer, PagerPeek, RowLayout.decide, SettingControlRow, SheetPhysics (+7 more)
+Cohesion: 0.09
+Nodes (32): com.feishin.mobile :app module, AuthInterceptor, AuthRepository (connect/probe/logout), core/ui Contrast (srgb<->Lab, enforce), CoverArtUrlProvider, CrashGuard, DarkToneSpec, data layer (Retrofit Subsonic API, stores, Room, repositories) (+24 more)
 
-### Community 10 - "LibraryScreen.kt"
-Cohesion: 0.04
-Nodes (17): ActionDemonstrationActivity, VerticalListItem(), StatusBarSpacer(), TopLevelTitleBar, stripHtmlBio(), AlbumDetailScreen(), AlbumHeader(), CircleIconButton() (+9 more)
+### Community 10 - "DetailScreens.kt"
+Cohesion: 0.05
+Nodes (38): Data, Empty, Err, Error, Ok, Result, UiState, rememberSavableGridState() (+30 more)
 
-### Community 13 - "LayoutComponents.kt"
-Cohesion: 0.72
-Nodes (5): HeaderTwoRowGrid(), SideBarTwoRowGrid(), SpacedColumn(), SpacedRow(), TwoRowGrid()
+### Community 11 - "NowPlayingScreen"
+Cohesion: 0.15
+Nodes (19): formatDuration(), LyricsDisplayTokens, ControlsRow(), dim75(), IntroCountdownDots(), lyricsEdgeFade(), LyricsPanel(), NowPlayingScreen() (+11 more)
+
+### Community 13 - "Action"
+Cohesion: 0.21
+Nodes (8): PillShapedButton(), RectangularIconButton(), Action, CLEAR_QUEUE, NEXT, NONE, OPEN, PREVIOUS
+
+### Community 14 - "ImageGridLayout.kt"
+Cohesion: 0.12
+Nodes (12): Grid(), GridItem(), ImageGridItemData, ImageGridLayout(), ImageGridLayoutDimensions, ImageGridLayoutSize, Large, Medium (+4 more)
 
 ### Community 15 - ".select"
-Cohesion: 0.14
-Nodes (5): Collage, Server, VusicColorMath, LyricsMenuContrastTest, VusicDesignTest
+Cohesion: 0.16
+Nodes (3): VusicColorMath, LyricsMenuContrastTest, VusicDesignTest
+
+### Community 17 - ".actionStartDemoActivity"
+Cohesion: 0.15
+Nodes (3): SearchToolBarAppWidget, SearchToolBarAppWidgetReceiver, ActionUtils
 
 ### Community 18 - "Lyrics Model Parsing"
-Cohesion: 0.10
-Nodes (16): DebugLyricsFixtures, fromSynced(), LyricLine, Lyrics, LyricsKind, INSTRUMENTAL, NONE, PLAIN (+8 more)
+Cohesion: 0.12
+Nodes (14): DebugLyricsFixtures, fromSynced(), LyricLine, Lyrics, LyricsKind, INSTRUMENTAL, NONE, PLAIN (+6 more)
 
 ### Community 19 - "Canonical Layout Demo"
 Cohesion: 0.08
 Nodes (6): CanonicalLayoutActivity, CanonicalLayoutRow(), CanonicalLayoutRowData, Content(), Header(), requestPin()
 
-### Community 20 - "TrackActionsSheet.kt"
-Cohesion: 0.13
-Nodes (23): speedDialKey(), ActionTarget, ActionTile(), ActionTiles(), Album, AlbumDetailsDialog(), AlbumSheetContent(), Artist (+15 more)
+### Community 20 - "UiMessenger"
+Cohesion: 0.21
+Nodes (22): speedDialKey(), ActionTile(), ActionTiles(), Album, AlbumDetailsDialog(), AlbumSheetContent(), Artist, ArtistSheetContent() (+14 more)
 
 ### Community 21 - "Download Repository"
-Cohesion: 0.05
-Nodes (4): removeIf(), DownloadProgress, DownloadRepository, observeAllSnapshot()
+Cohesion: 0.06
+Nodes (5): removeIf(), DownloadGroupEntity, DownloadProgress, DownloadRepository, observeAllSnapshot()
 
 ### Community 22 - "Expressive Toolbar Layouts"
-Cohesion: 0.13
-Nodes (14): AllButtonsScaledLayout(), CenterButton(), CenterButtonOnlyLayout(), checkCornerButtonsListSize(), CornerButton(), CornerButtonsGrid(), ExpressiveToolBarButton, ExpressiveToolbarLayout() (+6 more)
-
-### Community 23 - "Playlist Ordering"
-Cohesion: 0.09
-Nodes (9): PlaylistOrdering, PlaylistSort, PlaylistSortKey, ARTIST, DATE_ADDED, DURATION, PLAYLIST_ORDER, TITLE (+1 more)
+Cohesion: 0.11
+Nodes (17): ExpressiveToolbarAppWidget, ExpressiveToolbarAppWidgetReceiver, AllButtonsScaledLayout(), CenterButton(), CenterButtonOnlyLayout(), checkCornerButtonsListSize(), CornerButton(), CornerButtonsGrid() (+9 more)
 
 ### Community 24 - "Nav.kt"
-Cohesion: 0.03
-Nodes (10): MessageHost(), MiniPlayer(), MiniPlayerRing(), AppNavigationBar(), goToLibraryTab(), goToTab(), MainScaffold(), AppNav() (+2 more)
+Cohesion: 0.05
+Nodes (18): ActionDemonstrationActivity, MessageHost(), AppNavigationBar(), AppTopBar(), goToTab(), MainScaffold(), TopBarSearchField(), AppNav() (+10 more)
 
 ### Community 25 - "Offline Radio Fetching"
-Cohesion: 0.07
-Nodes (6): OfflineRadio, RadioFetcher, toDomainTrack(), RadioFakeRepo, RadioFetcherTest, track()
+Cohesion: 0.08
+Nodes (4): RadioFetcher, RadioFakeRepo, RadioFetcherTest, track()
 
 ### Community 26 - "ToolBarLayout"
-Cohesion: 0.14
-Nodes (13): FluidContentIconButton(), FluidHeaderAppIcon(), FluidHeaderIconButton(), Header(), ToolBarButton, ToolBarLayout(), ToolBarLayoutDimens, ToolBarLayoutSize (+5 more)
+Cohesion: 0.10
+Nodes (15): FluidContentIconButton(), FluidHeaderAppIcon(), FluidHeaderIconButton(), Header(), ToolBarButton, ToolBarLayout(), ToolBarLayoutDimens, ToolBarLayoutSize (+7 more)
 
 ### Community 27 - "Gradle Run Process Tests"
 Cohesion: 0.09
@@ -462,20 +459,16 @@ Cohesion: 0.09
 Nodes (18): HorizontalContent(), Image(), ImageData, maybeClickable(), NoDataContent(), TextData, TextStack(), TextWithImageData (+10 more)
 
 ### Community 29 - "Test"
-Cohesion: 0.10
-Nodes (8): computeScrollDelta(), computeScrollDurationMs(), computeScrollOffset(), evaluateRetargetDelta(), LyricsDisplayTokens, shouldAutoScroll(), LyricsLineGapTest, LyricsScrollEngineTest
-
-### Community 30 - "EmbeddedLyricsExtractorTest.kt"
-Cohesion: 0.10
-Nodes (3): EmbeddedLyricsExtractor, EmbeddedLyricsExtractorTest, FilterInputStream
+Cohesion: 0.12
+Nodes (7): computeScrollDelta(), computeScrollDurationMs(), computeScrollOffset(), evaluateRetargetDelta(), shouldAutoScroll(), LyricsLineGapTest, LyricsScrollEngineTest
 
 ### Community 31 - "Add UI elements"
 Cohesion: 0.04
 Nodes (45): Activity Listener, Add a Composable `MediaRouteButton` to the Player, Add a receiver for media transfers, Add build dependencies, Add the `MediaRouteButton` as a View, Add the `MediaRouteButton` to the app bar menu, Add the `MediaRouteButton` to the PlayerView, Add UI elements (+37 more)
 
 ### Community 33 - "PlaybackSource"
-Cohesion: 0.20
-Nodes (4): Kind, LOCAL, STREAM, PlaybackSourceTest
+Cohesion: 0.12
+Nodes (5): Kind, LOCAL, STREAM, PlaybackSource, PlaybackSourceTest
 
 ### Community 34 - "Test"
 Cohesion: 0.09
@@ -493,37 +486,37 @@ Nodes (28): add_fingerprint(), append_run(), bounded_summary(), Diagnostics, dis
 Cohesion: 0.14
 Nodes (6): ReplayGain, ReplayGainMode, ALBUM, OFF, TRACK, ReplayGainTest
 
-### Community 38 - "LyricsMenuSheet.kt"
-Cohesion: 0.14
+### Community 38 - ".remember"
+Cohesion: 0.27
 Nodes (9): EditLyricsDialog(), formatLyricsForCopy(), formatLyricsForEdit(), formatToLrc(), LyricsMenuSheet(), LyricsOffsetDialog(), MenuSwitchRow(), parseTextSizeToPercent() (+1 more)
 
 ### Community 39 - "NowPlayingScreen.kt"
-Cohesion: 0.04
-Nodes (11): ControlsRow(), IntroCountdownDots(), lyricsEdgeFade(), LyricsPanel(), NowPlayingScreen(), NpChip(), NpChipsRow(), PlayingFromBottom() (+3 more)
+Cohesion: 0.03
+Nodes (4): MiniPlayerRing(), ActionTarget, TopBarAction, TopBarController
+
+### Community 40 - "Music Data Repository"
+Cohesion: 0.08
+Nodes (3): OfflineRadio, MusicDataRepository, toDomainTrack()
 
 ### Community 41 - "LibraryViewModel"
 Cohesion: 0.09
 Nodes (8): LibraryTab, ALBUMS, ARTISTS, DOWNLOADS, FAVORITES, PLAYLISTS, SONGS, LibraryViewModel
 
 ### Community 43 - "BoundedQueuePlayer"
-Cohesion: 0.09
+Cohesion: 0.10
 Nodes (4): BoundedQueuePlayer, Timeline, BoundedQueuePlayerTest, FakeTimeline
 
 ### Community 44 - "Feature Checklist"
 Cohesion: 0.12
 Nodes (29): Accessibility, Add to playlist, Android Auto, Clear all download queue, Volume-ramp crossfade, Device Files in Library, Dynamic Theme, ExoPlayer (+21 more)
 
-### Community 45 - "Mobile Data Policy"
-Cohesion: 0.09
-Nodes (4): MobileDataPolicy, DownloadsUi, DownloadsViewModel, MobileDataPolicyTest
-
 ### Community 46 - "Stream Quality Policy"
 Cohesion: 0.10
-Nodes (3): CrashGuard, StreamUrlProvider, PrefetchManager
+Nodes (4): StreamUrlProvider, Credentials, CredentialsStore, PrefetchManager
 
-### Community 47 - "Download State Machine"
-Cohesion: 0.10
-Nodes (8): DownloadNotifications, DownloadWorker, Outcome, DONE, FAILED, PAUSED, RETRY, What changed
+### Community 47 - "DownloadWorker"
+Cohesion: 0.14
+Nodes (7): DownloadNotifications, DownloadWorker, Outcome, DONE, FAILED, PAUSED, RETRY
 
 ### Community 48 - "LRCLIB Lyrics Provider"
 Cohesion: 0.12
@@ -539,31 +532,31 @@ Nodes (6): ListHandoff, PassToList, QueueHandoff, TakeBySheet, NestedScrollConne
 
 ### Community 51 - "Download DAO Queries"
 Cohesion: 0.12
-Nodes (3): CachedCoverDao, DownloadDao, DownloadEntity
+Nodes (3): DownloadDao, DownloadEntity, DownloadGroupDao
 
 ### Community 52 - "Release Feature Summary"
-Cohesion: 0.09
-Nodes (37): ABI splits (arm64-v8a + x86_64) and resConfigs("en"), PlayerManager.adoptExternalQueue, Android Auto browse tree (4 root tabs), App logo (eighth note) and ic_stat_vusic, Hand-written baseline-prof.txt + :baselineprofile module, BoundedQueuePlayer, CHANGELOG 1.0.0, collectAsStateWithLifecycle migration (94 sites / 17 files) (+29 more)
+Cohesion: 0.10
+Nodes (32): ABI splits (arm64-v8a + x86_64) and resConfigs("en"), PlayerManager.adoptExternalQueue, Android Auto browse tree (4 root tabs), App logo (eighth note) and ic_stat_vusic, Hand-written baseline-prof.txt + :baselineprofile module, CHANGELOG 1.0.0, collectAsStateWithLifecycle migration (94 sites / 17 files), DEFAULT_SESSION_AND_LIBRARY_COMMANDS fix (+24 more)
 
-### Community 53 - "DownloadsScreen.kt"
+### Community 53 - "DeviceFilesScreen.kt"
 Cohesion: 0.12
-Nodes (13): ActiveRow(), DoneRow(), DownloadsScreen(), ProgressThumb(), SectionLabel(), StorageRow(), DownloadRow, animatedPlayingScheme() (+5 more)
+Nodes (6): RoundedScrollingLazyColumn(), DeviceFilesScreen(), EmptyDeviceFilesView(), LocalAlbumDetailView(), LocalArtistDetailView(), PermissionNeededCard()
 
 ### Community 54 - "Network Monitoring"
 Cohesion: 0.15
-Nodes (8): NetworkClass, MOBILE, OTHER, WIFI, NetworkMonitor, onAvailable(), onCapabilitiesChanged(), onLost()
+Nodes (9): NetworkClass, MOBILE, OTHER, WIFI, QualityPolicy, NetworkMonitor, onAvailable(), onCapabilitiesChanged() (+1 more)
 
 ### Community 55 - "Shuffle Plan"
-Cohesion: 0.15
-Nodes (3): ShufflePlan, SlicePlan, ShufflePlanTest
+Cohesion: 0.12
+Nodes (4): ShufflePlan, SlicePlan, ShufflePlanTest, BigPlaylistShuffleTest
 
 ### Community 56 - "Track"
-Cohesion: 0.18
-Nodes (19): SyncedLyrics, toDomain(), Album, AlbumDetail, Artist, ArtistDetail, ArtistInfo, Genre (+11 more)
+Cohesion: 0.19
+Nodes (17): SyncedLyrics, toDomain(), Album, AlbumDetail, Artist, ArtistDetail, ArtistInfo, Genre (+9 more)
 
 ### Community 57 - "Lyrics Search ViewModels"
-Cohesion: 0.10
-Nodes (7): SearchFilter, ALBUMS, ALL, ARTISTS, PLAYLISTS, SONGS, SearchViewModel
+Cohesion: 0.08
+Nodes (9): filterOf(), labelOf(), SearchFilter, ALBUMS, ALL, ARTISTS, PLAYLISTS, SONGS (+1 more)
 
 ### Community 58 - "Compose Performance Reference"
 Cohesion: 0.09
@@ -574,24 +567,24 @@ Cohesion: 0.09
 Nodes (5): CacheBytes, CachedTrackStore, Media3CacheBytes, CachedTrackDao, CachedTrackEntity
 
 ### Community 60 - "Music Database Schema"
-Cohesion: 0.12
-Nodes (5): LyricsCacheMigrationTest, CachedCoverEntity, CachedMetadataEntity, LyricsCacheDao, LyricsCacheEntity
+Cohesion: 0.09
+Nodes (5): LyricsCacheMigrationTest, CachedCoverDao, CachedCoverEntity, LyricsCacheDao, LyricsCacheEntity
 
 ### Community 62 - "Radio Programmer"
-Cohesion: 0.13
+Cohesion: 0.12
 Nodes (5): RadioMemory, RadioProgrammer, RadioTrigger, RadioProgrammerTest, track()
 
 ### Community 63 - "LongTextLayout"
-Cohesion: 0.14
+Cohesion: 0.13
 Nodes (11): LongTextLayout(), LongTextLayoutData, LongTextLayoutPreview(), LongTextLayoutSize, Normal, XSmall, maybeClickable(), showTitle() (+3 more)
 
 ### Community 64 - "Lyrics Scroll Corrections"
 Cohesion: 0.11
 Nodes (14): computeEdgeFadeAlpha(), computeLyricsAnchorPx(), computeLyricsBottomPadding(), computeLyricsScrollDelta(), computeLyricsScrollOffset(), isLyricsTabReadyToScroll(), resolveLyricsScrollStep(), resolveReturnScrollAction() (+6 more)
 
-### Community 67 - "WidgetUpdater.kt"
-Cohesion: 0.14
-Nodes (4): WidgetState, WidgetStateStore, WidgetExtras, WidgetUpdater
+### Community 65 - ".plan"
+Cohesion: 0.25
+Nodes (7): AddFilteredImmediately, AddImmediately, NoOp, PlaylistAddPlanner, PlaylistAddResolution, RequireConfirmation, PlaylistDuplicateCheckTest
 
 ### Community 69 - "Avatar LRU Cache"
 Cohesion: 0.13
@@ -602,12 +595,12 @@ Cohesion: 0.14
 Nodes (3): QueueOps, Entry, QueueOpsTest
 
 ### Community 71 - "BetterLyricsProvider.kt"
-Cohesion: 0.16
+Cohesion: 0.15
 Nodes (4): TtmlLyricsParser, BetterLyricsProvider, BetterLyricsResponse, TtmlLyricsParserTest
 
 ### Community 74 - "Navigation Routes Rules"
 Cohesion: 0.13
-Nodes (3): Routes, NavRules, NavRulesTest
+Nodes (4): goToLibraryTab(), Routes, NavRules, NavRulesTest
 
 ### Community 75 - "Project Module Overview"
 Cohesion: 0.10
@@ -617,17 +610,25 @@ Nodes (29): Android Auto service, app Gradle module, baselineprofile Gradle modu
 Cohesion: 0.07
 Nodes (26): 1. Visual Theme & Atmosphere, 2. Color Palette & Roles, 3. Typography Rules, 4. Component Stylings, 5. Layout Principles, 6. Design System Notes for Stitch Generation, Accent & Interactive, Alignment & Visual Balance (+18 more)
 
-### Community 77 - "SettingsStore.kt"
-Cohesion: 0.14
-Nodes (4): ThemeMode, DARK, LIGHT, SYSTEM
+### Community 77 - "ThemeMode"
+Cohesion: 0.12
+Nodes (8): LayoutMode, GRID, LIST, Settings, ThemeMode, DARK, LIGHT, SYSTEM
 
 ### Community 79 - "LibraryComponents.kt"
 Cohesion: 0.06
-Nodes (11): Favorites, Placeholder, PlaylistCover, ArtistAvatar(), DownloadIndicator(), OfflineBanner(), CollageCell(), PlaylistCoverArt() (+3 more)
+Nodes (18): Collage, Favorites, Placeholder, PlaylistCover, Server, ArtistAvatar(), DownloadIndicator(), OfflineBanner() (+10 more)
 
-### Community 81 - "Action"
+### Community 80 - "M45Test.kt"
 Cohesion: 0.18
-Nodes (9): ListItem(), PillShapedButton(), RectangularIconButton(), Action, CLEAR_QUEUE, NEXT, NONE, OPEN (+1 more)
+Nodes (3): flowNow(), M45Test, track()
+
+### Community 81 - "ImageGridAppWidget.kt"
+Cohesion: 0.23
+Nodes (3): ImageGridAppWidget, ImageGridAppWidgetReceiver, WidgetContent()
+
+### Community 83 - "AuthRepository"
+Cohesion: 0.06
+Nodes (6): SubsonicAuth, AuthRepository, AuthInterceptor, CoverArtUrlTest, StreamUrlProviderTest, SubsonicAuthTest
 
 ### Community 87 - "Auto Browse Tree"
 Cohesion: 0.14
@@ -642,12 +643,16 @@ Cohesion: 0.25
 Nodes (3): DisplayModeInfo, RefreshRate, RefreshRateTest
 
 ### Community 90 - "Offline Sync Store"
-Cohesion: 0.19
+Cohesion: 0.18
 Nodes (3): PendingActionDao, PendingActionEntity, OfflineSyncStore
 
 ### Community 91 - "LyricsProvider"
 Cohesion: 0.13
 Nodes (6): FileTagLyricsProvider, PaxsenixLyricsProvider, LyricsProvider, Hit, LyricsProbeTest, Row
+
+### Community 92 - "NetworkModule.kt"
+Cohesion: 0.05
+Nodes (7): DynamicTrustManager, HostRewriteInterceptor, RedactingHttpLogger, DownloadModule, NetworkModule, OfflineCoverInterceptor, RedactingHttpLoggerTest
 
 ### Community 93 - "Lyrics ViewModel"
 Cohesion: 0.14
@@ -662,7 +667,7 @@ Cohesion: 0.17
 Nodes (13): AndroidManifest.xml, CHANGELOG.md, Device Files (local playback), EncryptedSharedPreferences (Subsonic credentials), Navidrome Server, P9-C: Dynamic Theme Label Rename, Phase 9 (v1.2.0), PLAN.md (+5 more)
 
 ### Community 98 - "Track Media Mapping"
-Cohesion: 0.16
+Cohesion: 0.20
 Nodes (3): TrackMediaInfo, TrackMediaItems, TrackMediaItemsTest
 
 ### Community 99 - "Lyrics Pipeline Providers"
@@ -674,24 +679,16 @@ Cohesion: 0.19
 Nodes (16): create_workflow(), default_root(), finish_locked(), finish_workflow(), finished_path(), lock_path(), main(), managed_root() (+8 more)
 
 ### Community 102 - "DetailViewModels.kt"
-Cohesion: 0.07
-Nodes (11): Data, Empty, Err, Error, Ok, Result, UiState, LibraryRefresh (+3 more)
+Cohesion: 0.09
+Nodes (5): toTrack(), LibraryRefresh, AlbumDetailViewModel, ArtistDetailViewModel, PlaylistDetailViewModel
 
 ### Community 104 - "PlaylistEvents"
-Cohesion: 0.14
-Nodes (7): FavoritesChanged, FavoritesStore, PlaylistEvent, PlaylistEvents, TracksAdded, MainViewModel, FavoritesStoreTest
+Cohesion: 0.13
+Nodes (6): FavoritesChanged, FavoritesStore, PlaylistEvent, PlaylistEvents, TracksAdded, FavoritesStoreTest
 
-### Community 107 - "ImageTextListAppWidget.kt"
-Cohesion: 0.10
-Nodes (4): ImageTextListAppWidget, ImageTextListAppWidgetReceiver, TextWithImageAppWidget, TextWithImageAppWidgetReceiver
-
-### Community 109 - "Artist Info Parsing Tests"
-Cohesion: 0.18
-Nodes (3): flowNow(), M45Test, track()
-
-### Community 110 - "Playback Progress Formatting"
+### Community 109 - "MainViewModel"
 Cohesion: 0.20
-Nodes (4): PlaybackProgress, dim75(), SeekBar(), PlaybackProgressTest
+Nodes (3): MainViewModel, WidgetDepsEntry, WidgetPushEffect()
 
 ### Community 111 - "Usage Bar Math"
 Cohesion: 0.25
@@ -709,9 +706,9 @@ Nodes (13): Compose: focus navigation, Core principle, Procedure, Compose state 
 Cohesion: 0.33
 Nodes (5): Failed, Idle, Ok, Testing, TestState
 
-### Community 117 - "RoundedScrollingLazyColumn.kt"
-Cohesion: 0.07
-Nodes (21): ActionListLayout(), Content(), GridView(), ListView(), CheckListItem(), CheckListLayout(), CheckListLayoutSize, Large (+13 more)
+### Community 117 - "LoginScreen.kt"
+Cohesion: 0.06
+Nodes (4): ListItem(), VerticalListItem(), LoginMessageCard(), LoginScreen()
 
 ### Community 118 - "Cache Refresh Policy"
 Cohesion: 0.26
@@ -721,21 +718,25 @@ Nodes (3): CachePolicy, CachePolicyTest, FakeClock
 Cohesion: 0.25
 Nodes (3): QueueHighlight, State, QueueHighlightTest
 
+### Community 121 - "glancetheme"
+Cohesion: 0.11
+Nodes (4): EmptyListContent(), NoDataContent(), LongTextAppWidget, LongTextAppWidgetReceiver
+
 ### Community 123 - "LRC Lyrics Parser"
 Cohesion: 0.25
 Nodes (3): LrcParser, Tag, LrcParserTest
 
-### Community 124 - "Credentials Store Auth"
-Cohesion: 0.19
-Nodes (3): Credentials, CredentialsStore, HostRewriteInterceptor
+### Community 127 - "resolveDark"
+Cohesion: 0.33
+Nodes (3): migrateStoredTheme(), resolveDark(), ThemeModeTest
 
 ### Community 128 - "CI Build Workflow"
-Cohesion: 0.11
-Nodes (17): name, runs-on, timeout-minutes, concurrency, cancel-in-progress, group, jobs, build (+9 more)
+Cohesion: 0.06
+Nodes (30): name, runs-on, steps, timeout-minutes, concurrency, cancel-in-progress, group, jobs (+22 more)
 
 ### Community 129 - "Performance Optimization Docs"
-Cohesion: 0.16
-Nodes (17): BetterLyricsProvider, DownloadRepository, DownloadScheduler, DownloadWorker, KuGouLyricsProvider, LrclibLyricsProvider, LrclibMatcher, LyricsMenuSheet (+9 more)
+Cohesion: 0.23
+Nodes (14): BoundedQueuePlayer, DownloadRepository, DownloadScheduler, DownloadWorker, LyricsMenuSheet, LyricsScrollEngine, LyricsTabCorrections, MusicDatabase (+6 more)
 
 ### Community 130 - "Compose Animation References"
 Cohesion: 0.21
@@ -745,21 +746,17 @@ Nodes (18): AnimatedContent Identity Reference, Compose Animations Skill, Compos
 Cohesion: 0.24
 Nodes (7): KugouCandidate, KugouCandidatesResponse, KugouDownloadResponse, KuGouLyricsProvider, KugouSearchData, KugouSearchResponse, KugouSearchSong
 
-### Community 135 - "M7.0a baseline (release build, commit `ef69329`)"
-Cohesion: 0.18
-Nodes (10): APK size (signed release APK, `app-release.apk`), Background while playing, screen off (82 s window, batterystats reset first), Code / resource counts, Cold / warm start (`am start -W`, TotalTime, 10 runs, logged-in → Home), Dependency inventory (releaseRuntimeClasspath, all used), Dex / method count (release, R8 + obfuscated), Display modes (for §D), Jank (`dumpsys gfxinfo`, SwiftShader software GL) (+2 more)
-
 ### Community 136 - "Login Error Mapping"
-Cohesion: 0.16
-Nodes (3): LoginErrorMapper, LoginFailure, LoginErrorMapperTest
+Cohesion: 0.11
+Nodes (5): LoginErrorMapper, LoginFailure, LoginUi, LoginViewModel, LoginErrorMapperTest
 
 ### Community 138 - "Bug Report Template"
 Cohesion: 0.12
 Nodes (16): description, label, options, placeholder, render, body, attributes, id (+8 more)
 
 ### Community 139 - "Library Refresh Caching"
-Cohesion: 0.14
-Nodes (15): CachePolicy, CacheSizePolicy, docs/reference/after-8.2/, docs/reference/after-8.3/, docs/reference/before-8.2/, docs/reference/before-8.3/, LibraryRefresh, MetadataCache (+7 more)
+Cohesion: 0.12
+Nodes (18): CachePolicy, CacheSizePolicy, DataStore, docs/reference/after-8.2/, docs/reference/after-8.3/, docs/reference/before-8.2/, docs/reference/before-8.3/, LibraryRefresh (+10 more)
 
 ### Community 140 - "Rules"
 Cohesion: 0.12
@@ -768,6 +765,10 @@ Nodes (16): 10. No preamble, no recap, no closing pleasantries, 1. Lead with the
 ### Community 142 - "DownloadStatus"
 Cohesion: 0.13
 Nodes (8): DownloadStateMachine, DownloadStatus, COMPLETED, DOWNLOADING, FAILED, PAUSED, QUEUED, DownloadStateMachineTest
+
+### Community 143 - ".choose"
+Cohesion: 0.19
+Nodes (3): LyricsSelection, NavidromeLyricsProvider, LyricsSelectionTest
 
 ### Community 145 - "Android Skill Definitions"
 Cohesion: 0.14
@@ -778,16 +779,16 @@ Cohesion: 0.10
 Nodes (20): Accents, Adjective Palettes, Backgrounds, Calls to Action, Color Role Terminology, Component Keywords, Content Containers, Dark Mode (+12 more)
 
 ### Community 150 - "MetadataCache"
-Cohesion: 0.14
-Nodes (3): MetadataCache, MetadataCacheDao, FakeCacheDao
+Cohesion: 0.13
+Nodes (4): MetadataCache, CachedMetadataEntity, MetadataCacheDao, FakeCacheDao
 
-### Community 152 - "data layer (Retrofit Subsonic API, stores, Room, repositories)"
-Cohesion: 0.17
-Nodes (15): com.feishin.mobile :app module, AuthInterceptor, AuthRepository (connect/probe/logout), core/ui Contrast (srgb<->Lab, enforce), CoverArtUrlProvider, DarkToneSpec, data layer (Retrofit Subsonic API, stores, Room, repositories), di layer (Hilt modules) (+7 more)
+### Community 152 - "M7.0a baseline (release build, commit `ef69329`)"
+Cohesion: 0.18
+Nodes (10): APK size (signed release APK, `app-release.apk`), Background while playing, screen off (82 s window, batterystats reset first), Code / resource counts, Cold / warm start (`am start -W`, TotalTime, 10 runs, logged-in → Home), Dependency inventory (releaseRuntimeClasspath, all used), Dex / method count (release, R8 + obfuscated), Display modes (for §D), Jank (`dumpsys gfxinfo`, SwiftShader software GL) (+2 more)
 
 ### Community 153 - "Playback Layer Design"
-Cohesion: 0.19
-Nodes (15): CacheWriter-based prefetch, Offline mode + Room JSON cache, playback layer (PlayerManager, PlaybackService, scrobble, cache), PlaybackService / PlayerService (MediaSessionService), PlayerManager singleton, QueueOps, QueueStore (DataStore persistence), Radio auto-DJ (+7 more)
+Cohesion: 0.23
+Nodes (13): CacheWriter-based prefetch, Offline mode + Room JSON cache, playback layer (PlayerManager, PlaybackService, scrobble, cache), PlaybackService / PlayerService (MediaSessionService), PlayerManager singleton, QueueOps, QueueStore (DataStore persistence), Radio auto-DJ (+5 more)
 
 ### Community 155 - "Media Playback Service"
 Cohesion: 0.16
@@ -803,15 +804,15 @@ Nodes (5): Partition, PlaylistDuplicates, PendingDupCheck, PlaylistDuplicatesTes
 
 ### Community 159 - "ActionListLayout.kt"
 Cohesion: 0.05
-Nodes (14): CheckListLayoutDimensions, CheckListLayoutTextStyles, Grid(), GridItem(), ImageGridItemData, ImageGridLayout(), ImageGridLayoutDimensions, ImageGridLayoutSize (+6 more)
+Nodes (20): ActionListLayout(), Content(), GridView(), ListView(), CheckListItem(), CheckListLayout(), CheckListLayoutDimensions, CheckListLayoutSize (+12 more)
 
 ### Community 160 - "SettingsViewModel.kt"
-Cohesion: 0.06
-Nodes (7): PlaybackSource, QualityPolicy, VLog, CoverArtUrlProvider, toTrack(), DownloadScheduler, NowPlayingNudge
+Cohesion: 0.07
+Nodes (3): VLog, DownloadScheduler, NowPlayingNudge
 
 ### Community 161 - "LibraryOrdering"
-Cohesion: 0.12
-Nodes (3): LibraryOrdering, album(), LibraryOrderingTest
+Cohesion: 0.14
+Nodes (5): LibraryOrdering, album(), LibraryOrderingTest, playlist(), track()
 
 ### Community 162 - "Performance Benchmark: Add to Playlist Speed & Optimistic UI (Phase 9.1-G)"
 Cohesion: 0.29
@@ -821,32 +822,28 @@ Nodes (6): 1. Problem Statement & Root Cause Analysis, 2. Solutions Implemented,
 Cohesion: 0.33
 Nodes (3): emit_heartbeat(), terminate_child(), wait_for_child()
 
-### Community 164 - ".d"
-Cohesion: 0.18
-Nodes (5): EventListener, RoutingDataSource, RoutingDataSourceFactory, UpstreamLogger, DataSource
-
-### Community 170 - "FeishinApp.kt"
-Cohesion: 0.13
-Nodes (3): FeishinApp, WarmupEntry, StrictMode (debug-only, new in §C)
+### Community 164 - "LayoutComponents.kt"
+Cohesion: 0.60
+Nodes (5): HeaderTwoRowGrid(), SideBarTwoRowGrid(), SpacedColumn(), SpacedRow(), TwoRowGrid()
 
 ### Community 171 - "Offline Cover Store"
-Cohesion: 0.41
+Cohesion: 0.37
 Nodes (3): FakeCoverStore, FakeDownload, OfflineCoverStoreTest
 
 ### Community 173 - "QueueStore.kt"
-Cohesion: 0.18
+Cohesion: 0.22
 Nodes (3): PersistedTrack, QueueSnapshot, QueueStore
 
-### Community 174 - "CI Build Steps"
-Cohesion: 0.15
-Nodes (13): steps, if, name, run, uses, with, cache-read-only, distribution (+5 more)
+### Community 174 - "PlaylistSortKey"
+Cohesion: 0.22
+Nodes (6): PlaylistSortKey, ARTIST, DATE_ADDED, DURATION, PLAYLIST_ORDER, TITLE
 
 ### Community 175 - "HomeViewModel"
 Cohesion: 0.18
 Nodes (5): AlbumTarget, HomeViewModel, PlaylistTarget, SpeedTarget, SpeedTile
 
 ### Community 176 - "PlayerManager"
-Cohesion: 0.10
+Cohesion: 0.08
 Nodes (3): ClearedQueue, PlayerManager, QueueItem
 
 ### Community 177 - "Lyrics Provider Chain"
@@ -862,15 +859,19 @@ Cohesion: 0.25
 Nodes (9): CachePolicy, CachePolicyTest, DownloadWorker, LibraryRefresh, Room lyrics_cache table (migration 5->6), MetadataCache, MusicDatabase (Room), MusicRepository (+1 more)
 
 ### Community 182 - "Progress Update Throttle"
-Cohesion: 0.24
-Nodes (5): ProgressThrottle, ProgressThrottleTest, Limits / not verified, Phase 8.4-B — download performance, What was measured
+Cohesion: 0.22
+Nodes (6): ProgressThrottle, ProgressThrottleTest, Limits / not verified, Phase 8.4-B — download performance, What changed, What was measured
+
+### Community 183 - "PendingActionType"
+Cohesion: 0.25
+Nodes (8): PendingActionType, SCROBBLE, STAR, STAR_ALBUM, STAR_ARTIST, UNSTAR, UNSTAR_ALBUM, UNSTAR_ARTIST
 
 ### Community 184 - "Lyrics menu"
 Cohesion: 0.29
 Nodes (7): ActionTile, Dual-line romanization, Full Japanese morphological romanization, Kuromoji IPADIC, Adjustable lyrics line gap, Lyrics menu, Romaji morphological word joining
 
 ### Community 185 - "Clear Download Queue"
-Cohesion: 0.47
+Cohesion: 0.42
 Nodes (3): ClearDownloadQueueTest, FakeDownload, FakeDownloadQueueManager
 
 ### Community 187 - "Android Permissions Security"
@@ -885,10 +886,6 @@ Nodes (10): AppNav, Project Assumptions and Verification Log, AuthRepository, Me
 Cohesion: 0.11
 Nodes (16): Compose modifier and layout style, Core principle, Exceptions, Procedure, Related, Compose slot API pattern, Core principle, Exceptions (+8 more)
 
-### Community 192 - ".actionStartDemoActivity"
-Cohesion: 0.11
-Nodes (5): ExpressiveToolbarAppWidget, ExpressiveToolbarAppWidgetReceiver, ToolBarAppWidget, ToolBarAppWidgetReceiver, ActionUtils
-
 ### Community 193 - "LyricsSource"
 Cohesion: 0.14
 Nodes (10): KrcLyricsParser, LyricsSource, BETTER_LYRICS, CACHE, FILE_TAGS, KUGOU, LRCLIB, PAXSENIX (+2 more)
@@ -897,17 +894,13 @@ Nodes (10): KrcLyricsParser, LyricsSource, BETTER_LYRICS, CACHE, FILE_TAGS, KUGO
 Cohesion: 0.40
 Nodes (6): Modern fluid lyrics animation, Metrolist-inspired lyrics display, Lyrics edge fade & exit freeze, Lyrics tab sync and anchor drift fix, NowPlayingScreen, Queue bottom strip on Lyrics tab
 
-### Community 195 - "resolveDark"
-Cohesion: 0.33
-Nodes (3): migrateStoredTheme(), resolveDark(), ThemeModeTest
-
 ### Community 197 - "Gradle Run Skill"
 Cohesion: 0.10
 Nodes (18): Bounded Summary as Evidence, Handoff Brief, Subagent Selection and Handoff Reference, Repeated Failure Fingerprint, Gradle Run Skill, gradle_run.py Wrapper Script, Status Uncertainty Handling, Workflow Lifecycle (create/run/status/finish) (+10 more)
 
-### Community 199 - "CoilBitmapLoader"
-Cohesion: 0.16
-Nodes (8): CoilBitmapLoader, 1. Problem Statement & Root Cause Analysis, 2. Solutions Implemented, 3. Performance Measurements (Host JVM & Emulator Benchmarks), 4. Real-Hardware Verification & Logcat Instructions, MediaSession IPC / Binder Footprint, Performance Benchmark: Big Playlist Shuffle & MediaSession Stability (Phase 9.1-F), Shuffling & Restoration Operations (CPU Time)
+### Community 199 - "RefreshRateMode"
+Cohesion: 0.40
+Nodes (4): RefreshRateMode, AUTO, MAX, STANDARD
 
 ### Community 204 - "MessageHost"
 Cohesion: 0.50
@@ -941,9 +934,9 @@ Nodes (4): graphify, graphify-out/graph.json, graphify-out/GRAPH_REPORT.md, grap
 Cohesion: 0.40
 Nodes (4): interface, default_prompt, display_name, short_description
 
-### Community 216 - ".keyFor"
-Cohesion: 0.27
-Nodes (3): CachedMembership, StableCacheKey, StableCacheKeyTest
+### Community 216 - "PrefetchWindowTest"
+Cohesion: 0.22
+Nodes (3): CachedMembership, PrefetchWindow, PrefetchWindowTest
 
 ### Community 217 - "Error Handling Patterns"
 Cohesion: 0.11
@@ -974,20 +967,20 @@ Cohesion: 0.25
 Nodes (8): SettingsRoute, ABOUT, APPEARANCE, CONNECTIVITY, HOME, SERVER, SOUND, STORAGE
 
 ### Community 224 - ".results"
-Cohesion: 0.15
-Nodes (7): Album, Artist, SearchGrouping, TopHit, PrefetchWindow, PrefetchWindowTest, SearchGroupingTest
+Cohesion: 0.16
+Nodes (7): Album, Artist, SearchGrouping, TopHit, StableCacheKey, SearchGroupingTest, StableCacheKeyTest
 
-### Community 225 - "LayoutMode"
-Cohesion: 0.20
-Nodes (4): LayoutMode, GRID, LIST, Settings
-
-### Community 227 - "RefreshRateMode"
+### Community 225 - "LyricsRepository"
 Cohesion: 0.40
-Nodes (4): RefreshRateMode, AUTO, MAX, STANDARD
+Nodes (5): BetterLyricsProvider, KuGouLyricsProvider, LrclibLyricsProvider, LrclibMatcher, LyricsRepository
 
 ### Community 228 - "Lyrics Provider Catalog"
 Cohesion: 0.67
 Nodes (3): Kuromoji IPADIC morphological analysis, Online lyrics providers (BetterLyrics, LRCLIB, KuGou), Paxsenix lyrics provider
+
+### Community 240 - "r"
+Cohesion: 0.12
+Nodes (3): ActionListAppWidget, ActionListAppWidgetAppWidgetReceiver, FakeActionListDataRepository
 
 ### Community 243 - "risk_analysis_guide.md"
 Cohesion: 0.13
@@ -1026,8 +1019,8 @@ Cohesion: 0.17
 Nodes (11): 1. Layout coordinates, rects, and visibility tracking, 1. Viewport and dwell tracking: use `Modifier.onVisibilityChanged`, 2. Local bounds and placement: prefer `onPlaced` or `onLayoutRectChanged`, 2. Phase deferral for layout offsets and constraints, 3. Minimizing layout tree depth and wrapper nodes, 3. On-demand coordinate queries: avoid `MutableState` position tracking, 4. Prohibit layout feedback loops (back-writing during Layout), 4. Subcomposition overhead (`SubcomposeLayout` and `BoxWithConstraints`) (+3 more)
 
 ### Community 253 - "M7.0c after (§B + §C, release build)"
-Cohesion: 0.20
-Nodes (9): Background while playing, screen off (final build, 60 s window), Compose changes (§C), High refresh rate (§D), Jank (same SwiftShader battery, paused to match baseline conditions), Lint / tests, M7.0c after (§B + §C, release build), Memory (PSS KB, same states, same-day device), Size (+1 more)
+Cohesion: 0.17
+Nodes (10): Background while playing, screen off (final build, 60 s window), Compose changes (§C), High refresh rate (§D), Jank (same SwiftShader battery, paused to match baseline conditions), Lint / tests, M7.0c after (§B + §C, release build), Memory (PSS KB, same states, same-day device), Size (+2 more)
 
 ### Community 254 - "Releasing Vusic"
 Cohesion: 0.50
@@ -1093,9 +1086,9 @@ Nodes (6): Account for execution overhead, Preserve useful context and cache reu
 Cohesion: 0.29
 Nodes (6): Loading, Cold start → Library content visible (Playlists tab), Library open times — 8.3 (cache-first tabs), Method, Warm tab switch with the cache present (before), What is not in these numbers
 
-### Community 275 - "HomeScreen.kt"
-Cohesion: 0.10
-Nodes (14): C. Parameter unwrapping and equality propagation pitfall (`ImmutableList`), Scope guard: when parameter unwrapping is *not* an issue, SongPagerSection(), AlbumCarousel(), DiscoverCard(), ExplorePill(), HomeContent(), HomeScreen() (+6 more)
+### Community 275 - "Motion"
+Cohesion: 0.07
+Nodes (3): MiniPlayer(), SongPagerSection(), Motion
 
 ### Community 277 - "Stitch Design System Documentation Skill"
 Cohesion: 0.33
@@ -1153,29 +1146,29 @@ Nodes (3): Download auto-resume after reconnect, MobileDataPolicy, Mobile data s
 Cohesion: 0.29
 Nodes (6): interface, default_prompt, display_name, short_description, policy, allow_implicit_invocation
 
-### Community 308 - "PendingActionType"
-Cohesion: 0.25
-Nodes (8): PendingActionType, SCROBBLE, STAR, STAR_ALBUM, STAR_ARTIST, UNSTAR, UNSTAR_ALBUM, UNSTAR_ARTIST
+### Community 300 - "PlayerService.kt"
+Cohesion: 0.04
+Nodes (17): CoverArtUrlProvider, AutoCallback, CoilBitmapLoader, PlayerService, EventListener, Listener, RoutingDataSource, RoutingDataSourceFactory (+9 more)
 
 ## Knowledge Gaps
 - **237 isolated node(s):** `Small`, `Medium`, `Large`, `XLarge`, `XXLarge` (+232 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1425 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **150 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1426 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **137 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `SettingsStore` connect `Settings Preferences Store` to `com`, `DeviceFilesViewModel.kt`, `SettingsScreen.kt`, `Components.kt`, `RomanizerTest.kt`, `DynamicTrustManager`, `SettingsViewModel`, `Lyrics Model Parsing`, `TrackActionsSheet.kt`, `Download Repository`, `Playlist Ordering`, `LyricsRepository.kt`, `SettingsViewModel.kt`, `RememberLyricsTabTest.kt`, `LyricsMenuSheet.kt`, `NowPlayingScreen.kt`, `LibraryViewModel`, `PlayerService`, `.setLyricsLineGapPercent`, `.setLyricsRomanize`, `Download State Machine`, `PlayerManager`, `Stream Quality Policy`, `HomeViewModel`, `Track`, `Lyrics Search ViewModels`, `ViewModelStateTest`, `resolveDark`, `SettingsStore.kt`, `Lyrics Matching Tests`, `Lyrics ViewModel`, `Cache Size Policy`, `LayoutMode`, `PlaylistEvents`, `Artist Info Parsing Tests`, `LoginViewModel`, `SortChoice`?**
-  _High betweenness centrality (0.117) - this node is a cross-community bridge._
+- **Why does `SettingsStore` connect `Settings Preferences Store` to `DeviceFilesViewModel.kt`, `SettingsScreen.kt`, `Components.kt`, `SettingsStore.kt`, `Login Error Mapping`, `RomanizerTest.kt`, `NowPlayingScreen`, `SettingsViewModel`, `Lyrics Model Parsing`, `UiMessenger`, `Download Repository`, `Playlist Ordering`, `LyricsRepository.kt`, `SettingsViewModel.kt`, `assertequals`, `RememberLyricsTabTest.kt`, `.remember`, `NowPlayingScreen.kt`, `LibraryViewModel`, `PlayerService.kt`, `Stream Quality Policy`, `DownloadWorker`, `PlayerManager`, `HomeViewModel`, `Track`, `Lyrics Search ViewModels`, `ViewModelStateTest`, `ThemeMode`, `M45Test.kt`, `DownloadScheduler.kt`, `Lyrics Matching Tests`, `Lyrics ViewModel`, `Cache Size Policy`, `MainViewModel`, `SortChoice`, `LoginScreen.kt`, `resolveDark`?**
+  _High betweenness centrality (0.112) - this node is a cross-community bridge._
 - **What connects `Small`, `Medium`, `Large` to the rest of the system?**
   _237 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `DeviceFilesViewModel.kt` be split into smaller, more focused modules?**
-  _Cohesion score 0.09523809523809523 - nodes in this community are weakly interconnected._
-- **Why does `PlayerService` connect `PlayerService` to `SettingsViewModel.kt`, `WidgetUpdater.kt`, `.d`, `CoilBitmapLoader`, `PlaylistEvents`, `Music Data Repository`, `M7.0a baseline (release build, commit `ef69329`)`, `Settings Preferences Store`, `PlayerManager`, `Scrobble Submission Policy`, `Android Auto Callbacks`, `WidgetActionReceiver.kt`, `Download Repository`, `Network Monitoring`, `Auto Browse Tree`, `Cached Track Store`, `Credentials Store Auth`?**
-  _High betweenness centrality (0.085) - this node is a cross-community bridge._
+  _Cohesion score 0.09915966386554621 - nodes in this community are weakly interconnected._
+- **Why does `MusicDataRepository` connect `Music Data Repository` to `Playlist Batching Lyrics Parsing`, `Components.kt`, `FakeMusicRepo`, `DetailScreens.kt`, `NowPlayingScreen`, `SettingsViewModel`, `Motion`, `UiMessenger`, `Download Repository`, `Nav.kt`, `Offline Radio Fetching`, `SettingsViewModel.kt`, `NowPlayingScreen.kt`, `LibraryViewModel`, `Fake Library Repository`, `PlayerService.kt`, `HomeViewModel`, `PlayerManager`, `Track`, `Lyrics Search ViewModels`, `LibraryComponents.kt`, `Offline Sync Store`, `DetailViewModels.kt`, `PlaylistEvents`, `MainViewModel`?**
+  _High betweenness centrality (0.104) - this node is a cross-community bridge._
 - **Should `SettingsScreen.kt` be split into smaller, more focused modules?**
-  _Cohesion score 0.05727605727605728 - nodes in this community are weakly interconnected._
-- **Why does `MusicDataRepository` connect `Music Data Repository` to `Playlist Batching Lyrics Parsing`, `Components.kt`, `FakeMusicRepo`, `LibraryScreen.kt`, `SettingsViewModel`, `HomeScreen.kt`, `TrackActionsSheet.kt`, `Download Repository`, `Offline Radio Fetching`, `SettingsViewModel.kt`, `NowPlayingScreen.kt`, `LibraryViewModel`, `Fake Library Repository`, `PlayerService`, `HomeViewModel`, `PlayerManager`, `DownloadsScreen.kt`, `Track`, `Lyrics Search ViewModels`, `LibraryComponents.kt`, `Offline Sync Store`, `DetailViewModels.kt`, `PlaylistEvents`?**
-  _High betweenness centrality (0.079) - this node is a cross-community bridge._
+  _Cohesion score 0.05289450484866295 - nodes in this community are weakly interconnected._
+- **Why does `PlayerManager` connect `PlayerManager` to `DeviceFilesViewModel.kt`, `Components.kt`, `DetailScreens.kt`, `NowPlayingScreen`, `Settings Preferences Store`, `Motion`, `UiMessenger`, `.onControllerReady`, `Offline Radio Fetching`, `SettingsViewModel.kt`, `NowPlayingScreen.kt`, `Music Data Repository`, `PlayerService.kt`, `QueueStore.kt`, `Stream Quality Policy`, `DeviceFilesScreen.kt`, `Radio Programmer`, `.singleMove`, `MainViewModel`?**
+  _High betweenness centrality (0.093) - this node is a cross-community bridge._
 - **Should `Color Science Utilities` be split into smaller, more focused modules?**
-  _Cohesion score 0.06099656357388316 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05638536221060493 - nodes in this community are weakly interconnected._
