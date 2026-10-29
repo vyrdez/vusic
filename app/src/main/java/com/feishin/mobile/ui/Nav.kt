@@ -59,7 +59,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -127,6 +129,15 @@ private val DETAIL_ROUTES = NavRules.DETAIL_ROUTES
 fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     val nav = rememberNavController()
     var showNowPlaying by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(showNowPlaying) {
+        if (showNowPlaying) {
+            focusManager.clearFocus()
+            keyboardController?.hide()
+        }
+    }
     var actionsTarget by remember { mutableStateOf<ActionTarget?>(null) }
     // A playlist delete waiting for confirmation. The action moved from a bare
     // header button into the ⋮ menu, so it now asks first.

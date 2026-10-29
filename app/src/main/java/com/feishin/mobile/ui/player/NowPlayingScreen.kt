@@ -146,7 +146,9 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -199,6 +201,33 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyColumnState
 import kotlin.math.roundToInt
 
+object NowPlayingTouchHelper {
+    fun shouldDismissInputOnExpand(expanded: Boolean): Boolean = expanded
+
+    fun onNowPlayingExpand(
+        expanded: Boolean,
+        clearFocus: () -> Unit,
+        hideKeyboard: () -> Unit,
+    ): Boolean {
+        if (expanded) {
+            clearFocus()
+            hideKeyboard()
+            return true
+        }
+        return false
+    }
+
+    fun onCompositionEntry(
+        clearFocus: () -> Unit,
+        hideKeyboard: () -> Unit,
+    ) {
+        clearFocus()
+        hideKeyboard()
+    }
+
+    fun consumesPointerInput(): Boolean = true
+}
+
 /**
  * Full-screen Now Playing. Playback lives in the service, so rotation and the
  * system back gesture never disturb it; back (and swipe-down) only closes this UI.
@@ -225,6 +254,12 @@ fun NowPlayingScreen(
     onActions: (ActionTarget) -> Unit,
 ) {
     BackHandler(onBack = onClose)
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        focusManager.clearFocus()
+        keyboard?.hide()
+    }
     val song by player.current.collectAsStateWithLifecycle()
     val current = song
     val lyricsLazyListState = rememberLazyListState()
@@ -396,6 +431,7 @@ fun NowPlayingScreen(
     Box(
         Modifier
             .fillMaxSize()
+            .pointerInput(Unit) { detectTapGestures { /* consume */ } }
             .background(backdrop)
             // The bottom strip paints under the gesture bar and applies the
             // navigation-bar inset itself, which is why this root does not.
@@ -2043,7 +2079,11 @@ private fun QueueSheet(
         listOf(playingColor(palette.sheetTop), playingColor(palette.sheetBottom)),
     )
 
-    Box(Modifier.fillMaxSize()) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) { detectTapGestures { /* consume */ } },
+    ) {
         // Scrim: alpha follows the drag, tap-outside closes through the one path.
         Box(
             Modifier.fillMaxSize()
