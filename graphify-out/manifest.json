@@ -602,9 +602,9 @@
     "semantic_hash": "fc837bedf9cdd0ec8deea81d81ca3d22"
   },
   "app/build.gradle.kts": {
-    "mtime": 1793171372.96251,
-    "seen": 1793172052.2079775,
-    "ast_hash": "6179b6ac6331f08105b34f3a832bc9d0",
+    "mtime": 1793257250.309025,
+    "seen": 1793258510.4213076,
+    "ast_hash": "25c4cd28ff97c5194848c8f798eec42b",
     "semantic_hash": ""
   },
   "app/src/androidTest/java/com/feishin/mobile/data/db/LyricsCacheMigrationTest.kt": {
@@ -692,10 +692,10 @@
     "semantic_hash": "2b17f800e77108f7ed6cf32bfaf794c5"
   },
   "app/src/main/java/com/feishin/mobile/core/common/LibrarySort.kt": {
-    "mtime": 1791949226.4330804,
-    "seen": 1793152989.3356407,
-    "ast_hash": "a1111fd4521ad67b512e2669bb54ca26",
-    "semantic_hash": "a1111fd4521ad67b512e2669bb54ca26"
+    "mtime": 1793248233.6589248,
+    "seen": 1793248544.6262887,
+    "ast_hash": "bcacda5465051c27e32158c5e6bb7352",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/core/common/LruSizer.kt": {
     "mtime": 1791969430.4677665,
@@ -740,9 +740,9 @@
     "semantic_hash": "3694b0f8e9e583dffe1d9a03298f0ede"
   },
   "app/src/main/java/com/feishin/mobile/core/common/PlaybackSource.kt": {
-    "mtime": 1793168912.5134614,
-    "seen": 1793169085.2619636,
-    "ast_hash": "2a1e0225664eb78467d119da5c9aff4d",
+    "mtime": 1793249784.305193,
+    "seen": 1793257240.3334072,
+    "ast_hash": "f2c2547b78af87dda9527c8f38172222",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/core/common/PlaylistBatch.kt": {
@@ -776,10 +776,10 @@
     "semantic_hash": "b4818b0fd05f8b6a2177cc36c46b4d39"
   },
   "app/src/main/java/com/feishin/mobile/core/common/QueueCommit.kt": {
-    "mtime": 1791986930.5539043,
-    "seen": 1793152989.3393152,
-    "ast_hash": "e0385d3ec1fcde5933cba436b2e01c3c",
-    "semantic_hash": "e0385d3ec1fcde5933cba436b2e01c3c"
+    "mtime": 1793249055.8426175,
+    "seen": 1793249444.281399,
+    "ast_hash": "7b1313eb6ce230a64d4840e38eaffaf7",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/core/common/QueueHandoff.kt": {
     "mtime": 1792373721.1836908,
@@ -830,10 +830,10 @@
     "semantic_hash": "25f82975fd6884c4f7143c90d106b29d"
   },
   "app/src/main/java/com/feishin/mobile/core/common/ShufflePlan.kt": {
-    "mtime": 1791905581.2684374,
-    "seen": 1793152989.3415763,
-    "ast_hash": "eace50ae90bb9afecae984e9e0f14a8f",
-    "semantic_hash": "eace50ae90bb9afecae984e9e0f14a8f"
+    "mtime": 1793249087.5790825,
+    "seen": 1793249444.2814178,
+    "ast_hash": "50012247473e6925adbb2dde6b97665c",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/core/common/SmartCache.kt": {
     "mtime": 1792377347.229532,
@@ -1262,15 +1262,15 @@
     "semantic_hash": "8d8aea55b28162fdb7ce92eeff9ee5ae"
   },
   "app/src/main/java/com/feishin/mobile/playback/PlayerManager.kt": {
-    "mtime": 1793170292.0441759,
-    "seen": 1793170448.5356495,
-    "ast_hash": "4332e5691ab3c1a9f14d4577a9fb7014",
+    "mtime": 1793256943.552665,
+    "seen": 1793257240.3336465,
+    "ast_hash": "7e32042f05a67072525dd3e46502044f",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/playback/PlayerService.kt": {
-    "mtime": 1793170153.8708367,
-    "seen": 1793170201.009422,
-    "ast_hash": "528b5ece6827437cd85626f7a72f118a",
+    "mtime": 1793249887.6723292,
+    "seen": 1793257240.333649,
+    "ast_hash": "540ca5c3f1ce2e296fef45a947e1d281",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/playback/PrefetchManager.kt": {
@@ -1298,10 +1298,10 @@
     "semantic_hash": "989151c0fdc15feab0c0a897e420efa5"
   },
   "app/src/main/java/com/feishin/mobile/ui/Nav.kt": {
-    "mtime": 1793095363.5318348,
-    "seen": 1793152989.3616257,
-    "ast_hash": "8745916041b3f3b75f480237479d6c32",
-    "semantic_hash": "8745916041b3f3b75f480237479d6c32"
+    "mtime": 1793249093.3176634,
+    "seen": 1793249444.2815747,
+    "ast_hash": "f2105d4ed202c0a05d14b38d08e23a01",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/States.kt": {
     "mtime": 1791809691.2871704,
@@ -1466,10 +1466,10 @@
     "semantic_hash": "f5cc1e267c1cdada9b4f5f8f95567643"
   },
   "app/src/main/java/com/feishin/mobile/ui/library/LibraryScreen.kt": {
-    "mtime": 1792657799.8861911,
-    "seen": 1793152989.3682308,
-    "ast_hash": "34df1f5b9ba0f7032c1414dd55259b50",
-    "semantic_hash": "34df1f5b9ba0f7032c1414dd55259b50"
+    "mtime": 1793257662.0798295,
+    "seen": 1793258510.42163,
+    "ast_hash": "e0fcd7d7b0c4c232aa994a19eb0da889",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/library/LibraryViewModel.kt": {
     "mtime": 1792658191.4078217,
@@ -1544,9 +1544,9 @@
     "semantic_hash": "7a18867a71cf0bb80f61bcdad07a37d3"
   },
   "app/src/main/java/com/feishin/mobile/ui/player/NowPlayingScreen.kt": {
-    "mtime": 1793169020.657364,
-    "seen": 1793169085.2622712,
-    "ast_hash": "b6b153ec872970a04f94d1ed052bd8e7",
+    "mtime": 1793249239.444043,
+    "seen": 1793249444.281657,
+    "ast_hash": "5e15e79deb21b07bda0e418b63e0baa7",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/search/SearchScreen.kt": {
@@ -1682,9 +1682,9 @@
     "semantic_hash": "e2213daa4d1d71873d919a8b2a0037af"
   },
   "app/src/test/java/com/feishin/mobile/core/common/M5LogicTest.kt": {
-    "mtime": 1793169127.1456802,
-    "seen": 1793169235.9575279,
-    "ast_hash": "b73c45be83e110589958a97002028f8d",
+    "mtime": 1793257066.321673,
+    "seen": 1793257240.3338256,
+    "ast_hash": "247edd0f624a54305ba8229bca04d3a3",
     "semantic_hash": ""
   },
   "app/src/test/java/com/feishin/mobile/core/common/M6PartATest.kt": {
@@ -2960,15 +2960,15 @@
     "semantic_hash": ""
   },
   "AGENTS.md": {
-    "mtime": 1793152960.7685277,
-    "seen": 1793154596.6641607,
+    "mtime": 1793258491.339883,
+    "seen": 1793258510.4222145,
     "ast_hash": "f36539ecc9af68f33ebd72770ce4a19e",
     "semantic_hash": "f36539ecc9af68f33ebd72770ce4a19e"
   },
   "CHANGELOG.md": {
-    "mtime": 1793171397.252496,
-    "seen": 1793172052.2091765,
-    "ast_hash": "89c6211af305819bd914692d462b6888",
+    "mtime": 1793258459.6319826,
+    "seen": 1793258510.4222167,
+    "ast_hash": "75595d0b17b263af223e37cd2ae35f02",
     "semantic_hash": ""
   },
   "GEMINI.md": {
@@ -2978,9 +2978,9 @@
     "semantic_hash": "d353b17e3db3e93c6146726864324896"
   },
   "PLAN.md": {
-    "mtime": 1793171390.7578862,
-    "seen": 1793172052.209183,
-    "ast_hash": "1bf53df63b47cc0a2dc8c931be934c64",
+    "mtime": 1793258459.6254866,
+    "seen": 1793258510.4222214,
+    "ast_hash": "5bd2a88687cdbb6dfe2bcbed2a3fc8b6",
     "semantic_hash": ""
   },
   "README.md": {
@@ -3104,15 +3104,51 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/playback/PlaybackRecovery.kt": {
-    "mtime": 1793170012.4205472,
-    "seen": 1793170201.0093966,
-    "ast_hash": "2e5c16b8f56eeb82a984c3fb391c5718",
+    "mtime": 1793249801.034158,
+    "seen": 1793257240.3336437,
+    "ast_hash": "43787f6b151452e72ef162c6197fa0df",
     "semantic_hash": ""
   },
   "app/src/test/java/com/feishin/mobile/playback/PlaybackRecoveryTest.kt": {
-    "mtime": 1793170022.069527,
-    "seen": 1793170201.0099118,
-    "ast_hash": "607f873348bc953c773802f6917f0916",
+    "mtime": 1793256981.535131,
+    "seen": 1793257240.3339775,
+    "ast_hash": "4b0b46440b74522a7caf3e127a520081",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/feishin/mobile/ui/library/DownloadsSortFilterTest.kt": {
+    "mtime": 1793248310.3842027,
+    "seen": 1793248544.6268835,
+    "ast_hash": "fd1573cd2fe2020ae70c7ad0ebd4c519",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/feishin/mobile/core/common/QueueCommitTest.kt": {
+    "mtime": 1793249244.5734582,
+    "seen": 1793249444.2817256,
+    "ast_hash": "d084c3f3f5a504166c29f6786337a411",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/feishin/mobile/ui/player/NowPlayingTouchTest.kt": {
+    "mtime": 1793249264.1003158,
+    "seen": 1793249444.2818604,
+    "ast_hash": "d412f1ebc960e7042031e7fae025af48",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/i-have-adhd/agents/openai.yaml": {
+    "mtime": 1793257304.9302135,
+    "seen": 1793258510.4213037,
+    "ast_hash": "9002b3c0529c61ac0c5dd6b59e9e1bf7",
+    "semantic_hash": ""
+  },
+  ".opencode/command/i-have-adhd.md": {
+    "mtime": 1793257304.872061,
+    "seen": 1793258510.4222093,
+    "ast_hash": "708a9ede48a9e5694ffd9d255784d29b",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/i-have-adhd/SKILL.md": {
+    "mtime": 1793257304.9266613,
+    "seen": 1793258510.422212,
+    "ast_hash": "a443492ad8bf9748658e2f1729ab49dd",
     "semantic_hash": ""
   }
 }
