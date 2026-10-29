@@ -17,6 +17,9 @@ object PlaybackSource {
     fun kind(downloadedPath: String?, fileExists: (String) -> Boolean): Kind =
         if (downloadedPath != null && fileExists(downloadedPath)) Kind.LOCAL else Kind.STREAM
 
+    fun shouldBypassStreamCache(scheme: String?): Boolean =
+        scheme == "file" || scheme == "content" || scheme == "android.resource"
+
     fun isPlayableLocalFile(
         path: String?,
         fileExists: (String) -> Boolean,

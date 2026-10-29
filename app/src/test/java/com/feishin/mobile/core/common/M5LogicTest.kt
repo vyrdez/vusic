@@ -289,6 +289,16 @@ class PlaybackSourceTest {
         assertNull(PlaybackSource.mimeTypeForPath("/music/song"))
         assertNull(PlaybackSource.mimeTypeForPath(null))
     }
+
+    @Test
+    fun shouldBypassStreamCache_validation() {
+        assertTrue(PlaybackSource.shouldBypassStreamCache("file"))
+        assertTrue(PlaybackSource.shouldBypassStreamCache("content"))
+        assertTrue(PlaybackSource.shouldBypassStreamCache("android.resource"))
+        assertFalse(PlaybackSource.shouldBypassStreamCache("http"))
+        assertFalse(PlaybackSource.shouldBypassStreamCache("https"))
+        assertFalse(PlaybackSource.shouldBypassStreamCache(null))
+    }
 }
 
 class OfflineRadioTest {

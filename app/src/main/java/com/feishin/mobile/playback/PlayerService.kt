@@ -15,6 +15,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -127,14 +131,13 @@ class PlayerService : MediaLibraryService() {
                 },
             )
         }
-        // Scheme-aware upstream: downloaded tracks are opened from file:// by
-        // DefaultDataSource (FileDataSource), while network streams still go
-        // through the shared OkHttp client (self-signed + path prefix).
+        // Scheme-routing DataSource: local files (file://, content://, android.resource://)
+        // bypass CacheDataSource and SimpleCache entirely via local DefaultDataSource.
+        // Network streams (http://, https://) route to CacheDataSource with UpstreamLogger.
         val httpFactory = OkHttpDataSource.Factory(okHttpClient)
-        val upstream = androidx.media3.datasource.DefaultDataSource.Factory(this, httpFactory)
         val cacheFactory = CacheDataSource.Factory()
             .setCache(cache)
-            .setUpstreamDataSourceFactory(UpstreamLogger(upstream))
+            .setUpstreamDataSourceFactory(UpstreamLogger(httpFactory))
             // Stable keys (song + quality, no per-request salt): prefetched
             // bytes and replays hit the same spans instead of re-downloading.
             .setCacheKeyFactory { spec ->
@@ -153,8 +156,14 @@ class PlayerService : MediaLibraryService() {
                 },
             )
 
+        val localFactory = DefaultDataSource.Factory(this)
+        val routingFactory = RoutingDataSourceFactory(
+            localFactory = localFactory,
+            streamFactory = cacheFactory,
+        )
+
         val exo = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(cacheFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(routingFactory))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -204,67 +213,83 @@ class PlayerService : MediaLibraryService() {
                 val p = player ?: return
                 val item = p.currentMediaItem ?: return
                 val idx = p.currentMediaItemIndex
+                val title = item.mediaMetadata.title?.toString()
 
-                if (item.localConfiguration?.uri?.scheme == "file" && !isLocal(item)) {
-                    scope.launch {
-                        downloads.remove(item.mediaId)
-                        val track = TrackMediaItems.toTrack(item)
-                        val qId = TrackMediaItems.queueIdOf(item) ?: -1L
-                        val streamItem = track?.let { resolveTrack(it, qId) }
-                        if (streamItem != null && p.currentMediaItemIndex == idx) {
-                            p.replaceMediaItem(idx, streamItem)
-                            p.prepare()
-                            p.play()
-                        } else if (p.hasNextMediaItem()) {
-                            p.seekToNextMediaItem()
-                            p.prepare()
-                            p.play()
-                        } else {
-                            playerManager.notifyPlaybackFailed(item.mediaMetadata.title?.toString())
+                scope.launch {
+                    val offline = isOffline()
+                    val livePlayer = player ?: return@launch
+
+                    if (item.localConfiguration?.uri?.scheme == "file" && !isLocal(item)) {
+                        val localFile = downloads.localFile(item.mediaId)
+                        if (PlaybackRecovery.shouldDeleteDownloadOnError(offline, localFile != null)) {
+                            downloads.remove(item.mediaId)
                         }
-                    }
-                } else if (!isLocal(item)) {
-                    // Case B: Stream URI failed
-                    val uriStr = item.localConfiguration?.uri?.toString().orEmpty()
-                    val key = com.feishin.mobile.core.common.StableCacheKey.keyFor(uriStr)
-                    runCatching { cache.removeResource(key) }
-                    scope.launch { cachedTracks.remove(item.mediaId) }
-
-                    val pos = p.currentPosition
-                    val alreadyRetried = retriedMediaIds.contains(item.mediaId)
-                    if (PlaybackRecovery.shouldRetryFromNetwork(error.errorCode, alreadyRetried)) {
-                        retriedMediaIds.add(item.mediaId)
-                        scope.launch {
+                        if (offline) {
+                            livePlayer.pause()
+                            playerManager.notifyOfflineUnavailable(title)
+                        } else {
                             val track = TrackMediaItems.toTrack(item)
                             val qId = TrackMediaItems.queueIdOf(item) ?: -1L
                             val streamItem = track?.let { resolveTrack(it, qId, forceNetwork = true) }
-                            if (streamItem != null && p.currentMediaItemIndex == idx) {
-                                p.replaceMediaItem(idx, streamItem)
-                                if (pos > 0) p.seekTo(idx, pos)
-                                p.prepare()
-                                p.play()
-                            } else if (p.hasNextMediaItem()) {
-                                p.seekToNextMediaItem()
-                                p.prepare()
-                                p.play()
+                            if (streamItem != null && livePlayer.currentMediaItemIndex == idx) {
+                                livePlayer.replaceMediaItem(idx, streamItem)
+                                livePlayer.prepare()
+                                livePlayer.play()
                             } else {
-                                playerManager.notifyPlaybackFailed(item.mediaMetadata.title?.toString())
+                                livePlayer.pause()
+                                playerManager.notifyPlaybackFailed(title)
                             }
                         }
-                    } else if (p.hasNextMediaItem()) {
-                        p.seekToNextMediaItem()
-                        p.prepare()
-                        p.play()
-                    } else {
-                        playerManager.notifyPlaybackFailed(item.mediaMetadata.title?.toString())
-                    }
-                } else if (isLocal(item)) {
-                    if (p.hasNextMediaItem()) {
-                        p.seekToNextMediaItem()
-                        p.prepare()
-                        p.play()
-                    } else {
-                        playerManager.notifyPlaybackFailed(item.mediaMetadata.title?.toString())
+                    } else if (!isLocal(item)) {
+                        // Case B: Stream URI failed
+                        if (offline) {
+                            livePlayer.pause()
+                            playerManager.notifyOfflineUnavailable(title)
+                        } else {
+                            val uriStr = item.localConfiguration?.uri?.toString().orEmpty()
+                            val key = com.feishin.mobile.core.common.StableCacheKey.keyFor(uriStr)
+                            if (PlaybackRecovery.shouldEvictStreamCacheOnError(isOffline = false)) {
+                                runCatching { cache.removeResource(key) }
+                                cachedTracks.remove(item.mediaId)
+                            }
+                            val pos = livePlayer.currentPosition
+                            val alreadyRetried = retriedMediaIds.contains(item.mediaId)
+                            if (PlaybackRecovery.shouldRetryFromNetwork(error.errorCode, alreadyRetried, isOffline = false)) {
+                                retriedMediaIds.add(item.mediaId)
+                                val track = TrackMediaItems.toTrack(item)
+                                val qId = TrackMediaItems.queueIdOf(item) ?: -1L
+                                val streamItem = track?.let { resolveTrack(it, qId, forceNetwork = true) }
+                                if (streamItem != null && livePlayer.currentMediaItemIndex == idx) {
+                                    livePlayer.replaceMediaItem(idx, streamItem)
+                                    if (pos > 0) livePlayer.seekTo(idx, pos)
+                                    livePlayer.prepare()
+                                    livePlayer.play()
+                                } else if (livePlayer.hasNextMediaItem()) {
+                                    livePlayer.seekToNextMediaItem()
+                                    livePlayer.prepare()
+                                    livePlayer.play()
+                                } else {
+                                    livePlayer.pause()
+                                    playerManager.notifyPlaybackFailed(title)
+                                }
+                            } else if (livePlayer.hasNextMediaItem()) {
+                                livePlayer.seekToNextMediaItem()
+                                livePlayer.prepare()
+                                livePlayer.play()
+                            } else {
+                                livePlayer.pause()
+                                playerManager.notifyPlaybackFailed(title)
+                            }
+                        }
+                    } else if (isLocal(item)) {
+                        if (livePlayer.hasNextMediaItem()) {
+                            livePlayer.seekToNextMediaItem()
+                            livePlayer.prepare()
+                            livePlayer.play()
+                        } else {
+                            livePlayer.pause()
+                            playerManager.notifyPlaybackFailed(title)
+                        }
                     }
                 }
             }
@@ -453,9 +478,11 @@ class PlayerService : MediaLibraryService() {
         item.mediaMetadata.extras?.getString(EXTRA_SONG_ID)
 
     /** Offline when the toggle says so or the network is gone. */
-    private suspend fun isOffline(): Boolean =
-        runCatching { settings.settingsNow().offlineMode }.getOrDefault(false) ||
-            network.isOnline.value != true
+    private suspend fun isOffline(): Boolean {
+        val s = runCatching { settings.settingsNow() }.getOrNull()
+        val auto = s?.autoOffline == true && !network.isOnline.value
+        return s?.offlineMode == true || auto || !network.isOnline.value
+    }
 
     /**
      * Playable MediaItem for [track]: finished downloads play from the local
@@ -953,6 +980,60 @@ private class UpstreamLogger(
                 VLog.d(PlayerService.TAG, "upstream open key=$key uri=${dataSpec.uri.host}${dataSpec.uri.path}")
                 return inner.open(dataSpec)
             }
+        }
+    }
+}
+
+private class RoutingDataSourceFactory(
+    private val localFactory: DataSource.Factory,
+    private val streamFactory: DataSource.Factory,
+) : DataSource.Factory {
+    override fun createDataSource(): DataSource {
+        return RoutingDataSource(
+            localDataSource = localFactory.createDataSource(),
+            streamDataSource = streamFactory.createDataSource(),
+        )
+    }
+}
+
+private class RoutingDataSource(
+    private val localDataSource: DataSource,
+    private val streamDataSource: DataSource,
+) : DataSource {
+    private var activeDelegate: DataSource? = null
+
+    override fun addTransferListener(transferListener: TransferListener) {
+        localDataSource.addTransferListener(transferListener)
+        streamDataSource.addTransferListener(transferListener)
+    }
+
+    override fun open(dataSpec: DataSpec): Long {
+        val delegate = if (PlaybackSource.shouldBypassStreamCache(dataSpec.uri.scheme)) {
+            localDataSource
+        } else {
+            streamDataSource
+        }
+        activeDelegate = delegate
+        return delegate.open(dataSpec)
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        return checkNotNull(activeDelegate) { "RoutingDataSource is not open" }.read(buffer, offset, length)
+    }
+
+    override fun getUri(): Uri? {
+        return activeDelegate?.uri
+    }
+
+    override fun getResponseHeaders(): Map<String, List<String>> {
+        return activeDelegate?.responseHeaders ?: emptyMap()
+    }
+
+    override fun close() {
+        try {
+            activeDelegate?.close()
+        } finally {
+            activeDelegate = null
         }
     }
 }

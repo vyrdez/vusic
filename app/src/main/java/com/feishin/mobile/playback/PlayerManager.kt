@@ -1102,15 +1102,41 @@ class PlayerManager @Inject constructor(
         messenger.show(message)
     }
 
+    fun notifyOfflineUnavailable(songTitle: String? = null) {
+        val title = songTitle?.takeIf { it.isNotBlank() } ?: "Track"
+        messenger.show("Offline: $title is not downloaded")
+    }
+
+    private suspend fun isTrackPlayableOffline(track: Track): Boolean {
+        if (track.localUri != null) return true
+        if (downloads.localFile(track.id) != null) return true
+        return isTrackFullyCached(track.id)
+    }
+
+    private suspend fun isTrackFullyCached(songId: String): Boolean {
+        val row = cachedTracks.get(songId) ?: return false
+        if (row.sizeBytes <= 0) return false
+        return runCatching {
+            streamCache.isCached(row.cacheKey, 0, row.sizeBytes)
+        }.getOrDefault(false)
+    }
+
     fun playAt(index: Int) {
         val c = controller ?: return
         if (index in _queue.value.indices) {
-            c.seekTo(index, 0)
-            if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
-            c.play()
-            _currentIndex.value = index
-            _current.value = _queue.value[index].song
-            persistAsync()
+            val target = _queue.value[index].song
+            scope.launch {
+                if (isOffline() && !isTrackPlayableOffline(target)) {
+                    notifyOfflineUnavailable(target.title)
+                    return@launch
+                }
+                c.seekTo(index, 0)
+                if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
+                c.play()
+                _currentIndex.value = index
+                _current.value = target
+                persistAsync()
+            }
         }
     }
 
@@ -1121,21 +1147,34 @@ class PlayerManager @Inject constructor(
             if (c.isPlaying || c.playWhenReady) {
                 c.pause()
             } else {
-                if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
-                c.play()
+                scope.launch {
+                    if (isOffline() && !isTrackPlayableOffline(currentItem.song)) {
+                        notifyOfflineUnavailable(currentItem.song.title)
+                        return@launch
+                    }
+                    if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
+                    c.play()
+                }
             }
             return
         }
         val index = _queue.value.indexOfFirst { it.queueId == queueId }
         if (index >= 0) {
-            c.seekTo(index, 0L)
-            if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
-            c.play()
-            _currentIndex.value = index
-            _current.value = _queue.value[index].song
-            _current.value?.let { recordRecent(it) }
-            scope.launch { applyReplayGain(_current.value) }
-            persistAsync()
+            val target = _queue.value[index].song
+            scope.launch {
+                if (isOffline() && !isTrackPlayableOffline(target)) {
+                    notifyOfflineUnavailable(target.title)
+                    return@launch
+                }
+                c.seekTo(index, 0L)
+                if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
+                c.play()
+                _currentIndex.value = index
+                _current.value = target
+                _current.value?.let { recordRecent(it) }
+                scope.launch { applyReplayGain(_current.value) }
+                persistAsync()
+            }
         }
     }
 
@@ -1168,9 +1207,47 @@ class PlayerManager @Inject constructor(
         c.play()
     }
 
-    fun skipToNext() = controller?.seekToNextMediaItem()
+    fun skipToNext() {
+        val c = controller ?: return
+        scope.launch {
+            if (isOffline()) {
+                val q = _queue.value
+                val cur = _currentIndex.value
+                val nextPlayable = (cur + 1 until q.size).firstOrNull { isTrackPlayableOffline(q[it].song) }
+                if (nextPlayable != null) {
+                    c.seekTo(nextPlayable, 0L)
+                    if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
+                    c.play()
+                } else {
+                    val nextSong = q.getOrNull(cur + 1)?.song
+                    notifyOfflineUnavailable(nextSong?.title)
+                }
+            } else {
+                c.seekToNextMediaItem()
+            }
+        }
+    }
 
-    fun skipToPrevious() = controller?.seekToPreviousMediaItem()
+    fun skipToPrevious() {
+        val c = controller ?: return
+        scope.launch {
+            if (isOffline()) {
+                val q = _queue.value
+                val cur = _currentIndex.value
+                val prevPlayable = (cur - 1 downTo 0).firstOrNull { isTrackPlayableOffline(q[it].song) }
+                if (prevPlayable != null) {
+                    c.seekTo(prevPlayable, 0L)
+                    if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
+                    c.play()
+                } else {
+                    val prevSong = q.getOrNull(cur - 1)?.song
+                    notifyOfflineUnavailable(prevSong?.title)
+                }
+            } else {
+                c.seekToPreviousMediaItem()
+            }
+        }
+    }
 
     fun seekTo(ms: Long) {
         controller?.seekTo(ms)

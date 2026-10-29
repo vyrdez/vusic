@@ -11,10 +11,19 @@ object PlaybackRecovery {
      * Determines whether playback should be retried from the network.
      * Guards against retry loops by allowing at most one retry per failed item.
      */
-    fun shouldRetryFromNetwork(errorCode: Int, alreadyRetried: Boolean): Boolean {
-        if (alreadyRetried) return false
+    fun shouldRetryFromNetwork(
+        errorCode: Int,
+        alreadyRetried: Boolean,
+        isOffline: Boolean = false,
+    ): Boolean {
+        if (isOffline || alreadyRetried) return false
         return true
     }
+
+    fun shouldDeleteDownloadOnError(isOffline: Boolean, fileExistsAndValid: Boolean): Boolean =
+        !isOffline && !fileExistsAndValid
+
+    fun shouldEvictStreamCacheOnError(isOffline: Boolean): Boolean = !isOffline
 
     /**
      * In Media3, calling play() while in STATE_IDLE only sets playWhenReady = true

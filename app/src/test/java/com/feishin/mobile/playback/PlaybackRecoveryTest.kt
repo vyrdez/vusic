@@ -51,4 +51,24 @@ class PlaybackRecoveryTest {
         assertFalse(PlaybackRecovery.isInvalidCachedPayload(10_000L, flacHeader))
         assertFalse(PlaybackRecovery.isInvalidCachedPayload(10_000L, id3Header))
     }
+
+    @Test
+    fun shouldRetryFromNetworkReturnsFalseWhenOffline() {
+        assertFalse(PlaybackRecovery.shouldRetryFromNetwork(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED, alreadyRetried = false, isOffline = true))
+        assertFalse(PlaybackRecovery.shouldRetryFromNetwork(PlaybackException.ERROR_CODE_IO_UNSPECIFIED, alreadyRetried = false, isOffline = true))
+    }
+
+    @Test
+    fun shouldDeleteDownloadOnErrorNeverDeletesWhenOfflineOrValid() {
+        assertFalse(PlaybackRecovery.shouldDeleteDownloadOnError(isOffline = true, fileExistsAndValid = false))
+        assertFalse(PlaybackRecovery.shouldDeleteDownloadOnError(isOffline = true, fileExistsAndValid = true))
+        assertFalse(PlaybackRecovery.shouldDeleteDownloadOnError(isOffline = false, fileExistsAndValid = true))
+        assertTrue(PlaybackRecovery.shouldDeleteDownloadOnError(isOffline = false, fileExistsAndValid = false))
+    }
+
+    @Test
+    fun shouldEvictStreamCacheOnErrorProtectsCacheOffline() {
+        assertFalse(PlaybackRecovery.shouldEvictStreamCacheOnError(isOffline = true))
+        assertTrue(PlaybackRecovery.shouldEvictStreamCacheOnError(isOffline = false))
+    }
 }
