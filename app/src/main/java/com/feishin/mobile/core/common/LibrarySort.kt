@@ -6,6 +6,7 @@ package com.feishin.mobile.core.common
  */
 data class SortChoice(val option: String, val ascending: Boolean) {
     fun serialize(): String = "$option|${if (ascending) "asc" else "desc"}"
+    fun migrate(): SortChoice = if (option == "name") copy(option = "title") else this
 
     companion object {
         fun parse(raw: String?, fallbackOption: String): SortChoice {
@@ -47,18 +48,31 @@ object LibrarySorts {
             Option("name", "Name"),
             Option("songs", "Most songs"),
         )
+        "DOWNLOADS" -> listOf(
+            Option("title", "Title"),
+            Option("artist", "Artist"),
+            Option("date_added", "Date added"),
+            Option("duration", "Duration"),
+        )
         else -> listOf(Option("name", "Name"))
     }
 
     fun default(tab: String): SortChoice = when (tab) {
         "ALBUMS", "ARTISTS", "PLAYLISTS" -> SortChoice("name", true)
-        "SONGS" -> SortChoice("title", true)
+        "SONGS", "DOWNLOADS" -> SortChoice("title", true)
         else -> SortChoice("name", true)
     }
 
+    fun migrate(choice: SortChoice): SortChoice =
+        if (choice.option == "name") choice.copy(option = "title") else choice
+
+    fun migrate(tab: String, choice: SortChoice): SortChoice =
+        if (tab == "DOWNLOADS" && choice.option == "name") choice.copy(option = "title") else choice
+
     fun label(tab: String, choice: SortChoice): String {
-        val base = options(tab).firstOrNull { it.id == choice.option }?.label ?: "Name"
-        val dir = if (choice.ascending) "↑" else "↓"
+        val effectiveChoice = migrate(tab, choice)
+        val base = options(tab).firstOrNull { it.id == effectiveChoice.option }?.label ?: "Name"
+        val dir = if (effectiveChoice.ascending) "↑" else "↓"
         return "$base $dir"
     }
 }

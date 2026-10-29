@@ -24,7 +24,9 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GridView
@@ -607,13 +609,11 @@ fun LibraryScreen(
                 }
                 LibraryTab.DOWNLOADS -> {
                     DownloadsTab(
+                        vm = vm,
+                        player = player,
                         downloads = downloads,
                         repo = repo,
                         grid = grid,
-                        onPlaySong = { entity ->
-                            player.playAll(listOf(entity.toDomainTrack()), source = "Downloads")
-                        },
-                        onRemove = { id -> scope.launch { downloads.removeFromLibrary(id) } },
                         onManage = onOpenDownloads,
                         onActions = onActions,
                     )
@@ -721,25 +721,37 @@ fun LibraryScreen(
     }
 }
 
-/** Downloaded music: totals, then the songs, with remove buttons. */
+/** Downloaded music: totals, then the songs. */
 @Composable
 private fun DownloadsTab(
+    vm: LibraryViewModel,
+    player: PlayerManager,
     downloads: com.feishin.mobile.data.download.DownloadRepository,
     repo: MusicDataRepository,
     grid: Boolean,
-    onPlaySong: (com.feishin.mobile.data.db.DownloadEntity) -> Unit,
-    onRemove: (String) -> Unit,
     onManage: () -> Unit,
     onActions: (ActionTarget) -> Unit,
+    onRemove: ((String) -> Unit)? = null,
 ) {
     val all by downloads.downloads.collectAsStateWithLifecycle(initialValue = emptyList())
+    val queries by vm.queries.collectAsStateWithLifecycle()
+    val sorts by vm.sorts.collectAsStateWithLifecycle()
+    val query = vm.queryFor(LibraryTab.DOWNLOADS)
+    val sort = vm.sortFor(LibraryTab.DOWNLOADS)
+    val nowPlaying by player.current.collectAsStateWithLifecycle()
+    val isPlaying by player.isPlaying.collectAsStateWithLifecycle()
+
     val done = all.filter { it.statusEnum == com.feishin.mobile.data.db.DownloadStatus.COMPLETED }
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-    if (all.isEmpty()) {
+    if (done.isEmpty()) {
         EmptyState("Nothing downloaded yet. Use the download button on a song, album or playlist.")
         return
     }
-    val total = done.fold(0L) { acc, e -> acc + e.sizeBytes }
+    val filtered = sortDownloads(filterDownloads(done, query), sort)
+    if (filtered.isEmpty()) {
+        EmptyState("No songs match \"$query\"")
+        return
+    }
+    val total = filtered.fold(0L) { acc, e -> acc + e.sizeBytes }
     if (grid) {
         LazyVerticalGrid(
             GridCells.Fixed(2), Modifier.fillMaxSize(),
@@ -748,7 +760,7 @@ private fun DownloadsTab(
             item(span = { GridItemSpan(2) }) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("${done.size} songs", style = MaterialTheme.typography.titleMedium)
+                        Text("${filtered.size} songs", style = MaterialTheme.typography.titleMedium)
                         Text(
                             com.feishin.mobile.core.common.CacheSizePolicy.human(total),
                             style = MaterialTheme.typography.bodySmall,
@@ -758,11 +770,13 @@ private fun DownloadsTab(
                     com.feishin.mobile.ui.settings.SettingsActionButton(label = "Manage", onClick = onManage)
                 }
             }
-            items(done, key = { it.songId }, contentType = { "item" }) { entity ->
+            itemsIndexed(filtered, key = { _, entity -> entity.songId }, contentType = { _, _ -> "item" }) { index, entity ->
                 SongGridCell(
                     song = entity.toDomainTrack(),
                     artUrl = repo.coverArtUrl(entity.coverArt, 300),
-                    onClick = { onPlaySong(entity) },
+                    onClick = {
+                        player.playAll(filtered.map { it.toDomainTrack() }, startIndex = index, source = "Downloads")
+                    },
                     onActions = { onActions(ActionTarget.Track(entity.toDomainTrack())) },
                 )
             }
@@ -776,7 +790,7 @@ private fun DownloadsTab(
         item {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("${done.size} songs", style = MaterialTheme.typography.titleMedium)
+                    Text("${filtered.size} songs", style = MaterialTheme.typography.titleMedium)
                     Text(
                         com.feishin.mobile.core.common.CacheSizePolicy.human(total),
                         style = MaterialTheme.typography.bodySmall,
@@ -786,21 +800,52 @@ private fun DownloadsTab(
                 com.feishin.mobile.ui.settings.SettingsActionButton(label = "Manage", onClick = onManage)
             }
         }
-        items(done, key = { it.songId }, contentType = { "item" }) { entity ->
+        itemsIndexed(filtered, key = { _, entity -> entity.songId }, contentType = { _, _ -> "item" }) { index, entity ->
             TrackRow(
                 track = entity.toDomainTrack(),
                 artUrl = repo.coverArtUrl(entity.coverArt, 128),
-                onClick = { onPlaySong(entity) },
+                onClick = {
+                    player.playAll(filtered.map { it.toDomainTrack() }, startIndex = index, source = "Downloads")
+                },
                 onActions = { onActions(ActionTarget.Track(entity.toDomainTrack())) },
                 downloadState = entity,
-                onRemove = { scope.launch { onRemove(entity.songId) } },
+                isCurrent = entity.songId == nowPlaying?.id,
+                isPlaying = isPlaying,
             )
         }
     }
 }
 
+internal fun filterDownloads(
+    list: List<com.feishin.mobile.data.db.DownloadEntity>,
+    query: String,
+): List<com.feishin.mobile.data.db.DownloadEntity> {
+    val q = query.trim().lowercase()
+    if (q.isEmpty()) return list
+    return list.filter {
+        it.title.lowercase().contains(q) ||
+            it.artist.lowercase().contains(q) ||
+            it.album.lowercase().contains(q)
+    }
+}
+
+internal fun sortDownloads(
+    list: List<com.feishin.mobile.data.db.DownloadEntity>,
+    choice: com.feishin.mobile.core.common.SortChoice,
+): List<com.feishin.mobile.data.db.DownloadEntity> {
+    val effectiveChoice = com.feishin.mobile.core.common.LibrarySorts.migrate("DOWNLOADS", choice)
+    val by: Comparator<com.feishin.mobile.data.db.DownloadEntity> = when (effectiveChoice.option) {
+        "artist" -> compareBy({ it.artist.lowercase() }, { it.title.lowercase() })
+        "date_added" -> compareBy { it.completedAt ?: it.enqueuedAt }
+        "duration" -> compareBy { it.durationSec }
+        else -> compareBy { it.title.lowercase() }
+    }
+    val sorted = list.sortedWith(by)
+    return if (effectiveChoice.ascending) sorted else sorted.reversed()
+}
+
 /** A stored download as a playable domain track (used by the Downloads tab). */
-private fun com.feishin.mobile.data.db.DownloadEntity.toDomainTrack() =
+internal fun com.feishin.mobile.data.db.DownloadEntity.toDomainTrack() =
     com.feishin.mobile.domain.model.Track(
         id = songId,
         title = title,
