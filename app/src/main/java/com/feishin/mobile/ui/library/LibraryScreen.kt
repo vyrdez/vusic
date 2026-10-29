@@ -736,8 +736,8 @@ private fun DownloadsTab(
     val all by downloads.downloads.collectAsStateWithLifecycle(initialValue = emptyList())
     val queries by vm.queries.collectAsStateWithLifecycle()
     val sorts by vm.sorts.collectAsStateWithLifecycle()
-    val query = vm.queryFor(LibraryTab.DOWNLOADS)
-    val sort = vm.sortFor(LibraryTab.DOWNLOADS)
+    val query = queries[LibraryTab.DOWNLOADS].orEmpty()
+    val sort = sorts[LibraryTab.DOWNLOADS] ?: com.feishin.mobile.core.common.LibrarySorts.default(LibraryTab.DOWNLOADS.name)
     val nowPlaying by player.current.collectAsStateWithLifecycle()
     val isPlaying by player.isPlaying.collectAsStateWithLifecycle()
 

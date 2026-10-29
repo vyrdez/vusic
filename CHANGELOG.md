@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.5
+
+### Fixed
+- **Seamless queue shuffle and drag-reorder without audio cutout**:
+  - Replaces `setMediaItems` in `PlayerManager.applyOrder` with slice mutations (`removeMediaItems` and `addMediaItems` around the active item), keeping the currently playing `MediaItem` untouched in the ExoPlayer timeline with 0 ms of pause or re-buffering.
+  - Routes drag-reorder drops (`commitOrder`) through `QueueCommit.singleMove` and `moveMediaItem(fromIndex, toIndex)` without re-preparing the player.
+- **Offline playback crash & self-healing protection for downloaded songs**:
+  - Routes `file://`, `content://`, and `android.resource://` URIs directly through local `DefaultDataSource` (`FileDataSource`), completely bypassing `CacheDataSource` and `SimpleCache` so seeking across downloaded tracks is a pure local disk operation.
+  - Prevents `onPlayerError` from deleting downloaded files or evicting `SimpleCache` entries when the device is offline (`shouldDeleteDownloadOnError`, `shouldEvictStreamCacheOnError`).
+  - Guards `skipToNext`, `skipToPrevious`, `playAt`, and `playOrToggle` while offline to skip to the next playable downloaded/cached track or pause cleanly with an `"Offline: <title> is not downloaded"` message instead of crashing or cascading through dead stream URLs.
+- **Downloads tab search filter, sort options, row cleanup, and full-list queueing**:
+  - Wires live case-insensitive filtering by title, artist, and album on the Library > `Downloads` tab.
+  - Replaces the single `Name` sort option on `Downloads` with `Title` (default, migrating saved `Name` values), `Artist`, `Date added`, and `Duration` (with Ascending / Descending support).
+  - Removes the redundant per-row `X` delete button on `Downloads` rows while keeping the downloaded checkmark and `⋮` menu aligned.
+  - Queues the entire currently visible (filtered and sorted) downloaded songs list starting at the tapped index (`Playing from Downloads`) instead of queueing only 1 song.
+- **Block touch bleed from Now Playing to underlying search bars**:
+  - Consumes all pointer events across 100% of the `NowPlayingScreen` and `QueueSheet` root containers so taps on empty regions never pass through to underlying screens.
+  - Automatically clears focus and hides the soft keyboard (`focusManager.clearFocus()`, `keyboardController?.hide()`) when expanding Now Playing.
+
 ## 1.2.4
 
 ### Fixed
