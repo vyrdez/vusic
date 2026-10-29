@@ -20,4 +20,40 @@ object QueueCommit {
         if (shownIds.toSet() != liveIds.toSet()) return null
         return shownIds
     }
+
+    /**
+     * Returns the (fromIndex, toIndex) pair if [shownIds] is reached from [liveIds]
+     * by moving a single item, or null if multiple moves are needed or the target
+     * is invalid/identical.
+     */
+    fun singleMove(liveIds: List<Long>, shownIds: List<Long>): Pair<Int, Int>? {
+        val target = targetIds(liveIds, shownIds) ?: return null
+        if (liveIds.size != target.size) return null
+        var firstDiff = -1
+        for (i in liveIds.indices) {
+            if (liveIds[i] != target[i]) {
+                firstDiff = i
+                break
+            }
+        }
+        if (firstDiff < 0) return null
+        var lastDiff = -1
+        for (i in liveIds.indices.reversed()) {
+            if (liveIds[i] != target[i]) {
+                lastDiff = i
+                break
+            }
+        }
+        if (firstDiff == lastDiff) return null
+
+        // Check drag down (firstDiff -> lastDiff)
+        val testDown = liveIds.toMutableList().apply { add(lastDiff, removeAt(firstDiff)) }
+        if (testDown == target) return firstDiff to lastDiff
+
+        // Check drag up (lastDiff -> firstDiff)
+        val testUp = liveIds.toMutableList().apply { add(firstDiff, removeAt(lastDiff)) }
+        if (testUp == target) return lastDiff to firstDiff
+
+        return null
+    }
 }

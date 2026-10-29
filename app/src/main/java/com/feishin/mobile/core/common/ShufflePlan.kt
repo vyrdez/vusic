@@ -98,5 +98,51 @@ object ShufflePlan {
         return out
     }
 
+    data class SlicePlan<T>(
+        val head: List<T>,
+        val tail: List<T>,
+        val targetIndex: Int,
+        val beforeCount: Int,
+        val afterCount: Int,
+    )
+
+    /**
+     * Slices [reordered] around the item identified by [keepId] (or [currentIdx]),
+     * preserving the active item across shuffle or reorder operations.
+     */
+    fun <T> sliceAroundKeep(
+        beforeCount: Int,
+        currentIdx: Int,
+        reordered: List<T>,
+        keepId: Long?,
+        key: (T) -> Long,
+    ): SlicePlan<T> {
+        if (reordered.isEmpty()) {
+            return SlicePlan(
+                head = emptyList(),
+                tail = emptyList(),
+                targetIndex = 0,
+                beforeCount = 0,
+                afterCount = 0,
+            )
+        }
+        val found = if (keepId != null) reordered.indexOfFirst { key(it) == keepId } else -1
+        val targetIndex = if (found >= 0) found else currentIdx.coerceIn(0, reordered.lastIndex)
+        val head = reordered.subList(0, targetIndex)
+        val tail = reordered.subList(targetIndex + 1, reordered.size)
+        val safeCurrent = if (beforeCount > 0) currentIdx.coerceIn(0, beforeCount - 1) else 0
+        val itemsBefore = if (beforeCount > 0) safeCurrent else 0
+        val itemsAfter = if (beforeCount > 0) (beforeCount - (safeCurrent + 1)).coerceAtLeast(0) else 0
+        return SlicePlan(
+            head = head,
+            tail = tail,
+            targetIndex = targetIndex,
+            beforeCount = itemsBefore,
+            afterCount = itemsAfter,
+        )
+    }
+
     private fun seenSize(ids: List<Long>): Int = ids.size.coerceAtLeast(4)
 }
+
+typealias SlicePlan<T> = ShufflePlan.SlicePlan<T>
