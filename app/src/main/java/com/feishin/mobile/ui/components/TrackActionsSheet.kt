@@ -774,27 +774,27 @@ fun PlaylistPickerSheet(
     val scope = rememberCoroutineScope()
     var playlists by remember { mutableStateOf<List<Playlist>?>(null) }
     var showNew by remember { mutableStateOf(false) }
-    var confirmDupTarget by remember { mutableStateOf<Playlist?>(null) }
+    var confirmDupTarget by remember { mutableStateOf<Pair<Playlist, List<Track>>?>(null) }
+    var confirmDupMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         playlists = (repo.playlists() as? Result.Ok)?.value
     }
 
-    fun performAdd(p: Playlist) {
-        val msg = if (tracks.size == 1) "Added to ${p.name}" else "Added ${tracks.size} to ${p.name}"
+    fun performAdd(p: Playlist, songsToAdd: List<Track>, toastMessage: String) {
         // Commit the optimistic write before dismissing: onDismiss() removes
         // this sheet from composition and cancels its rememberCoroutineScope,
         // which used to abort the cache update mid-flight.
         scope.launch {
             repo.addToPlaylistOptimistic(
                 playlistId = p.id,
-                tracks = tracks,
+                tracks = songsToAdd,
                 playlistName = p.name,
                 onRollback = {
                     messenger.show("Couldn't add to ${p.name}")
                 },
             )
-            messenger.show(msg)
+            messenger.show(toastMessage)
             onDismiss()
         }
     }
@@ -831,17 +831,30 @@ fun PlaylistPickerSheet(
                             Box(Modifier.weight(1f)) {
                                 SheetRow("${p.name} • ${p.songCount}", Icons.Default.QueueMusic, onClick = {
                                     scope.launch {
-                                        val cached = repo.cachedPlaylist(p.id)
-                                        val isDuplicate = if (cached != null) {
-                                            val existingIds = cached.tracks.map { it.id }.toSet()
-                                            tracks.any { it.id in existingIds }
-                                        } else {
-                                            false // Missing cache proceeds without blocking network
+                                        val existingIds = run {
+                                            val cached = repo.cachedPlaylist(p.id)
+                                            if (cached != null) {
+                                                cached.tracks.map { it.id }.toSet()
+                                            } else if (p.songCount > 0) {
+                                                // If metadata indicates songs exist but detail is not cached, fetch detail
+                                                (repo.playlist(p.id) as? Result.Ok)?.value?.tracks?.map { it.id }?.toSet().orEmpty()
+                                            } else {
+                                                emptySet()
+                                            }
                                         }
-                                        if (isDuplicate) {
-                                            confirmDupTarget = p
-                                        } else {
-                                            performAdd(p)
+
+                                        when (val plan = com.feishin.mobile.core.common.PlaylistAddPlanner.plan(tracks, p.name, existingIds)) {
+                                            is com.feishin.mobile.core.common.PlaylistAddResolution.NoOp -> onDismiss()
+                                            is com.feishin.mobile.core.common.PlaylistAddResolution.AddImmediately -> {
+                                                performAdd(p, plan.songsToAdd, plan.toastMessage)
+                                            }
+                                            is com.feishin.mobile.core.common.PlaylistAddResolution.AddFilteredImmediately -> {
+                                                performAdd(p, plan.songsToAdd, plan.toastMessage)
+                                            }
+                                            is com.feishin.mobile.core.common.PlaylistAddResolution.RequireConfirmation -> {
+                                                confirmDupTarget = p to plan.songsToAdd
+                                                confirmDupMessage = plan.dialogMessage
+                                            }
                                         }
                                     }
                                 })
@@ -854,23 +867,31 @@ fun PlaylistPickerSheet(
         }
     }
 
-    confirmDupTarget?.let { p ->
-        val songName = if (tracks.size == 1) "\"${tracks.first().title}\"" else "${tracks.size} songs"
+    confirmDupTarget?.let { (p, songsToAdd) ->
+        val dialogMsg = confirmDupMessage ?: "Songs are already in \"${p.name}\". Add anyway?"
         AlertDialog(
-            onDismissRequest = { confirmDupTarget = null },
+            onDismissRequest = {
+                confirmDupTarget = null
+                confirmDupMessage = null
+            },
             title = { Text("Already in playlist") },
-            text = { Text("$songName is already in \"${p.name}\". Add anyway?") },
+            text = { Text(dialogMsg) },
             confirmButton = {
                 TextButton(onClick = {
                     val target = p
                     confirmDupTarget = null
-                    performAdd(target)
+                    confirmDupMessage = null
+                    val msg = if (songsToAdd.size == 1) "Added to ${target.name}" else "Added ${songsToAdd.size} to ${target.name}"
+                    performAdd(target, songsToAdd, msg)
                 }) {
                     Text("Add")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmDupTarget = null }) {
+                TextButton(onClick = {
+                    confirmDupTarget = null
+                    confirmDupMessage = null
+                }) {
                     Text("Cancel")
                 }
             },

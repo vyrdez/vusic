@@ -18,6 +18,11 @@
 - **Block touch bleed from Now Playing to underlying search bars**:
   - Consumes all pointer events across 100% of the `NowPlayingScreen` and `QueueSheet` root containers so taps on empty regions never pass through to underlying screens.
   - Automatically clears focus and hides the soft keyboard (`focusManager.clearFocus()`, `keyboardController?.hide()`) when expanding Now Playing.
+- **Accurate playlist duplicate detection & partial overlap auto-add**:
+  - Replaces false "all songs already in playlist" dialog triggers with `PlaylistAddPlanner.plan()`.
+  - For partial duplicates when saving Queue, Playlist, Album, or Artist, skips existing songs and automatically adds only the new songs with a clear notice: `"Added X songs to <playlist> (Y already there)"`.
+  - Only prompts `"Already in playlist: All X songs are already in '<playlist>'. Add anyway?"` when 100% of candidate songs already exist in the target playlist.
+  - Resolves target playlist songs from network/cache when details are not yet locally cached, ensuring duplicate detection is 100% accurate.
 
 ## 1.2.4
 
