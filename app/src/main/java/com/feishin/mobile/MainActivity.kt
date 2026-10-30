@@ -18,6 +18,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.lifecycleScope
+import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.data.settings.ThemeMode
 import com.feishin.mobile.ui.components.NowPlayingBarTint
 import com.feishin.mobile.ui.navigation.AppNav
@@ -26,12 +28,19 @@ import com.feishin.mobile.ui.theme.FeishinTheme
 import com.feishin.mobile.ui.theme.resolveDark
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* media notification still works */ }
+
+    @Inject lateinit var settingsStore: SettingsStore
+
+    /** Set in [onStop]; used to expire the Now Playing tab after a long pause. */
+    private var lastBackgroundedAtMs = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -85,6 +94,23 @@ class MainActivity : ComponentActivity() {
         // Re-assert after display switches (rotation, multi-display, refresh
         // changes by the system) — cheap and idempotent.
         applyRefreshRate(lastRateMode)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val since = lastBackgroundedAtMs
+        lastBackgroundedAtMs = 0L
+        // P10.1 D2: after five minutes away, Now Playing reopens on Song. Cold
+        // launch needs no reset: the tab value is session-only in SettingsStore,
+        // so a new process already starts on Song. Shorter pauses keep the tab.
+        if (since > 0L && System.currentTimeMillis() - since >= TAB_EXPIRY_MS) {
+            lifecycleScope.launch { settingsStore.setNowPlayingLyricsMode(false) }
+        }
+    }
+
+    override fun onStop() {
+        lastBackgroundedAtMs = System.currentTimeMillis()
+        super.onStop()
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
@@ -157,5 +183,10 @@ class MainActivity : ComponentActivity() {
         val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
         if (!granted) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private companion object {
+        /** Background time after which the Now Playing tab returns to Song. */
+        const val TAB_EXPIRY_MS = 5 * 60 * 1000L
     }
 }

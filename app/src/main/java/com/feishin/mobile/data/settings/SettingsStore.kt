@@ -13,6 +13,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
@@ -39,6 +40,13 @@ class SettingsStore internal constructor(
     /** Hilt path: app-private DataStore file. */
     @Inject
     constructor(@ApplicationContext context: Context) : this(context.settingsDataStore)
+
+    /**
+     * Now Playing tab (Song vs Lyrics), session-only. A process restart drops
+     * it, so a cold launch always starts on Song (P10.1 D2). MainActivity also
+     * clears it after five minutes in the background.
+     */
+    private val lyricsModeSession = kotlinx.coroutines.flow.MutableStateFlow(false)
 
     private object K {
         val theme = stringPreferencesKey("theme")
@@ -102,7 +110,8 @@ class SettingsStore internal constructor(
         val lyricsRomanizedTrackIds = stringPreferencesKey("lyrics_romanized_track_ids")
         val lyricsDeRomanizedTrackIds = stringPreferencesKey("lyrics_deromanized_track_ids")
         val lyricsLineGapPercent = intPreferencesKey("lyrics_line_gap_percent")
-        val nowPlayingLyricsMode = booleanPreferencesKey("now_playing_lyrics_mode")
+        // now_playing_lyrics_mode is intentionally no longer persisted: the tab
+        // must start on Song on cold launch (P10.1 D2). See lyricsModeSession.
         // Device files settings (P9-B)
         val showDeviceFiles = booleanPreferencesKey("show_device_files")
         val deviceFilesMinDurationSec = intPreferencesKey("device_files_min_duration_sec")
@@ -190,7 +199,7 @@ class SettingsStore internal constructor(
             get() = if (!replayGain) com.feishin.mobile.core.common.ReplayGainMode.OFF else replayGainMode
     }
 
-    val flow: Flow<Settings> = store.data.map { p ->
+    val flow: Flow<Settings> = combine(store.data, lyricsModeSession) { p, lyricsMode ->
         Settings(
             theme = com.feishin.mobile.ui.theme.migrateStoredTheme(p[K.theme]),
             wifiBitrate = p[K.wifiBitrate] ?: 0,
@@ -264,7 +273,7 @@ class SettingsStore internal constructor(
                 auto || trackIds
             },
             lyricsLineGapPercent = parseLyricsLineGapPercent(p[K.lyricsLineGapPercent]),
-            nowPlayingLyricsMode = p[K.nowPlayingLyricsMode] ?: false,
+            nowPlayingLyricsMode = lyricsMode,
             showDeviceFiles = p[K.showDeviceFiles] ?: false,
             deviceFilesMinDurationSec = p[K.deviceFilesMinDurationSec] ?: 30,
             libraryViewMode = p[K.libraryViewMode] ?: "SERVER",
@@ -374,7 +383,8 @@ class SettingsStore internal constructor(
     suspend fun setLyricsPreferWordByWord(v: Boolean) = Unit
     suspend fun setLyricsRespectAgentPositioning(v: Boolean) = edit { it[K.lyricsRespectAgentPositioning] = v }
     suspend fun setLyricsShowIntervalIndicator(v: Boolean) = edit { it[K.lyricsShowIntervalIndicator] = v }
-    suspend fun setNowPlayingLyricsMode(v: Boolean) = edit { it[K.nowPlayingLyricsMode] = v }
+    /** Session-scoped: survives navigation and rotation, not process death. */
+    suspend fun setNowPlayingLyricsMode(v: Boolean) { lyricsModeSession.value = v }
     suspend fun setLyricsLineGapPercent(v: Int) = edit { it[K.lyricsLineGapPercent] = v.coerceIn(50, 200) }
     suspend fun resetLyricsLineGap() = setLyricsLineGapPercent(100)
     suspend fun setLyricsRomanize(v: Boolean) = edit { it[K.lyricsRomanize] = v }
