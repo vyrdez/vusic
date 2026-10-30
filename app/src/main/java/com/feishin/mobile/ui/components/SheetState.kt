@@ -33,7 +33,10 @@ import kotlinx.coroutines.launch
  *  4. [sheetHeightPx] is fed by the sheet's own measurement, so a drag moves the
  *     surface 1:1 with the finger on any screen size.
  */
-class SheetState internal constructor(private val scope: CoroutineScope) {
+class SheetState internal constructor(
+    private val scope: CoroutineScope,
+    private val positionThreshold: Float = SheetPhysics.POSITION_THRESHOLD,
+) {
 
     private val anim = Animatable(SheetPhysics.CLOSED)
 
@@ -117,7 +120,12 @@ class SheetState internal constructor(private val scope: CoroutineScope) {
     fun settle(velocityProgressPerSec: Float = 0f) {
         val start = if (gestureActive) dragStart else dragValue
         settleTo(
-            SheetPhysics.settleTargetFrom(start, dragValue, velocityProgressPerSec),
+            SheetPhysics.settleTargetFrom(
+                startProgress = start,
+                currentProgress = dragValue,
+                velocity = velocityProgressPerSec,
+                positionThreshold = positionThreshold,
+            ),
             velocityProgressPerSec,
         )
     }
@@ -162,9 +170,11 @@ class SheetState internal constructor(private val scope: CoroutineScope) {
 }
 
 @Composable
-fun rememberSheetState(): SheetState {
+fun rememberSheetState(
+    positionThreshold: Float = SheetPhysics.POSITION_THRESHOLD,
+): SheetState {
     val scope = rememberCoroutineScope()
-    return remember { SheetState(scope) }
+    return remember(positionThreshold) { SheetState(scope, positionThreshold) }
 }
 
 /** Scrim alpha for a given progress; exactly 0 when closed. */

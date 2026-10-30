@@ -80,6 +80,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import com.feishin.mobile.ui.components.ActionTarget
 import com.feishin.mobile.ui.components.EntityActionsSheet
 import com.feishin.mobile.ui.components.LocalMiniClearance
@@ -88,6 +92,7 @@ import com.feishin.mobile.ui.components.MiniPlayerHeight
 import com.feishin.mobile.ui.components.MiniPlayerNavGap
 import com.feishin.mobile.ui.components.MessageHost
 import com.feishin.mobile.ui.components.OfflineBanner
+import com.feishin.mobile.ui.components.rememberSheetState
 import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.detail.AlbumDetailScreen
 import com.feishin.mobile.ui.detail.ArtistDetailScreen
@@ -131,7 +136,8 @@ private val DETAIL_ROUTES = NavRules.DETAIL_ROUTES
 @Composable
 fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     val nav = rememberNavController()
-    var showNowPlaying by remember { mutableStateOf(false) }
+    val nowPlayingSheet = rememberSheetState(positionThreshold = 0.3f)
+    val showNowPlaying = nowPlayingSheet.open
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -157,7 +163,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
 
     // Widget cover tap (cold start or warm): open Now Playing once per nudge.
     val nudge by com.feishin.mobile.ui.components.NowPlayingNudge.requests.collectAsStateWithLifecycle()
-    LaunchedEffect(nudge) { if (nudge > 0) showNowPlaying = true }
+    LaunchedEffect(nudge) { if (nudge > 0) nowPlayingSheet.openSheet() }
 
     // Home widget: event-driven pushes on track/play-state/queue/favorites
     // changes while the UI is alive (the service covers the app-dead path).
@@ -184,7 +190,20 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     // Without this, clearing the queue leaves its transparent "Nothing playing"
     // placeholder stretched over every screen.
     val currentTrack by main.player.current.collectAsStateWithLifecycle()
-    LaunchedEffect(currentTrack) { if (currentTrack == null) showNowPlaying = false }
+    LaunchedEffect(currentTrack) { if (currentTrack == null) nowPlayingSheet.close() }
+
+    // Hoisted lyrics list state and last scrolled index so collapsing and
+    // re-expanding Now Playing within the session retains the exact scroll position.
+    val lyricsListState = rememberLazyListState()
+    var lastScrolledLyricsIndex by rememberSaveable(currentTrack?.id) { mutableIntStateOf(-1) }
+    var lastLyricsTrackId by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(currentTrack?.id) {
+        if (lastLyricsTrackId != currentTrack?.id) {
+            lastLyricsTrackId = currentTrack?.id
+            lyricsListState.scrollToItem(0)
+            lastScrolledLyricsIndex = -1
+        }
+    }
 
     // Replay queued scrobbles/stars as soon as the network comes back.
     val online by main.network.isOnline.collectAsStateWithLifecycle()
@@ -221,11 +240,28 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
         LocalTopBarController provides topBar,
         com.feishin.mobile.ui.theme.LocalPlayingColors provides playingScheme,
     ) {
-        Box(Modifier.fillMaxSize()) {
+        val outerDensity = LocalDensity.current
+        val configuration = LocalConfiguration.current
+        val initialScreenHeightPx = with(outerDensity) {
+            configuration.screenHeightDp.dp.toPx().coerceAtLeast(1f)
+        }
+        var screenHeightPx by remember { mutableFloatStateOf(initialScreenHeightPx) }
+        LaunchedEffect(screenHeightPx) {
+            nowPlayingSheet.sheetHeightPx = screenHeightPx
+        }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .onSizeChanged {
+                    if (it.height > 0) {
+                        screenHeightPx = it.height.toFloat()
+                        nowPlayingSheet.sheetHeightPx = screenHeightPx
+                    }
+                },
+        ) {
             // Measured nav bar height, so the floating card can sit exactly on
             // it from outside the scaffold's inset handling.
             var navBarHeightPx by remember { mutableIntStateOf(0) }
-            val outerDensity = LocalDensity.current
             val density = LocalDensity.current
             val imeBottomPx = WindowInsets.ime.getBottom(density)
             Scaffold(
@@ -473,7 +509,8 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
             // max(ime, bar) bottom padding above.
             MiniPlayer(
                 player = main.player,
-                onOpen = { showNowPlaying = true },
+                onOpen = { nowPlayingSheet.openSheet() },
+                expansionSheet = nowPlayingSheet,
                 onQueueCleared = { snap ->
                     // Undo lives ~5s: restoring brings back the queue,
                     // current item and position, paused.
@@ -519,32 +556,41 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
             // first, then action sheets on top of everything (a sheet opened
             // from Now Playing's ⋮ menu must be visible and tappable, which it
             // isn't when composed underneath the player's opaque background).
-            AnimatedVisibility(
-                visible = NavRules.shouldShowNowPlaying(showNowPlaying, currentTrack == null),
-                enter = slideInVertically(initialOffsetY = { it }),
-                exit = slideOutVertically(targetOffsetY = { it }),
-            ) {
-                NowPlayingScreen(
-                    player = main.player,
-                    repo = main.repo,
-                    favs = main.favs,
-                    downloads = main.downloads,
-                    playlistEvents = main.playlistEvents,
-                    messenger = main.messenger,
-                    // "Dynamic Now Playing color" OFF must mean no artwork tint
-                    // anywhere on the screen, so the screen needs to know.
-                    dynamicColor = schemeSettings?.dynamicNpColor != false,
-                    onClose = { showNowPlaying = false },
-                    onArtist = {
-                        showNowPlaying = false
-                        nav.navigate(Routes.artist(it))
-                    },
-                    onAlbum = {
-                        showNowPlaying = false
-                        nav.navigate(Routes.album(it))
-                    },
-                    onActions = { actionsTarget = it },
-                )
+            if (NavRules.shouldShowNowPlaying(showNowPlaying, currentTrack == null)) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val progress = nowPlayingSheet.progress.coerceIn(0f, 1f)
+                            val h = if (size.height > 0f) size.height else screenHeightPx
+                            translationY = (1f - progress) * h
+                        },
+                ) {
+                    NowPlayingScreen(
+                        player = main.player,
+                        repo = main.repo,
+                        favs = main.favs,
+                        downloads = main.downloads,
+                        playlistEvents = main.playlistEvents,
+                        messenger = main.messenger,
+                        // "Dynamic Now Playing color" OFF must mean no artwork tint
+                        // anywhere on the screen, so the screen needs to know.
+                        dynamicColor = schemeSettings?.dynamicNpColor != false,
+                        onClose = { nowPlayingSheet.close() },
+                        onArtist = {
+                            nowPlayingSheet.close()
+                            nav.navigate(Routes.artist(it))
+                        },
+                        onAlbum = {
+                            nowPlayingSheet.close()
+                            nav.navigate(Routes.album(it))
+                        },
+                        onActions = { actionsTarget = it },
+                        lyricsListState = lyricsListState,
+                        lastScrolledLyricsIndex = lastScrolledLyricsIndex,
+                        onUpdateLastScrolledLyricsIndex = { lastScrolledLyricsIndex = it },
+                    )
+                }
             }
 
             EntityActionsSheet(
@@ -558,16 +604,16 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 downloads = main.downloads,
                 cachedTracks = main.cachedTracks,
                 playlistEvents = main.playlistEvents,
-                onStartRadio = { showNowPlaying = true },
+                onStartRadio = { nowPlayingSheet.openSheet() },
                 onDeletePlaylist = { pendingPlaylistDelete = it },
                 onAlbum = {
                     actionsTarget = null
-                    showNowPlaying = false
+                    nowPlayingSheet.close()
                     nav.navigate(Routes.album(it))
                 },
                 onArtist = {
                     actionsTarget = null
-                    showNowPlaying = false
+                    nowPlayingSheet.close()
                     nav.navigate(Routes.artist(it))
                 },
             )

@@ -138,6 +138,8 @@ fun MiniPlayer(
     onVisibleChanged: (Boolean) -> Unit = {},
     /** Reported during vertical drags, in dp of downward travel from the card's rest position. */
     onDragOffsetChanged: (Float) -> Unit = {},
+    /** Shared expansion SheetState coupling MiniPlayer upward drag and Now Playing expansion 1:1. */
+    expansionSheet: SheetState? = null,
 ) {
     val queue by player.queue.collectAsStateWithLifecycle()
     val current by player.current.collectAsStateWithLifecycle()
@@ -324,15 +326,22 @@ fun MiniPlayer(
             .onSizeChanged { cardW = it.width.toFloat(); cardH = it.height.toFloat() }
             .graphicsLayer {
                 val dy = dragY.value
+                val progress = expansionSheet?.progress?.coerceIn(0f, 1f) ?: 0f
+                val sheetH = expansionSheet?.sheetHeightPx ?: 0f
                 // Enter/exit: rise + fade, driven by the same value the padding uses.
-                // Upward drag (dy < 0) translates upward (`dy.coerceAtMost(0f)`) and
-                // fades alpha 1f -> 0f over first ~120.dp. Downward drag keeps clear slide-off.
-                val verticalAlpha = if (dy < 0f) {
-                    MiniPlayerGesture.upwardFadeAlpha(dy, upwardFadePx)
-                } else {
-                    1f - (dy / 900f).coerceIn(0f, 1f)
+                // Coupled upward expansion translates upward with Now Playing's leading edge
+                // and fades alpha from 1f to 0f via (1f - progress * 4f).coerceIn(0f, 1f).
+                val verticalAlpha = when {
+                    progress > 0f -> (1f - progress * 4f).coerceIn(0f, 1f)
+                    dy < 0f -> MiniPlayerGesture.upwardFadeAlpha(dy, upwardFadePx)
+                    else -> 1f - (dy / 900f).coerceIn(0f, 1f)
                 }
-                translationY = (if (dy < 0f) dy.coerceAtMost(0f) else dy) + (1f - enter.value) * 48f
+                val verticalTranslation = when {
+                    dy > 0f -> dy
+                    progress > 0f && sheetH > 0f -> -progress * sheetH
+                    else -> dy.coerceAtMost(0f)
+                }
+                translationY = verticalTranslation + (1f - enter.value) * 48f
                 translationX = dragX.value
                 alpha = enter.value * fade.value * verticalAlpha
             }
@@ -376,15 +385,29 @@ fun MiniPlayer(
                                 dragX.snapTo(dampedX)
                             }
                         } else {
-                            scope.launch {
-                                dragY.snapTo(ty.coerceIn(-upwardFadePx * 1.5f, cardH * 1.4f))
+                            val deltaY = change.position.y - change.previousPosition.y
+                            if (expansionSheet != null && (ty < 0f || expansionSheet.dragging)) {
+                                val stepY = if (!expansionSheet.dragging) ty else deltaY
+                                expansionSheet.dragByPixels(stepY)
+                                scope.launch { dragY.snapTo(0f) }
+                                onDragOffsetChanged(0f)
+                            } else {
+                                scope.launch {
+                                    dragY.snapTo(ty.coerceIn(-upwardFadePx * 1.5f, cardH * 1.4f))
+                                }
+                                onDragOffsetChanged((ty / density.density).coerceAtLeast(0f))
                             }
-                            onDragOffsetChanged((ty / density.density).coerceAtLeast(0f))
                         }
                     },
                     onDragEnd = {
                         val v = tracker.calculateVelocity()
                         val locked = axis
+                        if (locked == 2 && expansionSheet != null && (expansionSheet.dragging || ty < 0f)) {
+                            expansionSheet.onDragEnd(v.y)
+                            springBack()
+                            onDragOffsetChanged(0f)
+                            return@detectDragGestures
+                        }
                         val hasPrev = MiniPlayerGesture.hasPrevious(
                             currentIndex, queue.size, repeatMode, REPEAT_ALL, REPEAT_ONE,
                         )
@@ -435,7 +458,13 @@ fun MiniPlayer(
                             }
                         }
                     },
-                    onDragCancel = { springBack(); onDragOffsetChanged(0f) },
+                    onDragCancel = {
+                        if (expansionSheet?.dragging == true) {
+                            expansionSheet.onDragEnd(0f)
+                        }
+                        springBack()
+                        onDragOffsetChanged(0f)
+                    },
                 )
             }
             .height(MiniPlayerHeight),
