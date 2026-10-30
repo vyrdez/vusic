@@ -17,8 +17,8 @@ android {
         applicationId = "com.feishin.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 13
-        versionName = "1.2.5"
+        versionCode = 14
+        versionName = "1.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Only English is shipped: the app has no other locale content, and
         // this strips ~85 library locales (mostly AndroidX) from resources.

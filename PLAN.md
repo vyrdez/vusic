@@ -1574,3 +1574,29 @@ Version 1.2.5 (versionCode 13) — `applicationId com.feishin.mobile` unchanged.
 - **P9.5-E fix playlist duplicate detection** (`PlaylistAddPlan.kt`, `TrackActionsSheet.kt`, `PlaylistDuplicateCheckTest.kt`):
   - Root cause: `PlaylistPickerSheet` checked `tracks.any { it.id in existingIds }` and immediately opened the confirmation dialog with `${tracks.size} songs is already in "<playlist>"` whenever any single song overlapped, treating any partial overlap as a 100% overlap bug; furthermore, `cachedPlaylist(p.id)` only read the local cache and did not fetch the playlist detail if un-cached when `p.songCount > 0`.
   - Fix: Created pure `PlaylistAddPlanner.plan()` partitioning candidates into `newSongs` and `duplicateCount`. For single songs, duplicate triggers confirmation with the song title. For multi-song additions (Queue, Playlist, Album, Artist): zero duplicates adds all immediately; partial overlap automatically adds only the missing songs and surfaces `"Added X songs to <playlist> (Y already there)"` without blocking dialogs; and 100% full overlap prompts `"Already in playlist: All X songs are already in '<playlist>'. Add anyway?"`. If `cachedPlaylist` returns null but `p.songCount > 0`, it fetches `repo.playlist(p.id)` to guarantee 100% accurate duplicate checks.
+
+## Phase 10 status: home & miniplayer rework, forgotten favorites, queue bar tracking, dropdown ui & app-wide animation polish (1.3.0)
+
+Version 1.3.0 (versionCode 14) — `applicationId com.feishin.mobile` unchanged.
+
+- **P10-A home refresh and 3-page speed dial** (`HomeScreen.kt`, `HomeViewModel.kt`, `Phase10LogicTest.kt`):
+  - Root cause: `HomeViewModel.load()` emitted `cached.copy(loading = false)` immediately upon encountering disk cache, so `PullToRefreshBox(isRefreshing = state.loading)` dismissed the pull indicator before network fetching commenced.
+  - Fix: Added dedicated `refreshing` state to `HomeUi` / `HomeViewModel` maintaining spinner visibility until network refresh finishes. Expanded Speed Dial tile capacity from 18 to 27 across 3 pages of 3x3 grids (`chunked(9).take(3)`).
+- **P10-B miniplayer bounce and swipe-up animations** (`MiniPlayer.kt`, `MiniPlayerGesture.kt`, `MiniPlayerGestureTest.kt`, `Phase10LogicTest.kt`):
+  - Root cause: Horizontal swipes animated `dragX` by `dir * travel` with `travel >= 240f`, sliding the miniplayer pill completely off-screen; vertical swipe-up had no finger tracking or opacity fade.
+  - Fix: Implemented `MiniPlayerGesture.dampedOffsetX` using `tanh` rubber-band resistance capped at 56.dp, keeping the pill on-screen during horizontal drags. On threshold release or fling, triggers song skip and springs `dragX` smoothly back to center (`Spring.DampingRatioMediumBouncy`, `Spring.StiffnessMediumLow`) while animating internal cover/title/artist with horizontal slide and crossfade. Upward swipe tracks upward drag delta with `upwardFadeAlpha` (`1f -> 0f` over 120dp), smoothly handing off to Now Playing.
+- **P10-C quick picks pager alignment** (`SongPagerSection.kt`, `PagerPeek.kt`, `HomeScreen.kt`, `Phase10LogicTest.kt`):
+  - Root cause: Fixed end padding on `HorizontalPager` left an empty gap on the final page of Quick Picks.
+  - Fix: Replaced fixed end padding with dynamic `PageSize` calculation (`pageSizeAdjustmentDp`) and symmetric horizontal padding (`HORIZONTAL_PADDING_DP`), ensuring the last page sits flush with the right viewport edge while the previous page peeks on the left.
+- **P10-D rework forgotten favorites** (`HomeViewModel.kt`, `Phase10LogicTest.kt`):
+  - Root cause: Forgotten favorites previously only queried 5 starred tracks and 10 starred albums without considering playlist contents or playback recency.
+  - Fix: Queries user playlist tracks, excluding recently played tracks and albums, prioritizing tracks with the oldest play timestamps or never played, capped at 24 tracks across a 6-page pager with a "Play all" action.
+- **P10-E queue bar upward tracking and fade** (`NowPlayingScreen.kt`, `Phase10LogicTest.kt`):
+  - Root cause: The bottom `PlayingFromBottom` queue bar remained stationary at the bottom of the screen while `QueueSheet` slid up over it.
+  - Fix: Added `graphicsLayer` tracking `sheet.progress`, translating upward in lockstep with the sheet (up to 96dp) and smoothly fading alpha to 0 by 45% sheet progress, reversing cleanly on close.
+- **P10-F settings dropdown menu ui and animation** (`SettingsComponents.kt`, `SettingsScreen.kt`):
+  - Root cause: Settings used default unstyled Material 3 `DropdownMenu` with static arrow icons and no selected row highlighting.
+  - Fix: Created `VusicDropdownSelector` featuring a 12dp rounded trigger with animated theme border highlight, 0° -> 180° rotating chevron, 16dp rounded popup card with scale/expand/fade transitions, and left-aligned checkmark with theme-tinted pill selection. Upgraded all settings dropdowns.
+- **P10-G app-wide animation and transition polish** (`Components.kt`, `Nav.kt`, `NowPlayingScreen.kt`, `Motion.kt`):
+  - Root cause: Large Now Playing artwork showed a gray placeholder before loading the 512px cover; top-level bottom bar tab switches slid horizontally instead of fading through.
+  - Fix: Pre-seeded Coil's memory cache key in `CoverImage` from the 128px thumbnail already in memory so covers appear instantly with zero gray-box flash and smoothly crossfade. Added crisp fade-through with subtle scale for top-level tabs and smooth 120Hz shared-axis transitions for detail screens. All durations route through `Motion.scaled` to preserve system animation scale.

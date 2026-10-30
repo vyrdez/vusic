@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.3.0
+
+### Added
+- **Home pull-to-refresh & 3-page Speed Dial**:
+  - Uncouples pull-to-refresh spinner lifecycle from stale cache paints via `refreshing` state, keeping the indicator visible until fresh network data arrives.
+  - Expands Speed Dial up to 27 tiles across 3 horizontal pages of 3x3 grids with animated indicator dots.
+- **Forgotten Favorites playlist query & quick-play UI**:
+  - Surfaces neglected songs from user playlists that have not been played recently, prioritizing unplayed and oldest-played tracks.
+  - Renders as a dedicated 6-page horizontal pager with 4 tracks per page and a 1-tap "Play all" action.
+- **Polished Settings dropdown menu (`VusicDropdownSelector`)**:
+  - Redesigned dropdown with rounded trigger, subtle surface fill, 1.5dp animated primary border highlight, and 0° -> 180° rotating chevron.
+  - Custom elevated popup card with 16dp rounded corners, scale + vertical expand + alpha fade transitions, left-aligned checkmark, and theme-tinted selection pill.
+
+### Fixed
+- **Miniplayer bounce-back and upward swipe-up fade**:
+  - Miniplayer pill applies `tanh` rubber-band resistance during horizontal dragging and smoothly springs back to center (`Spring.DampingRatioMediumBouncy`) rather than sliding off-screen.
+  - Internal track cover and title/artist animate with a 220 ms horizontal slide and crossfade on skip.
+  - Upward swipe-up smoothly tracks finger travel and fades out (`1f -> 0f` over 120dp) into Now Playing.
+- **Quick Picks pager alignment**:
+  - Replaces fixed end padding with dynamic page-size adjustment and symmetric horizontal padding, removing trailing empty black space on the final page while keeping previous page peek.
+- **Queue bar upward tracking and fade**:
+  - The bottom "Playing from ..." bar now moves upward in lockstep with the Queue sheet's leading edge and fades out smoothly by 45% sheet progress, reversing cleanly on dismiss.
+- **App-wide transition polish & cover art instant load**:
+  - Pre-seeds Coil image memory cache key from the thumbnail already in memory so large Now Playing artwork appears instantly with zero gray-box flash and smoothly crossfades.
+  - Top-level bottom bar navigation now uses a crisp fade-through with subtle scale, while detail screens retain 120Hz shared-axis slide and fade.
+
 ## 1.2.5
 
 ### Fixed
