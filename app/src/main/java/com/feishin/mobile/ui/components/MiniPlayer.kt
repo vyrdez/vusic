@@ -1,9 +1,16 @@
 package com.feishin.mobile.ui.components
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -260,38 +267,30 @@ fun MiniPlayer(
         }
     }
 
-    // Two-phase skip: the old content slides out in the drag direction, the
-    // player advances, then the new content slides in from the other side.
-    //
-    // The trigger is a monotonically increasing sequence number, NOT the
-    // direction. Using the direction as the LaunchedEffect key made two fast
-    // swipes in the same direction collapse into one: the second gesture wrote
-    // the same value, the effect did not restart, so that swipe was swallowed
-    // and the card stayed translated where the finger released it.
+    val maxShiftPx = with(density) { 56.dp.toPx() }
+    val upwardFadePx = with(density) { 120.dp.toPx() }
+
+    // Rubber-band skip: the pill never flies off screen horizontally. On release
+    // past the threshold or fling, trigger the skip immediately and spring the
+    // pill back to 0f while internal artwork/text transitions via AnimatedContent.
     androidx.compose.runtime.LaunchedEffect(skipSeq) {
         if (skipSeq == 0) return@LaunchedEffect
         val dir = skipDir
-        val travel = maxOf(cardW * 1.15f, 240f)
         var swapped = false
         try {
-            dragX.animateTo(dir * travel, Motion.fade(Motion.Fast))
-            fade.animateTo(0f, Motion.fade(Motion.Fast))
             if (dir < 0f) player.skipToPrevious() else player.skipToNext()
             swapped = true
-            dragX.snapTo(-dir * travel)
-            fade.animateTo(1f, Motion.fade(Motion.Fast))
-            dragX.animateTo(0f, Motion.snapBackSpring())
+            dragX.animateTo(
+                0f,
+                spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                ),
+            )
         } finally {
-            // The skip belongs to the gesture, not to this coroutine: if a
-            // newer swipe cancelled us mid-flight the original must still fire,
-            // otherwise a fast double-swipe skips only once.
             if (!swapped) {
                 if (dir < 0f) player.skipToPrevious() else player.skipToNext()
             }
-            // `snapTo` suspends, so on a cancelled coroutine these calls would
-            // themselves throw and leave the card stranded off-screen - exactly
-            // the bug this block exists to prevent. NonCancellable makes the
-            // reset unconditional.
             withContext(NonCancellable) {
                 dragX.snapTo(0f)
                 dragY.snapTo(0f)
@@ -302,7 +301,15 @@ fun MiniPlayer(
 
     fun springBack() {
         scope.launch {
-            launch { dragX.animateTo(0f, Motion.snapBackSpring()) }
+            launch {
+                dragX.animateTo(
+                    0f,
+                    spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                )
+            }
             launch { dragY.animateTo(0f, Motion.snapBackSpring()) }
         }
     }
@@ -316,13 +323,18 @@ fun MiniPlayer(
             .padding(horizontal = MiniPlayerMargin)
             .onSizeChanged { cardW = it.width.toFloat(); cardH = it.height.toFloat() }
             .graphicsLayer {
+                val dy = dragY.value
                 // Enter/exit: rise + fade, driven by the same value the padding uses.
-                translationY = dragY.value + (1f - enter.value) * 48f
+                // Upward drag (dy < 0) translates upward (`dy.coerceAtMost(0f)`) and
+                // fades alpha 1f -> 0f over first ~120.dp. Downward drag keeps clear slide-off.
+                val verticalAlpha = if (dy < 0f) {
+                    MiniPlayerGesture.upwardFadeAlpha(dy, upwardFadePx)
+                } else {
+                    1f - (dy / 900f).coerceIn(0f, 1f)
+                }
+                translationY = (if (dy < 0f) dy.coerceAtMost(0f) else dy) + (1f - enter.value) * 48f
                 translationX = dragX.value
-                alpha = enter.value * fade.value *
-                    // Only the downward clear dims the card while it travels;
-                    // a skip keeps full opacity so the slide reads as motion.
-                    (1f - (dragY.value / 900f).coerceIn(0f, 1f))
+                alpha = enter.value * fade.value * verticalAlpha
             }
             // Soft elevation instead of the old solid black band. Nothing else
             // here has a background: this container is fully transparent, so
@@ -359,12 +371,15 @@ fun MiniPlayer(
                         change.consume()
                         // Only the locked axis moves the card.
                         if (axis == 1) {
+                            val dampedX = MiniPlayerGesture.dampedOffsetX(tx, maxShiftPx)
                             scope.launch {
-                                dragX.snapTo(tx.coerceIn(-(cardW * 1.2f), cardW * 1.2f))
+                                dragX.snapTo(dampedX)
                             }
                         } else {
-                            scope.launch { dragY.snapTo(ty.coerceIn(0f, cardH * 1.4f)) }
-                            onDragOffsetChanged(ty / density.density)
+                            scope.launch {
+                                dragY.snapTo(ty.coerceIn(-upwardFadePx * 1.5f, cardH * 1.4f))
+                            }
+                            onDragOffsetChanged((ty / density.density).coerceAtLeast(0f))
                         }
                     },
                     onDragEnd = {
@@ -444,35 +459,60 @@ fun MiniPlayer(
             // The ring's outer edge is the card height minus twice the inner
             // padding (equal padding top/bottom/left); the cover sits inside
             // it with an even gap and stays clean — no icon over the art.
-            Box(
-                modifier = Modifier.size(MiniPlayerRingDiameter),
-                contentAlignment = Alignment.Center,
+            AnimatedContent(
+                targetState = song,
+                contentKey = { it.id },
+                modifier = Modifier.weight(1f),
+                transitionSpec = {
+                    val dir = if (skipDir < 0f) -1 else 1
+                    (slideInHorizontally(tween(Motion.Normal)) { fullWidth -> dir * (fullWidth / 5) } +
+                        fadeIn(tween(Motion.Normal))) togetherWith
+                        (slideOutHorizontally(tween(Motion.Normal)) { fullWidth -> -dir * (fullWidth / 5) } +
+                            fadeOut(tween(Motion.Normal)))
+                },
+                label = "mini-track-content",
+            ) { currentTrack ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier.size(MiniPlayerRingDiameter),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        MiniPlayerRing(progress = { ring.value }, bar = ringBar, track = ringTrack)
+                        CoverImage(
+                            player.coverArtUrl(currentTrack.coverArt, 128), currentTrack.title,
+                            modifier = Modifier.size(MiniPlayerCoverDiameter),
+                            roundedDp = MiniPlayerCoverDiameter / 2,
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        )
+                    }
+                    Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                        Text(
+                            currentTrack.title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = ink,
+                        )
+                        Text(
+                            currentTrack.artist,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = subInk,
+                        )
+                    }
+                }
+            }
+            IconButton(
+                onClick = {
+                    skipDir = -1f
+                    player.skipToPrevious()
+                },
+                modifier = Modifier.size(44.dp),
             ) {
-                MiniPlayerRing(progress = { ring.value }, bar = ringBar, track = ringTrack)
-                CoverImage(
-                    player.coverArtUrl(song.coverArt, 128), song.title,
-                    modifier = Modifier.size(MiniPlayerCoverDiameter),
-                    roundedDp = MiniPlayerCoverDiameter / 2,
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                )
-            }
-            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                Text(
-                    song.title,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = ink,
-                )
-                Text(
-                    song.artist,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = subInk,
-                )
-            }
-            IconButton(onClick = player::skipToPrevious, modifier = Modifier.size(44.dp)) {
                 Icon(
                     Icons.Default.SkipPrevious, "Previous track",
                     tint = ink,
@@ -485,7 +525,13 @@ fun MiniPlayer(
                     tint = ink,
                 )
             }
-            IconButton(onClick = player::skipToNext, modifier = Modifier.size(44.dp)) {
+            IconButton(
+                onClick = {
+                    skipDir = 1f
+                    player.skipToNext()
+                },
+                modifier = Modifier.size(44.dp),
+            ) {
                 Icon(
                     Icons.Default.SkipNext, "Next track",
                     tint = ink,

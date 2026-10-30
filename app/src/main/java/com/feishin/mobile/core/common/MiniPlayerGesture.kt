@@ -2,6 +2,8 @@ package com.feishin.mobile.core.common
 
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.sign
+import kotlin.math.tanh
 
 /**
  * Mini player gesture rules, pure so the decision is unit-testable instead of
@@ -97,5 +99,21 @@ object MiniPlayerGesture {
         abs(dx) <= slop && abs(dy) <= slop -> 0
         abs(dx) >= abs(dy) -> 1
         else -> 2
+    }
+
+    /**
+     * Rubber-band horizontal offset so the miniplayer pill never flies off screen.
+     */
+    fun dampedOffsetX(rawDragX: Float, maxShiftPx: Float): Float {
+        if (maxShiftPx <= 0f || rawDragX == 0f) return 0f
+        return sign(rawDragX) * maxShiftPx * tanh(abs(rawDragX) / (maxShiftPx * 1.8f))
+    }
+
+    /**
+     * Upward swipe alpha fade: fades from 1f at rest to 0f over [fadeDistancePx] of upward travel.
+     */
+    fun upwardFadeAlpha(dragY: Float, fadeDistancePx: Float): Float {
+        if (dragY >= 0f || fadeDistancePx <= 0f) return 1f
+        return (1f + dragY / fadeDistancePx).coerceIn(0f, 1f)
     }
 }

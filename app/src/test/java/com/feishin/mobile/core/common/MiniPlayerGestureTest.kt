@@ -252,4 +252,25 @@ class MiniPlayerGestureTest {
             MiniPlayerGesture.classify(0f, 12f, 0f, 900f, true, true, w, h),
         )
     }
+
+    @Test
+    fun rubberBandHorizontalOffsetBoundsShiftAndRespectsDirection() {
+        val maxShift = 150f
+        assertEquals(0f, MiniPlayerGesture.dampedOffsetX(0f, maxShift), 0.001f)
+        val right = MiniPlayerGesture.dampedOffsetX(400f, maxShift)
+        val left = MiniPlayerGesture.dampedOffsetX(-400f, maxShift)
+        assertTrue(right > 0f && right <= maxShift)
+        assertTrue(left < 0f && left >= -maxShift)
+        assertEquals(right, -left, 0.001f)
+        assertTrue(MiniPlayerGesture.dampedOffsetX(5000f, maxShift) <= maxShift)
+    }
+
+    @Test
+    fun upwardFadeAlphaTracksDragSmoothly() {
+        assertEquals(1f, MiniPlayerGesture.upwardFadeAlpha(0f, 300f), 0.001f)
+        assertEquals(1f, MiniPlayerGesture.upwardFadeAlpha(50f, 300f), 0.001f)
+        assertEquals(0.5f, MiniPlayerGesture.upwardFadeAlpha(-150f, 300f), 0.001f)
+        assertEquals(0f, MiniPlayerGesture.upwardFadeAlpha(-300f, 300f), 0.001f)
+        assertEquals(0f, MiniPlayerGesture.upwardFadeAlpha(-500f, 300f), 0.001f)
+    }
 }
