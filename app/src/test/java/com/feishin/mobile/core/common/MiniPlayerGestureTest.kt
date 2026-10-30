@@ -28,16 +28,16 @@ class MiniPlayerGestureTest {
     }
 
     @Test
-    fun dragLeftGoesPrevious() {
-        // Specified convention: left = previous (this inverts the 1.0.0 mapping).
-        assertEquals(MiniPlayerGesture.Action.PREVIOUS, action(dx = -400f))
-        assertEquals(MiniPlayerGesture.Action.PREVIOUS, action(dx = -60f, vx = -900f))
+    fun dragLeftGoesNext() {
+        // P10.1 convention: left = next, the card moves with the finger.
+        assertEquals(MiniPlayerGesture.Action.NEXT, action(dx = -400f))
+        assertEquals(MiniPlayerGesture.Action.NEXT, action(dx = -60f, vx = -900f))
     }
 
     @Test
-    fun dragRightGoesNext() {
-        assertEquals(MiniPlayerGesture.Action.NEXT, action(dx = 400f))
-        assertEquals(MiniPlayerGesture.Action.NEXT, action(dx = 60f, vx = 900f))
+    fun dragRightGoesPrevious() {
+        assertEquals(MiniPlayerGesture.Action.PREVIOUS, action(dx = 400f))
+        assertEquals(MiniPlayerGesture.Action.PREVIOUS, action(dx = 60f, vx = 900f))
     }
 
     @Test
@@ -74,7 +74,7 @@ class MiniPlayerGestureTest {
         // The complement of the above: velocity alone is enough, so a quick
         // flick that never travelled past the distance threshold still acts.
         // This pins both halves of each rule (distance OR velocity).
-        assertEquals(MiniPlayerGesture.Action.NEXT, action(dx = 5f, vx = 900f))
+        assertEquals(MiniPlayerGesture.Action.PREVIOUS, action(dx = 5f, vx = 900f))
         assertEquals(MiniPlayerGesture.Action.CLEAR_QUEUE, action(dy = 5f, vy = 900f))
     }
 
@@ -82,14 +82,14 @@ class MiniPlayerGestureTest {
 
     @Test
     fun noPreviousAtFirstTrackSpringsBack() {
-        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = -400f, hasPrev = false))
-        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = -60f, vx = -900f, hasPrev = false))
+        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = 400f, hasPrev = false))
+        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = 60f, vx = 900f, hasPrev = false))
     }
 
     @Test
     fun noNextAtLastTrackSpringsBack() {
-        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = 400f, hasNext = false))
-        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = 60f, vx = 900f, hasNext = false))
+        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = -400f, hasNext = false))
+        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = -60f, vx = -900f, hasNext = false))
     }
 
     @Test
@@ -100,8 +100,9 @@ class MiniPlayerGestureTest {
         val hasNext = MiniPlayerGesture.hasNext(0, 1, off, all, one)
         assertFalse(hasPrev)
         assertFalse(hasNext)
-        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = -400f, hasPrev = false))
-        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = 400f, hasNext = false))
+        // right = previous, left = next (P10.1).
+        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = 400f, hasPrev = false))
+        assertEquals(MiniPlayerGesture.Action.NONE, action(dx = -400f, hasNext = false))
     }
 
     // ---- availability with repeat -----------------------------------------
@@ -153,7 +154,7 @@ class MiniPlayerGestureTest {
     fun axisLockPreventsTwoActionsFromOneGesture() {
         // Once locked horizontally, the caller feeds dy = 0: a strong downward
         // component can no longer clear the queue.
-        assertEquals(MiniPlayerGesture.Action.NEXT, action(dx = 400f, dy = 0f))
+        assertEquals(MiniPlayerGesture.Action.PREVIOUS, action(dx = 400f, dy = 0f))
         assertEquals(MiniPlayerGesture.Action.NONE, action(dx = 0f, dy = 0f))
     }
 
@@ -165,11 +166,11 @@ class MiniPlayerGestureTest {
         // 600px wide -> threshold 210, 2000px wide -> threshold 700.
         val narrow = MiniPlayerGesture.classify(250f, 0f, 0f, 0f, true, true, 600f, h)
         val wide = MiniPlayerGesture.classify(250f, 0f, 0f, 0f, true, true, 2000f, h)
-        assertEquals(MiniPlayerGesture.Action.NEXT, narrow)
+        assertEquals(MiniPlayerGesture.Action.PREVIOUS, narrow)
         assertEquals(MiniPlayerGesture.Action.NONE, wide)
         // ...and far enough on the wide card it commits.
         assertEquals(
-            MiniPlayerGesture.Action.NEXT,
+            MiniPlayerGesture.Action.PREVIOUS,
             MiniPlayerGesture.classify(800f, 0f, 0f, 0f, true, true, 2000f, h),
         )
     }
@@ -182,7 +183,7 @@ class MiniPlayerGestureTest {
             MiniPlayerGesture.classify(50f, 0f, 0f, 0f, true, true, 0f, 0f),
         )
         assertEquals(
-            MiniPlayerGesture.Action.NEXT,
+            MiniPlayerGesture.Action.PREVIOUS,
             MiniPlayerGesture.classify(500f, 0f, 0f, 0f, true, true, 0f, 0f),
         )
     }
@@ -197,11 +198,11 @@ class MiniPlayerGestureTest {
             MiniPlayerGesture.classify(0f, 0f, 0f, 0f, true, true, w, h),
         )
         assertEquals(
-            MiniPlayerGesture.Action.NEXT,
+            MiniPlayerGesture.Action.PREVIOUS,
             MiniPlayerGesture.classify(999f, 0f, 0f, 0f, true, true, w, h),
         )
         assertEquals(
-            MiniPlayerGesture.Action.PREVIOUS,
+            MiniPlayerGesture.Action.NEXT,
             MiniPlayerGesture.classify(-999f, 0f, 0f, 0f, true, true, w, h),
         )
         assertEquals(

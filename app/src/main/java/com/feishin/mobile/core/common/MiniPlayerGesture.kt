@@ -12,9 +12,10 @@ import kotlin.math.tanh
  * The caller axis-locks first and passes only the locked axis (the other is 0),
  * so a diagonal drag can never fire two actions.
  *
- * Direction conventions (as specified): drag LEFT goes to the PREVIOUS song and
- * drag RIGHT to the NEXT one; drag DOWN clears the queue; drag UP opens Now
- * Playing. Note this inverts the pre-1.1 left/right mapping deliberately.
+ * Direction conventions (P10.1): drag LEFT goes to the NEXT song and drag RIGHT
+ * to the PREVIOUS one; drag DOWN clears the queue; drag UP opens Now Playing.
+ * This is the natural mapping: the card moves with the finger, so swiping left
+ * pulls the next track in.
  */
 object MiniPlayerGesture {
 
@@ -69,11 +70,14 @@ object MiniPlayerGesture {
         // committed from input that contradicts itself.
         if (dy >= clear || (dy > 0f && velocityY >= flingVelocity)) return Action.CLEAR_QUEUE
         if (dy <= -open || velocityY <= -flingVelocity) return Action.OPEN
+        // Horizontal mapping follows the finger: left (dx < 0) reveals the
+        // next track, right (dx > 0) reveals the previous one. The velocity
+        // arm mirrors the same direction.
         if (dx <= -skip || velocityX <= -flingVelocity) {
-            return if (hasPrevious) Action.PREVIOUS else Action.NONE
+            return if (hasNext) Action.NEXT else Action.NONE
         }
         if (dx >= skip || velocityX >= flingVelocity) {
-            return if (hasNext) Action.NEXT else Action.NONE
+            return if (hasPrevious) Action.PREVIOUS else Action.NONE
         }
         return Action.NONE
     }
