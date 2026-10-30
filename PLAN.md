@@ -1600,3 +1600,29 @@ Version 1.3.0 (versionCode 14) — `applicationId com.feishin.mobile` unchanged.
 - **P10-G app-wide animation and transition polish** (`Components.kt`, `Nav.kt`, `NowPlayingScreen.kt`, `Motion.kt`):
   - Root cause: Large Now Playing artwork showed a gray placeholder before loading the 512px cover; top-level bottom bar tab switches slid horizontally instead of fading through.
   - Fix: Pre-seeded Coil's memory cache key in `CoverImage` from the 128px thumbnail already in memory so covers appear instantly with zero gray-box flash and smoothly crossfade. Added crisp fade-through with subtle scale for top-level tabs and smooth 120Hz shared-axis transitions for detail screens. All durations route through `Motion.scaled` to preserve system animation scale.
+
+## Phase 10.1 status: coupled player & queue physics, smooth pager snap, lyrics scroll & tab expiry, inverted miniplayer swipe, dropdown anchor fix & 5 algorithmic mixes (1.3.1)
+
+Version 1.3.1 (versionCode 15) — `applicationId com.feishin.mobile` unchanged.
+
+- **P10.1-A coupled miniplayer swipe-up expansion** (`SheetState.kt`, `MiniPlayer.kt`, `Nav.kt`, `Phase10_1LogicTest.kt`):
+  - Root cause: MiniPlayer upward drag only animated local offset and alpha, invoking NowPlayingScreen open only upon drag release, so NowPlayingScreen didn't track the finger.
+  - Fix: Hoisted shared `nowPlayingSheet` (`SheetState`, threshold 0.3f) in `Nav.kt` directly driven by MiniPlayer upward drag delta from pixel 0. NowPlayingScreen translates upward 1:1 with finger travel (`translationY = (1f - progress) * screenHeightPx`) while MiniPlayer translates upward with the leading edge and fades its alpha (`(1f - progress * 4f).coerceIn(0f, 1f)`). Settle with spring momentum on release; tapping MiniPlayer expands smoothly.
+- **P10.1-B unified queue sheet indicator morph** (`NowPlayingScreen.kt`, `Phase10_1LogicTest.kt`):
+  - Root cause: Now Playing rendered `PlayingFromBottom` with its own handle pill and then spawned a second `QueueSheet` container with a duplicate handle pill on top.
+  - Fix: Replaced duplicate indicators with a single bottom sheet container and one 36dp x 4dp stroke indicator pill that physically travels from the 72dp peek strip up to full expansion. Smoothly crossfades "Playing from <source>" into the Queue header, track count, Save pill, queue list, and playback controls (`alpha = ((progress - 0.15f) / 0.5f).coerceIn(0f, 1f)`).
+- **P10.1-C smooth song pager physics** (`SongPagerSection.kt`, `PagerPeek.kt`, `Phase10_1LogicTest.kt`):
+  - Root cause: Fragile dynamic page-size math caused layout and snap animations to fight, producing stiff and abrupt scroll physics on the final page of Quick Picks and Forgotten Favorites.
+  - Fix: Implemented uniform fixed page width (`maxWidth - 40.dp`), 16dp horizontal content padding, and 12dp page spacing. Added natural spring fling behavior (`PagerDefaults.flingBehavior`) for smooth glide, automatic flush right alignment on the final page, and jitter-free page indicator dots keyed on `targetPage`.
+- **P10.1-D lyrics collapse sync and session tab expiry** (`SettingsStore.kt`, `MainActivity.kt`, `Nav.kt`, `NowPlayingScreen.kt`, `Phase10_1LogicTest.kt`):
+  - Root cause: (1) Collapsing Now Playing disposed the screen and reset `LazyListState` to line 0 on re-entry; (2) `nowPlayingLyricsMode` was stored permanently in persistent DataStore and never reset across app launches or long pauses.
+  - Fix: Hoisted `lyricsListState` across collapse/expand in `Nav.kt`, added synchronous pre-frame-1 snap to the 35% viewport anchor when `activeIndex > 0` at line 0, and made `nowPlayingLyricsMode` a session-scoped `MutableStateFlow` in `SettingsStore`. Cold launches always start on the `Song` tab; background pauses >= 5 minutes expire lyrics mode back to `Song` while sessions under 5 minutes remember the user's choice.
+- **P10.1-E invert miniplayer horizontal swipe** (`MiniPlayerGesture.kt`, `MiniPlayerGestureTest.kt`, `Phase10_1LogicTest.kt`):
+  - Root cause: Previous swipe direction was counter-intuitive (swipe left went to previous track, swipe right went to next).
+  - Fix: Inverted mapping so swiping LEFT (dx < 0) advances to the NEXT song, and swiping RIGHT (dx > 0) returns to the PREVIOUS song, matching card motion and user expectation.
+- **P10.1-F fix dropdown bottom-edge positioning** (`SettingsComponents.kt`, `Phase10_1LogicTest.kt`):
+  - Root cause: `VusicDropdownSelector` used `expandVertically` inside `Popup`, causing measured height to grow frame-by-frame and forcing `PopupPositionProvider` to push the popup upward while expanding near the bottom of the screen.
+  - Fix: Removed vertical expand/shrink transitions; implemented deterministic `PopupPositionProvider` deciding placement (below vs above anchor with 6dp gap) on frame 0 from full measured height; animated purely on `graphicsLayer` scale (0.92f -> 1.0f) and alpha (0f -> 1f) over 180ms with `FastOutSlowInEasing`.
+- **P10.1-G five algorithmic mixes on home** (`MixGenerator.kt`, `HomeViewModel.kt`, `MixGeneratorTest.kt`):
+  - Root cause: Legacy `loadMixes` relied on slow per-artist similar-songs fan-outs that dropped mixes when clusters were small, resulting in unpredictable 1-3 mixes on Home.
+  - Fix: Created pure deterministic `MixGenerator` reliably producing exactly 5 distinct mixes ("My Mix 1" through "My Mix 5") for any library with 5+ songs. Tailors mixes across Top Affinity, Secondary Cluster, Playlist & Favorites Blend, Mood/Era Cluster, and Deep Cuts with 2x2 collage artwork. Pull-to-refresh and genre changes re-seed the shelf.

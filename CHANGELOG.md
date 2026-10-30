@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.3.1
+
+### Added
+- **5 Algorithmic Mixes ("Mixed for you")**:
+  - Deterministic `MixGenerator` reliably generates exactly 5 distinct mixes ("My Mix 1" through "My Mix 5") for any library with 5+ songs, eliminating random 1-3 mix drops.
+  - Tailors mixes across Top Affinity, Secondary Cluster, Playlist & Favorites Blend, Mood/Era Cluster, and Deep Cuts with 2x2 collage artwork. Pull-to-refresh and genre changes re-seed the shelf.
+
+### Fixed
+- **Coupled Miniplayer Swipe-Up & Simultaneous Now Playing Expansion**:
+  - Hoisted `nowPlayingSheet` (`SheetState`) directly couples MiniPlayer upward drag to Now Playing expansion: the player screen rises 1:1 with finger travel from pixel 0 while MiniPlayer rides upward and fades out.
+  - Momentum flick or threshold release cleanly settles with spring physics; tapping MiniPlayer expands smoothly.
+- **Unified Single Drag Indicator for Queue Sheet**:
+  - Replaced the duplicate bottom handle pill with a single 36dp x 4dp indicator that physically travels with the sheet's top edge from the peek strip up to full height.
+  - Smoothly crossfades "Playing from <source>" into the Queue header, track count, Save pill, queue list, and playback controls.
+- **Smooth Song Pager Momentum & Natural Snap**:
+  - Removed fragile dynamic page-size hacks from `SongPagerSection` in favor of uniform fixed page width (`maxWidth - 40.dp`), 16dp horizontal padding, and 12dp spacing.
+  - Added spring fling behavior (`PagerDefaults.flingBehavior`) for effortless glide, naturally flush last-page alignment, and jitter-free indicator dots keyed on `targetPage`.
+- **Lyrics Scroll Sync on Player Collapse & Session Tab Expiry**:
+  - Hoisted lyrics list state across collapse/expansion cycles and added synchronous pre-frame-1 snap to the 35% viewport anchor so reopening Now Playing never resets lyrics to line 0.
+  - Process cold start always defaults Now Playing to the `Song` tab; background idle timeout (>= 5 minutes) resets lyrics mode back to `Song`, while sessions under 5 minutes remember the user's choice.
+- **Inverted MiniPlayer Horizontal Swipe Direction**:
+  - Swiping LEFT now advances to the NEXT song, and swiping RIGHT returns to the PREVIOUS song for an intuitive natural feel matching card motion.
+- **Settings Dropdown Bottom-Edge Spawn & Jump Fix**:
+  - Removed dynamic height expansion (`expandVertically`) that caused `PopupPositionProvider` to push popups upward across frames.
+  - Implemented deterministic frame-0 placement (above vs below anchor with 6dp gap) and pure `graphicsLayer` scale/alpha entrance/exit for rock-solid popup positioning.
+
 ## 1.3.0
 
 ### Added
