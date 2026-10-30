@@ -63,7 +63,7 @@ object Motion {
         easing = eased,
     )
 
-    private fun scaled(duration: Int): Int =
+    fun scaled(duration: Int): Int =
         (duration * durationScale.coerceIn(0f, 4f)).toInt()
 
     // ---- Tweens ------------------------------------------------------------
