@@ -93,7 +93,7 @@ fun HomeScreen(
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val state = ui
-    PullToRefreshBox(isRefreshing = state.loading, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
+    PullToRefreshBox(isRefreshing = state.refreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
         when {
             state.loading && state.recent.isEmpty() -> {
                 Column(Modifier.fillMaxSize()) {
@@ -318,7 +318,7 @@ private fun HomeTopBar(username: String, onSettings: () -> Unit) {
 }
 
 /**
- * Speed dial as a 3x3 page pager (up to 2 pages / 18 tiles) with animated page
+ * Speed dial as a 3x3 page pager (up to 3 pages / 27 tiles) with animated page
  * dots, mirroring YouTube Music. The dots track the real page count and hide
  * when there is only one page.
  */
@@ -329,7 +329,7 @@ private fun SpeedDialPager(
     onAlbum: (String) -> Unit,
     onPlaylist: (String) -> Unit,
 ) {
-    val pages = tiles.chunked(9).take(2)
+    val pages = tiles.chunked(9).take(3)
     if (pages.isEmpty()) return
     val pager = rememberPagerState(pageCount = { pages.size })
     Column(Modifier.fillMaxWidth()) {
@@ -436,42 +436,16 @@ private fun QuickPicksPager(
     onActions: (ActionTarget) -> Unit,
     onArtist: (String) -> Unit = {},
 ) {
-    val pages = tracks.chunked(4)
-    if (pages.isEmpty()) return
-    val pager = androidx.compose.foundation.pager.rememberPagerState(pageCount = { pages.size })
-    Column {
-        androidx.compose.foundation.pager.HorizontalPager(
-            state = pager,
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 4.dp),
-        ) { page ->
-            Column {
-                pages[page].forEach { t ->
-                    TrackRow(
-                        track = t, artUrl = repo.coverArtUrl(t.coverArt, 128),
-                        onClick = { player.playAll(tracks, tracks.indexOf(t), source = "Quick picks") },
-                        onActions = { onActions(ActionTarget.Track(t)) },
-                        onArtist = onArtist,
-                        isCurrent = t.id == nowPlayingId, isPlaying = isPlaying,
-                    )
-                }
-            }
-        }
-        if (pages.size > 1) {
-            Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.Center) {
-                repeat(pages.size) { i ->
-                    Box(
-                        Modifier.padding(3.dp).size(if (i == pager.currentPage) 8.dp else 6.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (i == pager.currentPage) MaterialTheme.colorScheme.onSurface
-                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
-                            ),
-                    )
-                }
-            }
-        }
-    }
+    com.feishin.mobile.ui.components.SongPagerSection(
+        tracks = tracks,
+        sourceName = "Quick picks",
+        player = player,
+        repo = repo,
+        nowPlayingId = nowPlayingId,
+        isPlaying = isPlaying,
+        onActions = { onActions(ActionTarget.Track(it)) },
+        onArtist = onArtist,
+    )
 }
 
 @Composable
