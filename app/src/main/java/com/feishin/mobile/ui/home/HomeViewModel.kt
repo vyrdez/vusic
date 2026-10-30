@@ -2,6 +2,7 @@ package com.feishin.mobile.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.feishin.mobile.core.common.MixGenerator
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.common.VLog
 import com.feishin.mobile.data.settings.SettingsStore
@@ -9,6 +10,8 @@ import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.Artist
 import com.feishin.mobile.domain.model.Playlist
 import com.feishin.mobile.domain.model.PlaylistCover
+import com.feishin.mobile.domain.model.PlaylistDetail
+import com.feishin.mobile.domain.model.StarredCollection
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -78,6 +81,8 @@ class HomeViewModel @Inject constructor(
     private var lastFrequent: List<Album> = emptyList()
     private var lastPlaylists: List<Playlist> = emptyList()
     private val prefetched = HashSet<String>()
+    /** Advances on every mixes load so refresh/genre change re-seeds the shelf. */
+    private var mixGeneration = 0L
 
     init {
         observePins()
@@ -137,9 +142,9 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * Every section publishes independently. The previous version awaited all of
-     * them — including similar-songs mixes, which take 7-9s on Navidrome — before
-     * emitting anything, so Home sat on skeletons for the whole duration.
+     * Every section publishes independently. Mixes build from already-fetched
+     * lists plus one bounded random-songs page, so Home never waits on the old
+     * per-artist similar-songs fan-out (7-9s on Navidrome) before emitting.
      *
      * Timings are logged under `HomePerf` so a slow endpoint is easy to spot.
      */
@@ -269,7 +274,16 @@ class HomeViewModel @Inject constructor(
                     publishSpeedDial(buildSpeedDial(pins, lastRecent, lastFrequent, lastPlaylists))
                 }
             }
-            launch { loadMixes() }
+            launch {
+                loadMixes(
+                    genre = genreParam,
+                    recent = (recentD.await() as? Result.Ok<List<Album>>)?.value.orEmpty(),
+                    frequent = (frequentD.await() as? Result.Ok<List<Album>>)?.value.orEmpty(),
+                    songs = (songsD.await() as? Result.Ok<List<Track>>)?.value.orEmpty(),
+                    starredTracks = (starredD.await() as? Result.Ok<StarredCollection>)?.value?.tracks.orEmpty(),
+                    playlists = (playlistsD.await() as? Result.Ok<List<Playlist>>)?.value.orEmpty(),
+                )
+            }
         }
 
         // Only report "nothing loaded" when no section produced content, and never
@@ -311,25 +325,43 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /** Mixes are extra content; they must never block the rest of Home. */
-    private suspend fun loadMixes() {
+    /**
+     * Mixes are extra content; they must never block the rest of Home.
+     *
+     * Always publishes exactly 5 deterministic mixes (when the library holds
+     * at least 5 songs) via [MixGenerator]. The seed advances on every load,
+     * so pull-to-refresh or a genre change re-seeds the shelf instead of
+     * replaying identical mixes.
+     */
+    private suspend fun loadMixes(
+        genre: String?,
+        recent: List<Album>,
+        frequent: List<Album>,
+        songs: List<Track>,
+        starredTracks: List<Track>,
+        playlists: List<Playlist>,
+    ) {
         val batch = settings.flow.first().radioBatchSize
-        val seeds = _ui.value.frequent.mapNotNull { it.artistId }.distinct().take(3)
-        val mixes = ArrayList<Mix>()
-        val found = supervisorScope {
-            seeds.mapIndexed { i, seed ->
-                async {
-                    val similar = (repo.similarSongs(null, seed, batch + 5) as? Result.Ok)?.value.orEmpty()
-                    if (similar.size >= 5) Mix("My Mix ${i + 1}", similar.take(batch)) else null
-                }
-            }.awaitAll().filterNotNull()
+        val seed = (genre ?: "All").hashCode().toLong() * 31L + (mixGeneration++)
+        // Pool depth: one extra page so each of the 5 mixes can fill `batch`
+        // tracks without starving on mid-size libraries.
+        val extra = (repo.randomSongs(batch * 5, genre) as? Result.Ok<List<Track>>)?.value.orEmpty()
+        val playlistTracks = supervisorScope {
+            playlists.take(10).map { p ->
+                async { (repo.playlist(p.id) as? Result.Ok<PlaylistDetail>)?.value?.tracks.orEmpty() }
+            }.awaitAll().flatten()
         }
-        mixes += found
-        if (mixes.isEmpty()) {
-            val songs = _ui.value.quickPicks
-            if (songs.size >= 10) mixes += Mix("My Mix 1", songs.shuffled().take(batch))
-        }
-        if (mixes.isNotEmpty()) _ui.value = _ui.value.copy(mixes = mixes)
+        val generated = MixGenerator.generate(
+            randomSongs = (songs + extra).distinctBy { it.id },
+            starredTracks = starredTracks,
+            playlistTracks = playlistTracks,
+            frequentAlbums = frequent.ifEmpty { lastFrequent },
+            recentAlbums = recent.ifEmpty { lastRecent },
+            batchSize = batch,
+            seed = seed,
+            genreFilter = genre,
+        )
+        if (generated.isNotEmpty()) _ui.value = _ui.value.copy(mixes = generated.map { Mix(it.name, it.tracks) })
     }
 
     /** Warm the next few genres so their chips switch without a network wait. */
