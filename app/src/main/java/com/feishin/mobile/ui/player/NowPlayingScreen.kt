@@ -310,6 +310,7 @@ fun NowPlayingScreen(
     // the legacy path (see above).
     val ctx = LocalContext.current
     val artUrl = player.coverArtUrl(current.coverArt, 512)
+    val thumbUrl = player.coverArtUrl(current.coverArt, 128)
     val themeBackground = VusicColors.Background.toArgb().toLong() and 0xFFFFFFFFL
     var targetBg by remember { mutableStateOf(themeBackground) }
     LaunchedEffect(artUrl, scheme, legacyCoverTint) {
@@ -568,6 +569,7 @@ fun NowPlayingScreen(
                         artUrl, current.title,
                         modifier = Modifier.size(artSide),
                         roundedDp = 16.dp,
+                        thumbnailUrl = thumbUrl,
                     )
                     Spacer(Modifier.height(gapArtTitle))
                     // Title row: balanced 48dp slots on both sides keep the text
@@ -711,6 +713,7 @@ fun NowPlayingScreen(
             ) {
                 PlayingFromBottom(
                     player = player, dim = dim,
+                    sheetProgress = { sheet.progress },
                     onClick = { sheet.openSheet() },
                     onDrag = { delta -> sheet.dragByPixels(delta) },
                     onDragEnd = { velocity -> sheet.onDragEnd(velocity) },
@@ -907,11 +910,14 @@ private fun ArtistInfoPlaceholder() = Unit
 private fun PlayingFromBottom(
     player: PlayerManager,
     dim: Color,
+    sheetProgress: () -> Float,
     onClick: () -> Unit,
     onDrag: (Float) -> Unit,
     onDragEnd: (Float) -> Unit,
 ) {
     val source by player.sourceName.collectAsStateWithLifecycle()
+    val density = LocalDensity.current
+    val maxUpwardShiftPx = with(density) { 96.dp.toPx() }
     // The peek strip: the drag handle plus the "Playing from ..." line, with
     // at least 72dp of hit area so the entry is an easy tap target. The whole
     // column is BOTH the tap target and the drag handle — what is drawn is
@@ -924,6 +930,11 @@ private fun PlayingFromBottom(
     Column(
         Modifier.fillMaxWidth()
             .heightIn(min = 72.dp)
+            .graphicsLayer {
+                val p = sheetProgress().coerceIn(0f, 1f)
+                translationY = -(p * maxUpwardShiftPx)
+                alpha = (1f - p / 0.45f).coerceIn(0f, 1f)
+            }
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .draggable(
