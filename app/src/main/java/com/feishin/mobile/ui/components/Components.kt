@@ -61,7 +61,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
+import coil.memory.MemoryCache
+import coil.request.ImageRequest
 import com.feishin.mobile.R
 import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.Artist
@@ -90,7 +93,8 @@ fun rememberSavableGridState(): LazyGridState =
 
 /**
  * Single shared cover loader: placeholder + error fallback, Coil memory/disk
- * cache (stable signed URLs), crossfade from the global ImageLoader.
+ * cache (stable signed URLs), crossfade from the global ImageLoader and ImageRequest.
+ * Optionally accepts a [thumbnailUrl] to seed Coil's memory cache key as placeholder.
  */
 @Composable
 fun CoverImage(
@@ -99,11 +103,24 @@ fun CoverImage(
     modifier: Modifier = Modifier,
     roundedDp: Dp = 8.dp,
     contentScale: ContentScale = ContentScale.Crop,
+    thumbnailUrl: String? = null,
 ) {
     val shape = RoundedCornerShape(roundedDp)
     if (url != null) {
+        val context = LocalContext.current
+        val crossfadeDuration = Motion.scaled(250)
+        val request = ImageRequest.Builder(context)
+            .data(url)
+            .crossfade(crossfadeDuration)
+            .apply {
+                if (!thumbnailUrl.isNullOrBlank()) {
+                    placeholderMemoryCacheKey(MemoryCache.Key(thumbnailUrl))
+                }
+            }
+            .build()
         AsyncImage(
-            url, contentDescription,
+            model = request,
+            contentDescription = contentDescription,
             modifier = modifier.clip(shape),
             contentScale = contentScale,
             placeholder = painterResource(R.drawable.art_placeholder),

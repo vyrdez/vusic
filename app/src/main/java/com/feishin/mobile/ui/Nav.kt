@@ -66,8 +66,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -320,23 +323,51 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     NavHost(
                         nav,
                         startDestination = Routes.HOME,
-                        // One shared transition set for every screen, instead of
-                        // per-screen animation blocks that drift apart.
+                        // Transitions: crisp fade-through between top-level tabs,
+                        // shared-axis horizontal slide + fade for detail pushes and pops.
                         enterTransition = {
-                            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, Motion.navSlide()) +
-                                fadeIn(Motion.fade(Motion.Normal))
+                            val target = targetState.destination.route
+                            val initial = initialState.destination.route
+                            val isTopLevelToTopLevel = !NavRules.isDetail(target) && !NavRules.isDetail(initial)
+                            if (isTopLevelToTopLevel) {
+                                fadeIn(tween(Motion.scaled(180))) + scaleIn(initialScale = 0.98f, animationSpec = tween(Motion.scaled(180)))
+                            } else {
+                                slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(Motion.scaled(260), easing = FastOutSlowInEasing)) +
+                                    fadeIn(tween(Motion.scaled(200)))
+                            }
                         },
                         exitTransition = {
-                            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, Motion.navSlide()) +
-                                fadeOut(Motion.fade(Motion.Normal))
+                            val target = targetState.destination.route
+                            val initial = initialState.destination.route
+                            val isTopLevelToTopLevel = !NavRules.isDetail(target) && !NavRules.isDetail(initial)
+                            if (isTopLevelToTopLevel) {
+                                fadeOut(tween(Motion.scaled(140)))
+                            } else {
+                                slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(Motion.scaled(260), easing = FastOutSlowInEasing)) +
+                                    fadeOut(tween(Motion.scaled(200)))
+                            }
                         },
                         popEnterTransition = {
-                            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.End, Motion.navSlide()) +
-                                fadeIn(Motion.fade(Motion.Normal))
+                            val target = targetState.destination.route
+                            val initial = initialState.destination.route
+                            val isTopLevelToTopLevel = !NavRules.isDetail(target) && !NavRules.isDetail(initial)
+                            if (isTopLevelToTopLevel) {
+                                fadeIn(tween(Motion.scaled(180))) + scaleIn(initialScale = 0.98f, animationSpec = tween(Motion.scaled(180)))
+                            } else {
+                                slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(Motion.scaled(260), easing = FastOutSlowInEasing)) +
+                                    fadeIn(tween(Motion.scaled(200)))
+                            }
                         },
                         popExitTransition = {
-                            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, Motion.navSlide()) +
-                                fadeOut(Motion.fade(Motion.Normal))
+                            val target = targetState.destination.route
+                            val initial = initialState.destination.route
+                            val isTopLevelToTopLevel = !NavRules.isDetail(target) && !NavRules.isDetail(initial)
+                            if (isTopLevelToTopLevel) {
+                                fadeOut(tween(Motion.scaled(140)))
+                            } else {
+                                slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(Motion.scaled(260), easing = FastOutSlowInEasing)) +
+                                    fadeOut(tween(Motion.scaled(200)))
+                            }
                         },
                     ) {
                         composable(Routes.HOME) {
