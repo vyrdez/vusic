@@ -1,24 +1,29 @@
 package com.feishin.mobile.ui.components
 
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,46 +61,47 @@ fun SongPagerSection(
 ) {
     if (tracks.isEmpty()) return
     val pages = tracks.chunked(SONG_PAGER_ROWS)
-    val pager = rememberPagerState(pageCount = { pages.size })
-    val pageSize = remember(pages.size) {
-        object : PageSize {
-            override fun androidx.compose.ui.unit.Density.calculateMainAxisPageSize(
-                availableSpace: Int,
-                pageSpacing: Int,
-            ): Int {
-                return if (pages.size <= 1) {
-                    availableSpace
-                } else {
-                    availableSpace - com.feishin.mobile.core.common.PagerPeek
-                        .pageSizeAdjustmentDp(pages.size).dp.roundToPx()
+    // Uniform page width on every page (no per-page size hack): the end
+    // contentPadding lets the pager clamp on the last page so it sits flush
+    // right with the previous page peeking on the left.
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val pageWidth = maxWidth - 40.dp
+        val pager = rememberPagerState(pageCount = { pages.size })
+        Column(Modifier.fillMaxWidth()) {
+            HorizontalPager(
+                state = pager,
+                modifier = Modifier.fillMaxWidth(),
+                pageSize = PageSize.Fixed(pageWidth),
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                pageSpacing = 12.dp,
+                flingBehavior = PagerDefaults.flingBehavior(
+                    state = pager,
+                    snapAnimationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                ),
+            ) { page ->
+                Column(Modifier.fillMaxWidth()) {
+                    pages[page].forEach { t ->
+                        TrackRow(
+                            track = t, artUrl = repo.coverArtUrl(t.coverArt, 128),
+                            onClick = {
+                                player.playAll(tracks, tracks.indexOf(t), source = sourceName)
+                            },
+                            onActions = { onActions(t) },
+                            onArtist = onArtist,
+                            isCurrent = t.id == nowPlayingId, isPlaying = isPlaying,
+                        )
+                    }
+                    // Constant pager height: pad a short last page with blank
+                    // rows so switching pages never changes the section height.
+                    // One TrackRow is 68dp (56dp art + 6dp + 6dp padding).
+                    repeat(SONG_PAGER_ROWS - pages[page].size) {
+                        Spacer(Modifier.height(68.dp))
+                    }
                 }
             }
-        }
-    }
-    Column(modifier.fillMaxWidth()) {
-        HorizontalPager(
-            state = pager,
-            modifier = Modifier.fillMaxWidth(),
-            pageSize = pageSize,
-            contentPadding = PaddingValues(
-                horizontal = com.feishin.mobile.core.common.PagerPeek.HORIZONTAL_PADDING_DP.dp,
-            ),
-            pageSpacing = com.feishin.mobile.core.common.PagerPeek.SPACING_DP.dp,
-        ) { page ->
-            Column {
-                pages[page].forEach { t ->
-                    TrackRow(
-                        track = t, artUrl = repo.coverArtUrl(t.coverArt, 128),
-                        onClick = {
-                            player.playAll(tracks, tracks.indexOf(t), source = sourceName)
-                        },
-                        onActions = { onActions(t) },
-                        onArtist = onArtist,
-                        isCurrent = t.id == nowPlayingId, isPlaying = isPlaying,
-                    )
-                }
-            }
-        }
         if (pages.size > 1) {
             Row(
                 Modifier.fillMaxWidth().padding(8.dp),
@@ -103,7 +109,9 @@ fun SongPagerSection(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 repeat(pages.size) { i ->
-                    val selected = i == pager.currentPage
+                    // targetPage, not currentPage: the target only changes on a
+                    // committed settle, so dots never flip jittery mid-swipe.
+                    val selected = i == pager.targetPage
                     // The active dot grows instead of popping, so switching pages
                     // reads as movement rather than a jump.
                     val size by animateDpAsState(
@@ -127,4 +135,5 @@ fun SongPagerSection(
             }
         }
     }
+}
 }

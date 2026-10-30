@@ -19,6 +19,20 @@ object PagerPeek {
     /** Gap between two pages. */
     const val SPACING_DP = 12f
 
+    /**
+     * Fixed-layout spec used by [SongPagerSection][com.feishin.mobile.ui.components.SongPagerSection]
+     * (Phase 10.1 Section C): uniform page width `viewport - PAGE_TRIM_DP`
+     * with symmetric [PAGE_H_PADDING_DP] content padding and [SPACING_DP]
+     * spacing, snapped at the page start. The end padding lets the pager clamp
+     * on the last page so it sits flush right with the previous page peeking
+     * on the left. Kept here (not in the section) so the geometry stays in one
+     * place next to the legacy pure helpers below.
+     */
+    const val PAGE_TRIM_DP = 40f
+
+    /** Symmetric horizontal content padding of the fixed pager layout. */
+    const val PAGE_H_PADDING_DP = 16f
+
     /** Left margin of the first page (unchanged from the full-width pager). */
     const val START_DP = 4f
 
