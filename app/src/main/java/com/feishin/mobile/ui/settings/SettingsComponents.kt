@@ -1,11 +1,30 @@
 package com.feishin.mobile.ui.settings
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
@@ -16,25 +35,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,10 +63,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import kotlin.math.roundToInt
+import com.feishin.mobile.ui.theme.LocalVusicDark
 import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.VusicControlColors
@@ -160,6 +188,248 @@ fun SwitchRow(
 }
 
 /**
+ * Unified, polished dropdown selector for Settings.
+ *
+ * Trigger Button: RoundedCornerShape(12.dp), subtle surface fill (VusicColors.SurfaceHigh),
+ * animated 1.5.dp border highlighting with Theme primary when expanded.
+ * Current selected label + trailing chevron (Icons.Default.KeyboardArrowDown) rotating
+ * 0 -> 180 degrees (animateFloatAsState with tween(220, FastOutSlowInEasing)).
+ *
+ * Dropdown Popup: RoundedCornerShape(16.dp), 1.dp subtle outline, elevated shadow,
+ * padded interior (vertical 6.dp, horizontal 6.dp). Smooth entrance/exit scale (0.92f -> 1.0f)
+ * + vertical expand + alpha fade (200ms open, 150ms close).
+ *
+ * Menu items: RoundedCornerShape(10.dp) row, comfortable touch height (44.dp).
+ * Currently selected option has soft tinted background pill (primary.copy(alpha = 0.16f) in Dark,
+ * 0.12f in Light), checkmark (Icons.Default.Check, 18.dp) on the LEFT. Unselected items
+ * have matching leading spacing so labels align.
+ */
+@Composable
+fun <T> VusicDropdownSelector(
+    value: T,
+    options: List<T>,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    labelProvider: (T) -> String = { it.toString() },
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val dark = LocalVusicDark.current
+    val density = LocalDensity.current
+
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        animationSpec = Motion.scale(Motion.Fast),
+        label = "dropdown-press-scale",
+    )
+
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            !enabled -> VusicControlColors.DisabledOutline
+            expanded -> MaterialTheme.colorScheme.primary
+            dark -> MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+            else -> MaterialTheme.colorScheme.outline
+        },
+        animationSpec = tween(220, easing = FastOutSlowInEasing),
+        label = "dropdown-border-color",
+    )
+    val borderWidth by animateDpAsState(
+        targetValue = if (expanded) 1.5.dp else 1.dp,
+        animationSpec = tween(220, easing = FastOutSlowInEasing),
+        label = "dropdown-border-width",
+    )
+
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(220, easing = FastOutSlowInEasing),
+        label = "dropdown-chevron-rot",
+    )
+
+    val triggerShape = RoundedCornerShape(12.dp)
+    val selectedLabel = labelProvider(value)
+
+    val positionProvider = remember(density) {
+        object : PopupPositionProvider {
+            override fun calculatePosition(
+                anchorBounds: IntRect,
+                windowSize: IntSize,
+                layoutDirection: LayoutDirection,
+                popupContentSize: IntSize,
+            ): IntOffset {
+                val marginPx = with(density) { 8.dp.roundToPx() }
+                val gapPx = with(density) { 4.dp.roundToPx() }
+
+                val x = (anchorBounds.right - popupContentSize.width).coerceIn(
+                    marginPx,
+                    (windowSize.width - popupContentSize.width - marginPx).coerceAtLeast(marginPx),
+                )
+
+                val spaceBelow = windowSize.height - anchorBounds.bottom - marginPx
+                val spaceAbove = anchorBounds.top - marginPx
+                val y = if (popupContentSize.height <= spaceBelow || spaceBelow >= spaceAbove) {
+                    anchorBounds.bottom + gapPx
+                } else {
+                    anchorBounds.top - popupContentSize.height - gapPx
+                }.coerceIn(
+                    marginPx,
+                    (windowSize.height - popupContentSize.height - marginPx).coerceAtLeast(marginPx),
+                )
+
+                return IntOffset(x, y)
+            }
+        }
+    }
+
+    Box(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .clip(triggerShape)
+                .graphicsLayer {
+                    scaleX = pressScale
+                    scaleY = pressScale
+                }
+                .background(VusicColors.SurfaceHigh)
+                .border(BorderStroke(borderWidth, borderColor), triggerShape)
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    enabled = enabled,
+                    role = Role.DropdownList,
+                    onClick = { expanded = !expanded },
+                )
+                .heightIn(min = 40.dp)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = selectedLabel,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface else VusicControlColors.DisabledThumb,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (expanded) "Close options" else "Open options",
+                    tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .graphicsLayer { rotationZ = chevronRotation },
+                )
+            }
+        }
+
+        val expandedStates = remember { MutableTransitionState(false) }
+        expandedStates.targetState = expanded
+
+        if (expandedStates.currentState || expandedStates.targetState) {
+            Popup(
+                onDismissRequest = { expanded = false },
+                popupPositionProvider = positionProvider,
+                properties = PopupProperties(focusable = true),
+            ) {
+                AnimatedVisibility(
+                    visibleState = expandedStates,
+                    enter = fadeIn(animationSpec = tween(200, easing = LinearOutSlowInEasing)) +
+                        scaleIn(initialScale = 0.92f, animationSpec = tween(200, easing = FastOutSlowInEasing)) +
+                        expandVertically(animationSpec = tween(200, easing = FastOutSlowInEasing), expandFrom = Alignment.Top),
+                    exit = fadeOut(animationSpec = tween(150, easing = FastOutLinearInEasing)) +
+                        scaleOut(targetScale = 0.92f, animationSpec = tween(150, easing = FastOutLinearInEasing)) +
+                        shrinkVertically(animationSpec = tween(150, easing = FastOutLinearInEasing), shrinkTowards = Alignment.Top),
+                ) {
+                    val popupShape = RoundedCornerShape(16.dp)
+                    val popupBorderColor = if (dark) {
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+                    } else {
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                    }
+                    val popupBg = if (dark) {
+                        Color(0xFF1E1E1E)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainer
+                    }
+
+                    Surface(
+                        shape = popupShape,
+                        color = popupBg,
+                        tonalElevation = 4.dp,
+                        shadowElevation = 8.dp,
+                        border = BorderStroke(1.dp, popupBorderColor),
+                    ) {
+                        val itemShape = RoundedCornerShape(10.dp)
+                        val selectedBgAlpha = if (dark) 0.16f else 0.12f
+
+                        Column(
+                            modifier = Modifier
+                                .padding(horizontal = 6.dp, vertical = 6.dp)
+                                .width(IntrinsicSize.Max)
+                                .widthIn(min = 140.dp)
+                                .heightIn(max = 360.dp)
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            options.forEach { option ->
+                                val isSelected = option == value
+                                val itemBg = if (isSelected) {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = selectedBgAlpha)
+                                } else {
+                                    Color.Transparent
+                                }
+                                val textColor = if (isSelected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 44.dp)
+                                        .clip(itemShape)
+                                        .background(itemBg)
+                                        .clickable(role = Role.DropdownList) {
+                                            onSelect(option)
+                                            expanded = false
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Selected",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    } else {
+                                        Spacer(Modifier.size(18.dp))
+                                    }
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        text = labelProvider(option),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = textColor,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
  * Choice between a few options. The control always sits on the right of the
  * label's line: a segmented single-row selector when [segmented] (Grid/List,
  * Off/Track/Album, Theme — equal-height cells, selected filled white), a
@@ -176,7 +446,6 @@ fun ChoiceRow(
     showDivider: Boolean = false,
     segmented: Boolean = false,
 ) {
-    var open by remember { mutableStateOf(false) }
     if (segmented) {
         SettingControlRow(
             label = label,
@@ -195,36 +464,11 @@ fun ChoiceRow(
         controlWidthDp = com.feishin.mobile.core.common.RowLayout.estimateButtonWidthDp(value, hasIcon = true, 1f),
         showDivider = showDivider,
     ) {
-        Box {
-            SettingsActionButton(
-                label = value,
-                onClick = { open = true },
-                leadingIcon = {
-                    Icon(
-                        Icons.Default.ArrowDropDown, "Open options",
-                        tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp),
-                    )
-                },
-            )
-            DropdownMenu(open, onDismissRequest = { open = false }) {
-                options.forEach { o ->
-                    DropdownMenuItem(
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(o, modifier = Modifier.weight(1f))
-                                if (o == value) {
-                                    Icon(
-                                        Icons.Default.Check, "Selected",
-                                        tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(18.dp),
-                                    )
-                                }
-                            }
-                        },
-                        onClick = { onSelect(o); open = false },
-                    )
-                }
-            }
-        }
+        VusicDropdownSelector(
+            value = value,
+            options = options,
+            onSelect = onSelect,
+        )
     }
 }
 

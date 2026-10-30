@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import com.feishin.mobile.core.common.DeviceFilesFilter
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,7 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Remove
@@ -111,10 +111,10 @@ fun SettingsScreen(
                 androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection.End
             }
             com.feishin.mobile.core.common.VLog.d("SettingsNav", "animating $initialState -> $targetState dir=$dir")
-            (slideIntoContainer(dir, com.feishin.mobile.ui.theme.Motion.navSlide()) +
-                fadeIn(com.feishin.mobile.ui.theme.Motion.fade(com.feishin.mobile.ui.theme.Motion.SubScreen))) togetherWith
-                (slideOutOfContainer(dir, com.feishin.mobile.ui.theme.Motion.navSlide()) +
-                    fadeOut(com.feishin.mobile.ui.theme.Motion.fade(com.feishin.mobile.ui.theme.Motion.SubScreen)))
+            (slideIntoContainer(dir, tween(com.feishin.mobile.ui.theme.Motion.scaled(260), easing = androidx.compose.animation.core.FastOutSlowInEasing)) +
+                fadeIn(tween(com.feishin.mobile.ui.theme.Motion.scaled(200)))) togetherWith
+                (slideOutOfContainer(dir, tween(com.feishin.mobile.ui.theme.Motion.scaled(260), easing = androidx.compose.animation.core.FastOutSlowInEasing)) +
+                    fadeOut(tween(com.feishin.mobile.ui.theme.Motion.scaled(200))))
         },
         label = "settings-route",
     ) { r ->
@@ -823,8 +823,6 @@ private fun nearestIndex(steps: List<String>, value: String): Int {
 
 @Composable
 private fun BitrateChoiceRow(label: String, br: Int, fmt: String, onSet: (Int, String) -> Unit) {
-    var brMenu by androidx.compose.runtime.remember { mutableStateOf(false) }
-    var fmtMenu by androidx.compose.runtime.remember { mutableStateOf(false) }
     val brLabel = if (br == 0) "Original" else "$br kbps"
     // Both dropdowns share the right side, 8dp apart; only a genuinely cramped
     // row stacks them to the next line, END-aligned.
@@ -840,47 +838,18 @@ private fun BitrateChoiceRow(label: String, br: Int, fmt: String, onSet: (Int, S
         cappedControl = false,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            androidx.compose.foundation.layout.Box {
-                SettingsActionButton(
-                    label = brLabel,
-                    onClick = { brMenu = true },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.ArrowDropDown,
-                            "Open bitrates", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp),
-                        )
-                    },
-                )
-                androidx.compose.material3.DropdownMenu(brMenu, onDismissRequest = { brMenu = false }) {
-                    QualityPolicy.BITRATES.forEach { b ->
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { Text(if (b == 0) "Original" else "$b kbps") },
-                            onClick = { onSet(b, fmt); brMenu = false },
-                        )
-                    }
-                }
-            }
+            VusicDropdownSelector(
+                value = br,
+                options = QualityPolicy.BITRATES,
+                onSelect = { onSet(it, fmt) },
+                labelProvider = { if (it == 0) "Original" else "$it kbps" },
+            )
             Spacer(Modifier.size(com.feishin.mobile.core.common.RowLayout.CONTROL_GAP_DP.dp))
-            androidx.compose.foundation.layout.Box {
-                SettingsActionButton(
-                    label = fmt,
-                    onClick = { fmtMenu = true },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.ArrowDropDown,
-                            "Open formats", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp),
-                        )
-                    },
-                )
-                androidx.compose.material3.DropdownMenu(fmtMenu, onDismissRequest = { fmtMenu = false }) {
-                    QualityPolicy.FORMATS.forEach { f ->
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { Text(f) },
-                            onClick = { onSet(br, f); fmtMenu = false },
-                        )
-                    }
-                }
-            }
+            VusicDropdownSelector(
+                value = fmt,
+                options = QualityPolicy.FORMATS,
+                onSelect = { onSet(br, it) },
+            )
         }
     }
 }
