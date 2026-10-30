@@ -1,20 +1,10 @@
 package com.feishin.mobile.ui.settings
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -61,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
@@ -196,8 +187,11 @@ fun SwitchRow(
  * 0 -> 180 degrees (animateFloatAsState with tween(220, FastOutSlowInEasing)).
  *
  * Dropdown Popup: RoundedCornerShape(16.dp), 1.dp subtle outline, elevated shadow,
- * padded interior (vertical 6.dp, horizontal 6.dp). Smooth entrance/exit scale (0.92f -> 1.0f)
- * + vertical expand + alpha fade (200ms open, 150ms close).
+ * padded interior (vertical 6.dp, horizontal 6.dp). Deterministic placement from
+ * the full measured height (below the anchor when it fits, otherwise above);
+ * entrance/exit run purely on graphicsLayer (scale 0.92f -> 1.0f + alpha fade,
+ * 180ms FastOutSlowInEasing) so layout bounds never change and the menu cannot
+ * jump vertically.
  *
  * Menu items: RoundedCornerShape(10.dp) row, comfortable touch height (44.dp).
  * Currently selected option has soft tinted background pill (primary.copy(alpha = 0.16f) in Dark,
@@ -250,6 +244,10 @@ fun <T> VusicDropdownSelector(
     val triggerShape = RoundedCornerShape(12.dp)
     val selectedLabel = labelProvider(value)
 
+    // Deterministic placement decided once from the full measured popup size
+    // (frame 0): below the anchor when it fits, otherwise above it. The layout
+    // bounds never change during the animation, so the popup cannot jump.
+    val showAbove = remember { mutableStateOf(false) }
     val positionProvider = remember(density) {
         object : PopupPositionProvider {
             override fun calculatePosition(
@@ -259,28 +257,34 @@ fun <T> VusicDropdownSelector(
                 popupContentSize: IntSize,
             ): IntOffset {
                 val marginPx = with(density) { 8.dp.roundToPx() }
-                val gapPx = with(density) { 4.dp.roundToPx() }
+                val gapPx = with(density) { 6.dp.roundToPx() }
 
                 val x = (anchorBounds.right - popupContentSize.width).coerceIn(
                     marginPx,
                     (windowSize.width - popupContentSize.width - marginPx).coerceAtLeast(marginPx),
                 )
 
-                val spaceBelow = windowSize.height - anchorBounds.bottom - marginPx
-                val spaceAbove = anchorBounds.top - marginPx
-                val y = if (popupContentSize.height <= spaceBelow || spaceBelow >= spaceAbove) {
+                val fitsBelow = anchorBounds.bottom + gapPx + popupContentSize.height <=
+                    windowSize.height - marginPx
+                showAbove.value = !fitsBelow
+                val y = if (fitsBelow) {
                     anchorBounds.bottom + gapPx
                 } else {
                     anchorBounds.top - popupContentSize.height - gapPx
-                }.coerceIn(
-                    marginPx,
-                    (windowSize.height - popupContentSize.height - marginPx).coerceAtLeast(marginPx),
-                )
+                }
 
                 return IntOffset(x, y)
             }
         }
     }
+
+    // Entrance/exit run purely on graphicsLayer (scale + alpha); the popup's
+    // layout bounds stay fixed so there is no vertical jump.
+    val menuProgress by animateFloatAsState(
+        targetValue = if (expanded) 1f else 0f,
+        animationSpec = tween(180, easing = FastOutSlowInEasing),
+        label = "dropdown-menu-progress",
+    )
 
     Box(modifier = modifier) {
         Box(
@@ -326,23 +330,23 @@ fun <T> VusicDropdownSelector(
             }
         }
 
-        val expandedStates = remember { MutableTransitionState(false) }
-        expandedStates.targetState = expanded
-
-        if (expandedStates.currentState || expandedStates.targetState) {
+        if (expanded || menuProgress > 0.01f) {
             Popup(
                 onDismissRequest = { expanded = false },
                 popupPositionProvider = positionProvider,
                 properties = PopupProperties(focusable = true),
             ) {
-                AnimatedVisibility(
-                    visibleState = expandedStates,
-                    enter = fadeIn(animationSpec = tween(200, easing = LinearOutSlowInEasing)) +
-                        scaleIn(initialScale = 0.92f, animationSpec = tween(200, easing = FastOutSlowInEasing)) +
-                        expandVertically(animationSpec = tween(200, easing = FastOutSlowInEasing), expandFrom = Alignment.Top),
-                    exit = fadeOut(animationSpec = tween(150, easing = FastOutLinearInEasing)) +
-                        scaleOut(targetScale = 0.92f, animationSpec = tween(150, easing = FastOutLinearInEasing)) +
-                        shrinkVertically(animationSpec = tween(150, easing = FastOutLinearInEasing), shrinkTowards = Alignment.Top),
+                Box(
+                    Modifier.graphicsLayer {
+                        scaleX = 0.92f + 0.08f * menuProgress
+                        scaleY = 0.92f + 0.08f * menuProgress
+                        alpha = menuProgress
+                        transformOrigin = if (showAbove.value) {
+                            TransformOrigin(1f, 1f)
+                        } else {
+                            TransformOrigin(1f, 0f)
+                        }
+                    },
                 ) {
                     val popupShape = RoundedCornerShape(16.dp)
                     val popupBorderColor = if (dark) {
