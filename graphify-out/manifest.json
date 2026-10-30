@@ -602,9 +602,9 @@
     "semantic_hash": "fc837bedf9cdd0ec8deea81d81ca3d22"
   },
   "app/build.gradle.kts": {
-    "mtime": 1793353644.0165122,
-    "seen": 1793356160.934482,
-    "ast_hash": "9a35f7fcb7db6de63819e0db8c6ef3cb",
+    "mtime": 1793377542.018755,
+    "seen": 1793379708.9457543,
+    "ast_hash": "1eb87c37d9f941a24f3e9a07cd340748",
     "semantic_hash": ""
   },
   "app/src/androidTest/java/com/feishin/mobile/data/db/LyricsCacheMigrationTest.kt": {
@@ -632,10 +632,10 @@
     "semantic_hash": "f5d03725e1cf47d1e670850606bb540b"
   },
   "app/src/main/java/com/feishin/mobile/MainActivity.kt": {
-    "mtime": 1792293685.021506,
-    "seen": 1793152989.332847,
-    "ast_hash": "0a05873971595ef6db1280fad7ed0fdc",
-    "semantic_hash": "0a05873971595ef6db1280fad7ed0fdc"
+    "mtime": 1793378052.8518145,
+    "seen": 1793379708.945775,
+    "ast_hash": "2d800abd7f218dff01c20d1831611af0",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/core/common/ArtistTrackOrder.kt": {
     "mtime": 1792563898.25291,
@@ -704,9 +704,9 @@
     "semantic_hash": "4aad89d0c940bd942222f047c9768e2c"
   },
   "app/src/main/java/com/feishin/mobile/core/common/MiniPlayerGesture.kt": {
-    "mtime": 1793353932.0236154,
-    "seen": 1793356160.934519,
-    "ast_hash": "f7be390f119e43195d9c8aa42963231b",
+    "mtime": 1793377908.0740964,
+    "seen": 1793379708.9458253,
+    "ast_hash": "e95611ec7885fc043eb81cfd7bdcb9e5",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/core/common/MobileDataPolicy.kt": {
@@ -722,9 +722,9 @@
     "semantic_hash": "ce7c9184051aeefe99e5917279d4361d"
   },
   "app/src/main/java/com/feishin/mobile/core/common/PagerPeek.kt": {
-    "mtime": 1793354364.759621,
-    "seen": 1793356160.9345253,
-    "ast_hash": "01345cfce27151e712fd65a623b3c132",
+    "mtime": 1793378085.2557507,
+    "seen": 1793379708.9458444,
+    "ast_hash": "2b4c30ca267aa77346fe285edcf43c9a",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/core/common/PassThroughOverscroll.kt": {
@@ -1190,10 +1190,10 @@
     "semantic_hash": "3b916d2f6bac69549100be54e5d04292"
   },
   "app/src/main/java/com/feishin/mobile/data/settings/SettingsStore.kt": {
-    "mtime": 1793095266.704597,
-    "seen": 1793152989.3569152,
-    "ast_hash": "4e7f5d5c91cee232b221cefd8e7d3a51",
-    "semantic_hash": "4e7f5d5c91cee232b221cefd8e7d3a51"
+    "mtime": 1793377991.5895672,
+    "seen": 1793379708.9461443,
+    "ast_hash": "0e31b549dd470d1b4d1ecc7cb8c70b1b",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/di/CacheModule.kt": {
     "mtime": 1791959013.5698192,
@@ -1298,9 +1298,9 @@
     "semantic_hash": "989151c0fdc15feab0c0a897e420efa5"
   },
   "app/src/main/java/com/feishin/mobile/ui/Nav.kt": {
-    "mtime": 1793355556.894169,
-    "seen": 1793356160.9347332,
-    "ast_hash": "4587d4617b85784544f42347d30c8cb1",
+    "mtime": 1793378340.670416,
+    "seen": 1793379708.9461899,
+    "ast_hash": "e1302d50b0bd0febaa1c436404d51c2f",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/States.kt": {
@@ -1340,9 +1340,9 @@
     "semantic_hash": "1a8f47a22090877707272b76d2ccb77d"
   },
   "app/src/main/java/com/feishin/mobile/ui/components/MiniPlayer.kt": {
-    "mtime": 1793354001.0155237,
-    "seen": 1793356160.934748,
-    "ast_hash": "a35f88cf7dabbb587c77e7ead3c6d13f",
+    "mtime": 1793378300.8738663,
+    "seen": 1793379708.946207,
+    "ast_hash": "f35ebe36f615ba6d35189e83bcdec18c",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/components/NowPlayingBarTint.kt": {
@@ -1370,15 +1370,15 @@
     "semantic_hash": "48b2eaee8d48b27ea6543fc6817de96a"
   },
   "app/src/main/java/com/feishin/mobile/ui/components/SheetState.kt": {
-    "mtime": 1792373725.995057,
-    "seen": 1793152989.3644626,
-    "ast_hash": "a581e265b4265315926ae495157be5ce",
-    "semantic_hash": "a581e265b4265315926ae495157be5ce"
+    "mtime": 1793378273.1091225,
+    "seen": 1793379708.9462192,
+    "ast_hash": "438ef6f3e66184e82b28626ea16a6699",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/components/SongPagerSection.kt": {
-    "mtime": 1793354400.9267907,
-    "seen": 1793356160.9347599,
-    "ast_hash": "21e4e7bee4c80d1f11a06bc14e23fc00",
+    "mtime": 1793378686.553096,
+    "seen": 1793379708.9462218,
+    "ast_hash": "22d44631d0a4e633853ea8b3387befa6",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/components/TopLevelTitleBar.kt": {
@@ -1430,9 +1430,9 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/home/HomeViewModel.kt": {
-    "mtime": 1793354510.6425586,
-    "seen": 1793356160.9347782,
-    "ast_hash": "3810d62c3f51b6f0cd64f75cb2c690a4",
+    "mtime": 1793378155.153169,
+    "seen": 1793379708.9462557,
+    "ast_hash": "4cd6b4690691b436abc4e3bef5bd86b6",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/library/DeviceFilesScreen.kt": {
@@ -1544,9 +1544,9 @@
     "semantic_hash": "7a18867a71cf0bb80f61bcdad07a37d3"
   },
   "app/src/main/java/com/feishin/mobile/ui/player/NowPlayingScreen.kt": {
-    "mtime": 1793355430.475104,
-    "seen": 1793356160.934817,
-    "ast_hash": "41dce18a9b9c70382ccc15776e15fb16",
+    "mtime": 1793378464.7266586,
+    "seen": 1793379708.9463081,
+    "ast_hash": "86b138770406e521a2287853f8469341",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/search/SearchScreen.kt": {
@@ -1568,9 +1568,9 @@
     "semantic_hash": "4030059bdee90007d255496903e1b7ad"
   },
   "app/src/main/java/com/feishin/mobile/ui/settings/SettingsComponents.kt": {
-    "mtime": 1793354403.558412,
-    "seen": 1793356160.9348247,
-    "ast_hash": "51e9b2533710eba916ed1083acef9522",
+    "mtime": 1793378136.5404382,
+    "seen": 1793379708.946317,
+    "ast_hash": "b0b335b4fd195e1cb3094ee1e0b58c2f",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/settings/SettingsScreen.kt": {
@@ -1700,9 +1700,9 @@
     "semantic_hash": "ce591b06184d078f0b18508ec845c6c9"
   },
   "app/src/test/java/com/feishin/mobile/core/common/MiniPlayerGestureTest.kt": {
-    "mtime": 1793354041.6716318,
-    "seen": 1793356160.9348748,
-    "ast_hash": "6b9193484a40f58568cf49c7cda878cb",
+    "mtime": 1793379053.1135693,
+    "seen": 1793379708.9463863,
+    "ast_hash": "25226a79c9ad1aa4ee9a630ec01df5d6",
     "semantic_hash": ""
   },
   "app/src/test/java/com/feishin/mobile/core/common/MobileDataPolicyTest.kt": {
@@ -2966,9 +2966,9 @@
     "semantic_hash": "f36539ecc9af68f33ebd72770ce4a19e"
   },
   "CHANGELOG.md": {
-    "mtime": 1793356233.0179722,
-    "seen": 1793356235.6446435,
-    "ast_hash": "6a364e17b0e3a61685b96e50923f126c",
+    "mtime": 1793379767.1151395,
+    "seen": 1793379767.4233298,
+    "ast_hash": "04e3305ac6cbcbcdf9f7d579c6defcb8",
     "semantic_hash": ""
   },
   "GEMINI.md": {
@@ -2978,9 +2978,9 @@
     "semantic_hash": "d353b17e3db3e93c6146726864324896"
   },
   "PLAN.md": {
-    "mtime": 1793356279.8996918,
-    "seen": 1793356292.9952126,
-    "ast_hash": "5e368e96f52c1fcdee23a70362000d29",
+    "mtime": 1793379867.0536525,
+    "seen": 1793379885.3467453,
+    "ast_hash": "a70536fd05d71380ab57198fc61d2c55",
     "semantic_hash": ""
   },
   "README.md": {
@@ -3209,6 +3209,24 @@
     "mtime": 1793354947.5098462,
     "seen": 1793356160.9348555,
     "ast_hash": "457d517920bc233176b416923971f233",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/feishin/mobile/core/common/MixGenerator.kt": {
+    "mtime": 1793378125.433221,
+    "seen": 1793379708.9458294,
+    "ast_hash": "ed6cf30cef0b5f97624ecf538d9b49d7",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/feishin/mobile/Phase10_1LogicTest.kt": {
+    "mtime": 1793379338.553513,
+    "seen": 1793379708.9463592,
+    "ast_hash": "12b01427bbfefd825a204cc1e761a31e",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/feishin/mobile/core/common/MixGeneratorTest.kt": {
+    "mtime": 1793379139.6178193,
+    "seen": 1793379708.946389,
+    "ast_hash": "4689e8e80b6c8e85c283af5fbbe61265",
     "semantic_hash": ""
   }
 }
