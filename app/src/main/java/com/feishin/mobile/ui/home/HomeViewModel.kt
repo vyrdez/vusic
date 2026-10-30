@@ -47,6 +47,7 @@ data class SpeedTile(
 
 data class HomeUi(
     val loading: Boolean = true,
+    val refreshing: Boolean = false,
     val genres: List<String> = listOf("All"),
     val selectedGenre: String = "All",
     val speedDial: List<SpeedTile> = emptyList(),
@@ -85,22 +86,22 @@ class HomeViewModel @Inject constructor(
             // "loading") so a cold start shows content before the network answers.
             cache.loadDisk(_ui.value.selectedGenre)?.let { cached ->
                 if (_ui.value.recent.isEmpty()) {
-                    _ui.value = cached.copy(loading = false)
+                    _ui.value = cached.copy(loading = false, refreshing = false)
                     VLog.d("HomePerf", "painted disk snapshot")
                 }
             }
-            refresh()
+            load(_ui.value.selectedGenre, isManualRefresh = false)
         }
     }
 
-    fun refresh() = load(_ui.value.selectedGenre)
+    fun refresh() = load(_ui.value.selectedGenre, isManualRefresh = true)
 
     fun selectGenre(genre: String) {
-        if (genre == _ui.value.selectedGenre && !_ui.value.loading) return
-        load(genre)
+        if (genre == _ui.value.selectedGenre && !_ui.value.loading && !_ui.value.refreshing) return
+        load(genre, isManualRefresh = false)
     }
 
-    private fun load(genre: String) {
+    private fun load(genre: String, isManualRefresh: Boolean = false) {
         // Cancel the previous genre load so rapid chip taps don't fight each other.
         loadJob?.cancel()
         // Drop the previous genre's section data so a late-arriving cancelled job
@@ -112,9 +113,9 @@ class HomeViewModel @Inject constructor(
         // Stale-while-revalidate: if we have content, paint it immediately (not
         // loading) and refresh in the background. Only show skeletons on a miss.
         _ui.value = if (cached != null) {
-            cached.copy(loading = false)
+            cached.copy(loading = false, refreshing = isManualRefresh)
         } else {
-            HomeUi(loading = true, selectedGenre = genre, genres = listOf("All"))
+            HomeUi(loading = true, refreshing = isManualRefresh, selectedGenre = genre, genres = listOf("All"))
         }
         loadJob = viewModelScope.launch {
             loadSections(genre)
@@ -132,7 +133,7 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun publishSpeedDial(tiles: List<SpeedTile>) {
-        if (tiles.isNotEmpty()) _ui.value = _ui.value.copy(speedDial = tiles.take(18))
+        if (tiles.isNotEmpty()) _ui.value = _ui.value.copy(speedDial = tiles.take(27))
     }
 
     /**
@@ -217,13 +218,46 @@ class HomeViewModel @Inject constructor(
                 }
             }
             launch {
+                val playlists = (playlistsD.await() as? Result.Ok)?.value.orEmpty()
                 val starred = (starredD.await() as? Result.Ok)?.value
-                if (starred != null) {
-                    val recentIds = _ui.value.recent.map { it.id }.toSet()
-                    publish("starred", isContent = false) {
+                val recent = (recentD.await() as? Result.Ok)?.value.orEmpty()
+                val recentAlbumIds = (recent.map { it.id } + _ui.value.recent.map { it.id }).toSet()
+                val recentAlbumNames = (recent.map { it.name.trim().lowercase() } + _ui.value.recent.map { it.name.trim().lowercase() })
+                    .filter { it.isNotBlank() }
+                    .toSet()
+                val songs = (songsD.await() as? Result.Ok)?.value.orEmpty()
+                val quickPickIds = (songs.map { it.id } + _ui.value.quickPicks.map { it.id }).toSet()
+
+                // Fetch songs from user playlists
+                val playlistTracks = supervisorScope {
+                    playlists.take(10).map { p ->
+                        async {
+                            (repo.playlist(p.id) as? Result.Ok)?.value?.tracks.orEmpty()
+                        }
+                    }.awaitAll().flatten()
+                }
+
+                val starredTracks = starred?.tracks.orEmpty()
+                val allFavorites = (playlistTracks + starredTracks).distinctBy { it.id }
+
+                // Filter out recently played tracks or tracks currently in Quick picks
+                val notPlayedRecently = allFavorites.filter { t ->
+                    t.albumId !in recentAlbumIds &&
+                    t.album.trim().lowercase() !in recentAlbumNames &&
+                    t.id !in quickPickIds
+                }
+
+                val forgottenTracks = if (notPlayedRecently.size >= 24) {
+                    notPlayedRecently.take(24)
+                } else {
+                    (notPlayedRecently + allFavorites.filter { it !in notPlayedRecently }).take(24)
+                }
+
+                if (forgottenTracks.isNotEmpty()) {
+                    publish("forgotten", isContent = false) {
                         it.copy(
-                            forgottenAlbums = starred.albums.filter { a -> a.id !in recentIds }.take(10),
-                            forgottenTracks = starred.tracks.take(5),
+                            forgottenAlbums = emptyList(),
+                            forgottenTracks = forgottenTracks,
                         )
                     }
                 }
@@ -242,15 +276,19 @@ class HomeViewModel @Inject constructor(
         // leave Home stuck on skeletons if only non-content sections arrived.
         val hasAnything = _ui.value.recent.isNotEmpty() || _ui.value.newest.isNotEmpty() ||
             _ui.value.quickPicks.isNotEmpty() || _ui.value.frequent.isNotEmpty() ||
-            _ui.value.mixes.isNotEmpty() || _ui.value.genres.size > 1
+            _ui.value.mixes.isNotEmpty() || _ui.value.forgottenTracks.isNotEmpty() ||
+            _ui.value.genres.size > 1
         if (!firstContent.get() && !hasAnything) {
             _ui.value = _ui.value.copy(
                 loading = false,
+                refreshing = false,
                 globalError = "Couldn't load anything. Check your connection and retry.",
             )
         } else {
-            if (_ui.value.loading) _ui.value = _ui.value.copy(loading = false)
-            cache.saveDisk(genre, _ui.value.copy(loading = false))
+            if (_ui.value.loading || _ui.value.refreshing) {
+                _ui.value = _ui.value.copy(loading = false, refreshing = false)
+            }
+            cache.saveDisk(genre, _ui.value.copy(loading = false, refreshing = false))
         }
     }
 
@@ -370,7 +408,7 @@ class HomeViewModel @Inject constructor(
 
         val seenTitles = tiles.map { it.title }.toMutableSet()
         for (a in (recent + frequent).distinctBy { it.id }) {
-            if (tiles.size >= 18) break
+            if (tiles.size >= 27) break
             if (seenTitles.add(a.name)) {
                 tiles += SpeedTile(
                     "album:${a.id}", a.name, a.artist, a.coverArt,
@@ -380,9 +418,9 @@ class HomeViewModel @Inject constructor(
         }
         // Bounded extra fetches: playlists usually have no server art, so we look
         // up a few of them to build the 2x2 collage the design calls for.
-        var collageBudget = 3
+        var collageBudget = 5
         for (p in playlists) {
-            if (tiles.size >= 18) break
+            if (tiles.size >= 27) break
             if (!seenTitles.add(p.name)) continue
             var cover = PlaylistCover.select(p.coverArt, emptyList())
             if (cover !is PlaylistCover.Server && collageBudget > 0) {
