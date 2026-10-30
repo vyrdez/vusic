@@ -252,6 +252,9 @@ fun NowPlayingScreen(
     onArtist: (String) -> Unit,
     onAlbum: (String) -> Unit,
     onActions: (ActionTarget) -> Unit,
+    lyricsListState: LazyListState = rememberLazyListState(),
+    lastScrolledLyricsIndex: Int = -1,
+    onUpdateLastScrolledLyricsIndex: ((Int) -> Unit)? = null,
 ) {
     BackHandler(onBack = onClose)
     val focusManager = LocalFocusManager.current
@@ -262,18 +265,29 @@ fun NowPlayingScreen(
     }
     val song by player.current.collectAsStateWithLifecycle()
     val current = song
-    val lyricsLazyListState = rememberLazyListState()
     val plainLyricsScrollState = rememberScrollState()
     val lyricsUi by lyricsVm.ui.collectAsStateWithLifecycle()
     val lyricsSettings by lyricsVm.settings.flow.collectAsStateWithLifecycle(initialValue = null)
 
-    var lastScrolledLyricsIndex by rememberSaveable(current?.id) { mutableIntStateOf(-1) }
+    var internalLastScrolledIndex by rememberSaveable(current?.id) { mutableIntStateOf(-1) }
+    val effectiveLastScrolledIndex = if (onUpdateLastScrolledLyricsIndex != null) {
+        lastScrolledLyricsIndex
+    } else {
+        internalLastScrolledIndex
+    }
+    val updateLastScrolledIndex: (Int) -> Unit = onUpdateLastScrolledLyricsIndex ?: {
+        internalLastScrolledIndex = it
+    }
+    var loadedTrackId by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(current?.id) {
         lyricsVm.load(current)
-        lyricsLazyListState.scrollToItem(0)
-        plainLyricsScrollState.scrollTo(0)
-        lastScrolledLyricsIndex = -1
+        if (loadedTrackId != current?.id) {
+            loadedTrackId = current?.id
+            lyricsListState.scrollToItem(0)
+            plainLyricsScrollState.scrollTo(0)
+            updateLastScrolledIndex(-1)
+        }
     }
 
     val qItems by player.queue.collectAsStateWithLifecycle()
@@ -512,19 +526,6 @@ fun NowPlayingScreen(
             ) { showLyrics ->
             if (!showLyrics) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
-                // The queue sheet is not composed while it is closed, so its own
-                // onSizeChanged cannot measure the travel height until it has
-                // already opened once. Seed it from this container (the sheet is
-                // fillMaxHeight(0.78) of it) so a FIRST gesture - a tap-to-open
-                // or an opening drag - converts pixels to progress with the real
-                // height instead of a stale guess.
-                val sheetTravelDp = maxHeight * 0.78f
-                val sheetDensity = LocalDensity.current
-                LaunchedEffect(sheetTravelDp, sheetDensity) {
-                    sheet.sheetHeightPx = with(sheetDensity) {
-                        sheetTravelDp.roundToPx().toFloat().coerceAtLeast(1f)
-                    }
-                }
                 // Nearly full-width art (16dp gutters) that still leaves room
                 // for everything below it on short screens: capped by height.
                 // Landscape/short screens get a compact budget instead.
@@ -682,52 +683,45 @@ fun NowPlayingScreen(
             }
             } else {
                 val isTabActive = isLyricsTabReadyToScroll(showLyrics, lyricsMode)
-                val isLeaving = !lyricsMode || dragOffset.value > 0f
+                val isLeaving = !lyricsMode
                 LyricsPanel(
                     lyricsVm = lyricsVm,
                     player = player,
                     content = content,
                     dim = dim,
-                    lazyListState = lyricsLazyListState,
+                    lazyListState = lyricsListState,
                     plainScrollState = plainLyricsScrollState,
                     onSearchAgain = { lyricsVm.searchAgain(current) },
                     settings = lyricsSettings,
                     isTabActive = isTabActive,
                     isLeaving = isLeaving,
-                    lastScrolledIndex = lastScrolledLyricsIndex,
-                    onUpdateLastScrolledIndex = { lastScrolledLyricsIndex = it },
+                    lastScrolledIndex = effectiveLastScrolledIndex,
+                    onUpdateLastScrolledIndex = updateLastScrolledIndex,
                     modifier = Modifier.fillMaxSize().lyricsEdgeFade(),
                 )
             }
             }
-            // The queue strip is outside the tab transition: it never fades,
-            // slides or resizes when Song <-> Lyrics switches. Solid background
-            // under the gesture bar, so lyrics scroll up to its edge unseen.
-            Column(
+            // Reserve bottom clearance for the 72.dp peek strip + 8.dp bottom
+            // spacer + navigation-bar inset; the single unified QueueSheet
+            // container draws the peek strip and handle in this space.
+            Spacer(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(bottomBgColor)
                     .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
-                    .padding(horizontal = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                PlayingFromBottom(
-                    player = player, dim = dim,
-                    sheetProgress = { sheet.progress },
-                    onClick = { sheet.openSheet() },
-                    onDrag = { delta -> sheet.dragByPixels(delta) },
-                    onDragEnd = { velocity -> sheet.onDragEnd(velocity) },
-                )
-                Spacer(Modifier.height(8.dp))
-            }
+                    .height(80.dp),
+            )
         }
     }
 
-    // Composed ONLY while the sheet is open. When it is closed there is nothing at
-    // all over Now Playing, so no invisible layer can swallow a tap.
-    if (sheet.open) {
+    // Unified single bottom sheet container: at progress = 0f it exposes the
+    // 72.dp peek strip with the single 36.dp x 4.dp stroke indicator pill and
+    // "Playing from <source>"; as progress moves 0f -> 1f that exact same pill
+    // travels upward with the sheet's top edge while the Queue header, list and
+    // bottom bar fade in directly below it.
+    if (queue.isNotEmpty()) {
         QueueSheet(
-            state = sheet,
+            sheet = sheet,
             player = player, repo = repo, messenger = messenger,
             palette = palette, playlistEvents = playlistEvents,
             onActions = { onActions(ActionTarget.Track(it)) },
@@ -905,62 +899,6 @@ private fun NpChip(
 
 /** How far the queue sheet travels when fully open, in pixels. */
 private fun ArtistInfoPlaceholder() = Unit
-
-@Composable
-private fun PlayingFromBottom(
-    player: PlayerManager,
-    dim: Color,
-    sheetProgress: () -> Float,
-    onClick: () -> Unit,
-    onDrag: (Float) -> Unit,
-    onDragEnd: (Float) -> Unit,
-) {
-    val source by player.sourceName.collectAsStateWithLifecycle()
-    val density = LocalDensity.current
-    val maxUpwardShiftPx = with(density) { 96.dp.toPx() }
-    // The peek strip: the drag handle plus the "Playing from ..." line, with
-    // at least 72dp of hit area so the entry is an easy tap target. The whole
-    // column is BOTH the tap target and the drag handle — what is drawn is
-    // what grabs — and a single vertical `draggable` owns the gesture, so a
-    // tap and a drag can never fight over the same pointer stream: below the
-    // touch slop it is a tap (opens with the sheet spring), above it a drag
-    // that reports its real release velocity, so flings settle correctly.
-    // The parent swipe-down-to-close only tracks downward drags, so up-here
-    // and down-there never fight.
-    Column(
-        Modifier.fillMaxWidth()
-            .heightIn(min = 72.dp)
-            .graphicsLayer {
-                val p = sheetProgress().coerceIn(0f, 1f)
-                translationY = -(p * maxUpwardShiftPx)
-                alpha = (1f - p / 0.45f).coerceIn(0f, 1f)
-            }
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .draggable(
-                orientation = Orientation.Vertical,
-                state = rememberDraggableState { delta -> onDrag(delta) },
-                // Real release velocity (px/s, downward positive): an upward
-                // fling opens fully even from a short drag, a downward fling
-                // closes. The old detector always passed 0 here, which made
-                // every release position-only.
-                onDragStopped = { velocity -> onDragEnd(velocity) },
-            )
-            .padding(vertical = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Box(Modifier.width(40.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(dim.copy(alpha = 0.5f)))
-        Spacer(Modifier.height(6.dp))
-        MarqueeTitle(
-            text = "Playing from ${source ?: "Queue"}",
-            style = MaterialTheme.typography.bodySmall,
-            color = dim,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
 
 @Composable
 private fun SeekBar(player: PlayerManager, content: Color) {
@@ -1357,9 +1295,12 @@ private fun SyncedLyricsList(
 
     val density = LocalDensity.current
     val contentPaddingTopPx = with(density) { 32.dp.roundToPx() }
+    val estimatedViewportPx = with(density) {
+        (LocalConfiguration.current.screenHeightDp.dp * 0.65f).roundToPx().coerceAtLeast(1)
+    }
 
     val pos by player.position.collectAsStateWithLifecycle()
-    val livePos = remember(pos) { player.livePositionMs() }
+    val livePos = remember(pos, lyrics, isTabActive) { player.livePositionMs() }
     val effectivePosition = livePos + userOffsetMs
     val activeIndex = remember(lyrics, effectivePosition) { lyrics.lineIndexAt(effectivePosition) }
 
@@ -1375,8 +1316,28 @@ private fun SyncedLyricsList(
         }
     }
 
-    var isFirstEntry by remember { mutableStateOf(true) }
-    var isInitialSnapComplete by remember { mutableStateOf(!autoScroll || activeIndex < 0 || lyrics.lines.isEmpty()) }
+    val atLineZeroWhileActive = listState.firstVisibleItemIndex == 0 &&
+        listState.firstVisibleItemScrollOffset == 0 &&
+        activeIndex > 0
+
+    // Synchronous pre-frame-1 snap when listState is at line 0 while activeIndex > 0
+    remember(lyrics, activeIndex > 0) {
+        if (autoScroll && activeIndex > 0 &&
+            listState.firstVisibleItemIndex == 0 &&
+            listState.firstVisibleItemScrollOffset == 0
+        ) {
+            val knownViewport = (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset)
+                .takeIf { it > 0 } ?: estimatedViewportPx
+            val initialOffset = computeLyricsScrollOffset(knownViewport, contentPaddingTopPx, 0.35f)
+            listState.requestScrollToItem(activeIndex, initialOffset)
+        }
+        true
+    }
+
+    val needsInitialSnap = autoScroll && activeIndex >= 0 && lyrics.lines.isNotEmpty() &&
+        (atLineZeroWhileActive || activeIndex != lastScrolledIndex)
+    var isFirstEntry by remember { mutableStateOf(needsInitialSnap) }
+    var isInitialSnapComplete by remember { mutableStateOf(!needsInitialSnap) }
 
     LaunchedEffect(Unit) {
         delay(500L)
@@ -1401,7 +1362,10 @@ private fun SyncedLyricsList(
         val targetScrollOffset = computeLyricsScrollOffset(viewportHeight, contentPaddingTopPx, 0.35f)
 
         val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
-        val action = resolveLyricsScrollStep(isFirstEntry, activeIndex, lastScrolledIndex, itemInfo != null)
+        val forceSnapFromZero = listState.firstVisibleItemIndex == 0 &&
+            listState.firstVisibleItemScrollOffset == 0 &&
+            activeIndex > 0
+        val action = resolveLyricsScrollStep(isFirstEntry || forceSnapFromZero, activeIndex, lastScrolledIndex, itemInfo != null)
 
         when (action) {
             ScrollAction.SNAP -> {
@@ -1911,7 +1875,7 @@ private fun QueueBottomBar(
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun QueueSheet(
-    state: SheetState,
+    sheet: SheetState,
     player: PlayerManager,
     repo: MusicDataRepository,
     messenger: UiMessenger,
@@ -1929,12 +1893,16 @@ private fun QueueSheet(
     val repeatMode by player.repeatMode.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
+    val density = LocalDensity.current
+    val navBarBottomPx = WindowInsets.navigationBars.getBottom(density).toFloat()
+    val peekHeightPx = with(density) { 80.dp.toPx() } + navBarBottomPx
     var showSaveDialog by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     // The header (Save pill, secondary line), the sheet gradient and every row
     // all read the one resolved palette.
     val content = playingColor(palette.sheetContent)
+    val dim = playingColor(palette.dim)
 
     if (queue.isEmpty()) {
         // The last item is gone: close through the one close path.
@@ -1995,19 +1963,19 @@ private fun QueueSheet(
                 available: androidx.compose.ui.geometry.Offset,
                 source: NestedScrollSource,
             ): androidx.compose.ui.geometry.Offset {
-                                when (val handoff = com.feishin.mobile.core.common.QueueHandoff.decide(
+                when (val handoff = com.feishin.mobile.core.common.QueueHandoff.decide(
                     deltaY = available.y,
-                    sheetHeightPx = state.sheetHeightPx,
+                    sheetHeightPx = sheet.sheetHeightPx,
                     userInput = source == NestedScrollSource.UserInput,
                     listAtTop = listAtTop(),
-                    sheetDragging = state.dragging,
-                    sheetAtOpen = state.progress >= 1f,
+                    sheetDragging = sheet.dragging,
+                    sheetAtOpen = sheet.progress >= 1f,
                 )) {
                     is com.feishin.mobile.core.common.ListHandoff.PassToList ->
                         return androidx.compose.ui.geometry.Offset.Zero
 
                     is com.feishin.mobile.core.common.ListHandoff.TakeBySheet -> {
-                        state.dragBy(handoff.deltaProgress)
+                        sheet.dragBy(handoff.deltaProgress)
                         moved = true
                     }
                 }
@@ -2038,14 +2006,14 @@ private fun QueueSheet(
                 }
                 val handoff = com.feishin.mobile.core.common.QueueHandoff.decide(
                     deltaY = available.y,
-                    sheetHeightPx = state.sheetHeightPx,
+                    sheetHeightPx = sheet.sheetHeightPx,
                     userInput = true,
                     listAtTop = listAtTop(),
-                    sheetDragging = state.dragging,
-                    sheetAtOpen = state.progress >= 1f,
+                    sheetDragging = sheet.dragging,
+                    sheetAtOpen = sheet.progress >= 1f,
                 )
                 if (handoff is com.feishin.mobile.core.common.ListHandoff.TakeBySheet) {
-                    state.dragBy(handoff.deltaProgress)
+                    sheet.dragBy(handoff.deltaProgress)
                     moved = true
                 }
                 return androidx.compose.ui.geometry.Offset.Zero
@@ -2061,7 +2029,7 @@ private fun QueueSheet(
             ): androidx.compose.ui.unit.Velocity {
                 if (moved) {
                     moved = false
-                    state.onDragEnd(available.y)
+                    sheet.onDragEnd(available.y)
                 }
                 return androidx.compose.ui.unit.Velocity.Zero
             }
@@ -2076,7 +2044,7 @@ private fun QueueSheet(
             ): androidx.compose.ui.unit.Velocity {
                 if (moved) {
                     moved = false
-                    state.settle(0f)
+                    sheet.settle(0f)
                 }
                 return androidx.compose.ui.unit.Velocity.Zero
             }
@@ -2090,137 +2058,215 @@ private fun QueueSheet(
         listOf(playingColor(palette.sheetTop), playingColor(palette.sheetBottom)),
     )
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .pointerInput(Unit) { detectTapGestures { /* consume */ } },
-    ) {
-        // Scrim: alpha follows the drag, tap-outside closes through the one path.
-        Box(
-            Modifier.fillMaxSize()
-                .graphicsLayer { alpha = scrimAlpha(state.progress) }
-                .background(Color.Black)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = { state.close() },
-                ),
-        )
+    Box(Modifier.fillMaxSize()) {
+        // Scrim: composed ONLY while the sheet is open so touches on Now Playing
+        // are never blocked while the sheet rests at its bottom peek strip.
+        if (sheet.open) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) { detectTapGestures { /* consume */ } }
+                    .graphicsLayer { alpha = scrimAlpha(sheet.progress) }
+                    .background(Color.Black)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { sheet.close() },
+                    ),
+            )
+        }
         Column(
             Modifier.fillMaxWidth()
                 .fillMaxHeight(0.78f)
                 .align(Alignment.BottomCenter)
-                .onSizeChanged { state.sheetHeightPx = it.height.toFloat().coerceAtLeast(1f) }
+                .onSizeChanged {
+                    sheet.sheetHeightPx = (it.height.toFloat() - peekHeightPx).coerceAtLeast(1f)
+                }
                 .graphicsLayer {
-                    val p = state.progress
-                    translationY = (1f - p) * size.height
+                    val p = sheet.progress.coerceIn(0f, 1f)
+                    val travel = (size.height - peekHeightPx).coerceAtLeast(1f)
+                    translationY = (1f - p) * travel
                     // Keep the header grab area solid while sliding.
                     clip = p < 1f
                 }
                 .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
                 .background(sheetBrush)
+                .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
                 .nestedScroll(nestedScroll)
                 .draggable(
                     orientation = Orientation.Vertical,
-                    state = rememberDraggableState { delta -> state.dragByPixels(delta) },
+                    state = rememberDraggableState { delta -> sheet.dragByPixels(delta) },
                     // Fling velocity is normalized to progress units so the
                     // decision lives in SheetPhysics, not here.
                     onDragStopped = { velocity ->
-                        state.onDragEnd(velocity)
+                        sheet.onDragEnd(velocity)
                     },
                 )
                 .padding(horizontal = 16.dp),
         ) {
-            Spacer(Modifier.height(8.dp))
-            // One standard drag handle at the top.
-            Box(
-                Modifier.align(Alignment.CenterHorizontally).width(36.dp).height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)).background(content.copy(alpha = 0.5f)),
-            )
-            Spacer(Modifier.height(12.dp))
-            // Header: big bold source title on the left; the Radio chip (when
-            // active) and the Save button right-aligned on the same row.
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Large + bold; marquees only when it actually overflows.
-                MarqueeTitle(
-                    text = sourceName ?: "Queue (${queue.size})",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
+            // Single shared drag handle pill (36.dp x 4.dp, rounded) at the top edge.
+            // At progress = 0f, tapping the 72.dp peek strip opens the queue sheet.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (!sheet.open) {
+                            Modifier
+                                .heightIn(min = 72.dp)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = { sheet.openSheet() },
+                                )
+                        } else {
+                            Modifier
+                        },
                     ),
-                    color = content,
-                    modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Spacer(Modifier.height(10.dp))
+                Box(
+                    Modifier
+                        .width(36.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(content.copy(alpha = 0.5f)),
                 )
-                if (radioActive) {
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "Radio",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = FavoriteRed,
+                Spacer(Modifier.height(6.dp))
+                if (!sheet.open) {
+                    Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(FavoriteRed.copy(alpha = 0.14f))
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                    )
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        MarqueeTitle(
+                            text = "Playing from ${sourceName ?: "Queue"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = dim,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
-                Spacer(Modifier.width(8.dp))
-                // Save pill uses the scheme's primary/onPrimary (contrast
-                // enforced), not a hardcoded white — in Light theme the sheet
-                // is pale, so a white pill would vanish.
-                Text(
-                    "Save",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = playingColor(palette.onAccent),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(playingColor(palette.accent))
-                        .clickable { showSaveDialog = true }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                )
             }
-            // Secondary line: count + total runtime of the queue.
-            Text(
-                "${queue.size} songs · ${formatDuration(queue.sumOf { it.song.durationSec.toLong() }.toInt())}",
-                style = MaterialTheme.typography.bodySmall,
-                color = playingColor(palette.sheetDim),
-                modifier = Modifier.padding(top = 2.dp),
-            )
-            Spacer(Modifier.height(10.dp))
-            QueueList(
-                displayOrder = displayOrder,
-                listState = listState,
-                // The player's current entry, by id. Read from the LIVE queue
-                // (not displayOrder), so the highlight is unaffected by the
-                // in-drag local order.
-                currentQueueId = queue.getOrNull(currentIndex)?.queueId,
-                isPlaying = isPlaying,
-                player = player,
-                haptics = haptics,
-                onMoveLocal = { from, to ->
-                    // Read `displayOrder` directly. It is a delegated state var,
-                    // so a lambda captured once by
-                    // rememberReorderableLazyColumnState still sees the CURRENT
-                    // order. `shownIds` was a plain val frozen at composition, so
-                    // every frame after the first reordered from the ORIGINAL
-                    // list and the drag drifted back to the start.
-                    displayOrder = displayOrder.toMutableList().apply { add(to, removeAt(from)) }
-                },
-                onCommit = { commitIfDirty() },
-                onPlayQueueItem = { qid -> player.playOrToggle(qid) },
-                onRemove = { id -> player.removeById(id) },
-                onActions = onActions,
-                palette = palette,
-                modifier = Modifier.weight(1f),
-            )
-            // Bottom bar: shuffle | close chevron | repeat, all live state.
-            QueueBottomBar(
-                shuffleOn = shuffleOn,
-                repeatMode = repeatMode,
-                onShuffle = { player.toggleShuffle() },
-                onRepeat = { player.cycleRepeat() },
-                onClose = onDismiss,
-                palette = palette,
-            )
-            Spacer(Modifier.height(16.dp))
+            if (sheet.open) {
+                Box(Modifier.fillMaxWidth().weight(1f)) {
+                    // "Playing from <source>" centered below the stroke pill, fading out as sheet rises.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .graphicsLayer {
+                                val p = sheet.progress.coerceIn(0f, 1f)
+                                alpha = (1f - p / 0.35f).coerceIn(0f, 1f)
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        MarqueeTitle(
+                            text = "Playing from ${sourceName ?: "Queue"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = dim,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    // Queue header, list and bottom bar fading in directly below that same single handle.
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val p = sheet.progress.coerceIn(0f, 1f)
+                                alpha = ((p - 0.15f) / 0.5f).coerceIn(0f, 1f)
+                            },
+                    ) {
+                        Spacer(Modifier.height(6.dp))
+                        // Header: big bold source title on the left; the Radio chip (when
+                        // active) and the Save button right-aligned on the same row.
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Large + bold; marquees only when it actually overflows.
+                            MarqueeTitle(
+                                text = sourceName ?: "Queue (${queue.size})",
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                                color = content,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (radioActive) {
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Radio",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = FavoriteRed,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(FavoriteRed.copy(alpha = 0.14f))
+                                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                                )
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            // Save pill uses the scheme's primary/onPrimary (contrast
+                            // enforced), not a hardcoded white — in Light theme the sheet
+                            // is pale, so a white pill would vanish.
+                            Text(
+                                "Save",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = playingColor(palette.onAccent),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(playingColor(palette.accent))
+                                    .clickable { showSaveDialog = true }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
+                        }
+                        // Secondary line: count + total runtime of the queue.
+                        Text(
+                            "${queue.size} songs · ${formatDuration(queue.sumOf { it.song.durationSec.toLong() }.toInt())}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = playingColor(palette.sheetDim),
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        QueueList(
+                            displayOrder = displayOrder,
+                            listState = listState,
+                            // The player's current entry, by id. Read from the LIVE queue
+                            // (not displayOrder), so the highlight is unaffected by the
+                            // in-drag local order.
+                            currentQueueId = queue.getOrNull(currentIndex)?.queueId,
+                            isPlaying = isPlaying,
+                            player = player,
+                            haptics = haptics,
+                            onMoveLocal = { from, to ->
+                                // Read `displayOrder` directly. It is a delegated state var,
+                                // so a lambda captured once by
+                                // rememberReorderableLazyColumnState still sees the CURRENT
+                                // order. `shownIds` was a plain val frozen at composition, so
+                                // every frame after the first reordered from the ORIGINAL
+                                // list and the drag drifted back to the start.
+                                displayOrder = displayOrder.toMutableList().apply { add(to, removeAt(from)) }
+                            },
+                            onCommit = { commitIfDirty() },
+                            onPlayQueueItem = { qid -> player.playOrToggle(qid) },
+                            onRemove = { id -> player.removeById(id) },
+                            onActions = onActions,
+                            palette = palette,
+                            modifier = Modifier.weight(1f),
+                        )
+                        // Bottom bar: shuffle | close chevron | repeat, all live state.
+                        QueueBottomBar(
+                            shuffleOn = shuffleOn,
+                            repeatMode = repeatMode,
+                            onShuffle = { player.toggleShuffle() },
+                            onRepeat = { player.cycleRepeat() },
+                            onClose = onDismiss,
+                            palette = palette,
+                        )
+                        Spacer(Modifier.height(16.dp))
+                    }
+                }
+            }
         }
     }
 
