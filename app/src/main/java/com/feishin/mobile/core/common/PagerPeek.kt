@@ -22,6 +22,13 @@ object PagerPeek {
     /** Left margin of the first page (unchanged from the full-width pager). */
     const val START_DP = 4f
 
+    /** Symmetric horizontal content padding used so the last page sits flush right with the previous page peeking. */
+    const val HORIZONTAL_PADDING_DP = START_DP
+
+    /** Page size adjustment: availableSpace - pageSizeAdjustmentDp. */
+    fun pageSizeAdjustmentDp(pageCount: Int): Float =
+        if (pageCount <= 1) 0f else (PEEK_DP + SPACING_DP - START_DP)
+
     /**
      * End content padding that produces the peek. Only when there IS a next
      * page to peek: a lone page has nothing to reveal, so it fills the full

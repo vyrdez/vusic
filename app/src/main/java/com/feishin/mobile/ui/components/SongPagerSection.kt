@@ -12,11 +12,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,18 +57,28 @@ fun SongPagerSection(
     if (tracks.isEmpty()) return
     val pages = tracks.chunked(SONG_PAGER_ROWS)
     val pager = rememberPagerState(pageCount = { pages.size })
+    val pageSize = remember(pages.size) {
+        object : PageSize {
+            override fun androidx.compose.ui.unit.Density.calculateMainAxisPageSize(
+                availableSpace: Int,
+                pageSpacing: Int,
+            ): Int {
+                return if (pages.size <= 1) {
+                    availableSpace
+                } else {
+                    availableSpace - com.feishin.mobile.core.common.PagerPeek
+                        .pageSizeAdjustmentDp(pages.size).dp.roundToPx()
+                }
+            }
+        }
+    }
     Column(modifier.fillMaxWidth()) {
         HorizontalPager(
             state = pager,
             modifier = Modifier.fillMaxWidth(),
-            // The next page peeks in at the right edge (see PagerPeek): the
-            // first page keeps its normal left margin, rows and the ⋮ menu
-            // stay inside the page width, snapping and dots are untouched. A
-            // lone page has no next column, so it fills the full width.
+            pageSize = pageSize,
             contentPadding = PaddingValues(
-                start = com.feishin.mobile.core.common.PagerPeek.START_DP.dp,
-                end = com.feishin.mobile.core.common.PagerPeek
-                    .endPaddingDp(pages.size).dp,
+                horizontal = com.feishin.mobile.core.common.PagerPeek.HORIZONTAL_PADDING_DP.dp,
             ),
             pageSpacing = com.feishin.mobile.core.common.PagerPeek.SPACING_DP.dp,
         ) { page ->
