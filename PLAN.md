@@ -1626,3 +1626,12 @@ Version 1.3.1 (versionCode 15) — `applicationId com.feishin.mobile` unchanged.
 - **P10.1-G five algorithmic mixes on home** (`MixGenerator.kt`, `HomeViewModel.kt`, `MixGeneratorTest.kt`):
   - Root cause: Legacy `loadMixes` relied on slow per-artist similar-songs fan-outs that dropped mixes when clusters were small, resulting in unpredictable 1-3 mixes on Home.
   - Fix: Created pure deterministic `MixGenerator` reliably producing exactly 5 distinct mixes ("My Mix 1" through "My Mix 5") for any library with 5+ songs. Tailors mixes across Top Affinity, Secondary Cluster, Playlist & Favorites Blend, Mood/Era Cluster, and Deep Cuts with 2x2 collage artwork. Pull-to-refresh and genre changes re-seed the shelf.
+- **P10.1-H nowplaying crossfade and short-swipe open** (`Nav.kt`, `MiniPlayer.kt`, `Phase10_1LogicTest.kt`):
+  - Root cause: NowPlayingScreen expanded without surface alpha fading, appearing 100% opaque without crossfading the underlying screen; `nowPlayingSheet` threshold was set to 0.3f (~562px) making short swipes fail and snap closed.
+  - Fix: Applied `(progress / 0.65f).coerceIn(0f, 1f)` alpha ramp on NowPlayingScreen's graphicsLayer for smooth crossfade during drag open/collapse; adjusted threshold to 0.15f (matching QueueSheet ease) and ensured upward drag >= 36dp or velocity <= -300dp/s opens immediately.
+- **P10.1-I fix lyrics tab reopen flash** (`SettingsStore.kt`, `NowPlayingScreen.kt`, `Phase10_1LogicTest.kt`):
+  - Root cause: `lyricsMode` was collected from flow with `initialValue = null -> false`, causing re-opened NowPlayingScreen to paint `Song` on frame 0 and trigger a 300ms tab transition to `Lyrics` on frame 1.
+  - Fix: Read `nowPlayingLyricsMode` synchronously on frame 0; gated `SongLyricsToggle` animations behind explicit user taps (`userToggledTab`), eliminating the brief Song tab flash on reopen.
+- **P10.1-J deduplicate 5 algorithmic mixes** (`MixGenerator.kt`, `MixGeneratorTest.kt`):
+  - Root cause: Individual mix builders selected from the library independently without global tracking, allowing duplicate tracklists or identical 2x2 collages on skewed libraries.
+  - Fix: Added global seed tracking (`usedSeedKeys`), 5-way disjoint seed partitions, and post-generation pairwise deduplication passes rotating lead tracks and covers to ensure all 5 mixes are strictly distinct.

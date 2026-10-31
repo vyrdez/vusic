@@ -6,8 +6,14 @@
 - **5 Algorithmic Mixes ("Mixed for you")**:
   - Deterministic `MixGenerator` reliably generates exactly 5 distinct mixes ("My Mix 1" through "My Mix 5") for any library with 5+ songs, eliminating random 1-3 mix drops.
   - Tailors mixes across Top Affinity, Secondary Cluster, Playlist & Favorites Blend, Mood/Era Cluster, and Deep Cuts with 2x2 collage artwork. Pull-to-refresh and genre changes re-seed the shelf.
+  - Enforces cross-mix deduplication and distinct 2x2 cover collages across all 5 mixes even on heavily skewed libraries.
 
 ### Fixed
+- **Now Playing Fade-In / Fade-Out Transition & Queue-Style Short-Swipe Open**:
+  - Applied `(progress / 0.65f).coerceIn(0f, 1f)` alpha crossfade to `NowPlayingScreen` so it smoothly crossfades with Home during drag open and collapse.
+  - Set `nowPlayingSheet` position threshold to `0.15f` and mapped upward drag $\ge 36\text{dp}$ / velocity $\le -300\text{dp/s}$ to open immediately without snapping back.
+- **Eliminate Brief "Song" Tab Flash on Lyrics Reopen**:
+  - Synchronously reads `nowPlayingLyricsMode` on frame 0, removing the intermediate false flash, and gates tab transitions behind explicit user taps.
 - **Coupled Miniplayer Swipe-Up & Simultaneous Now Playing Expansion**:
   - Hoisted `nowPlayingSheet` (`SheetState`) directly couples MiniPlayer upward drag to Now Playing expansion: the player screen rises 1:1 with finger travel from pixel 0 while MiniPlayer rides upward and fades out.
   - Momentum flick or threshold release cleanly settles with spring physics; tapping MiniPlayer expands smoothly.
