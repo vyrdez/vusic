@@ -136,7 +136,7 @@ private val DETAIL_ROUTES = NavRules.DETAIL_ROUTES
 @Composable
 fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     val nav = rememberNavController()
-    val nowPlayingSheet = rememberSheetState(positionThreshold = 0.3f)
+    val nowPlayingSheet = rememberSheetState(positionThreshold = 0.15f)
     val showNowPlaying = nowPlayingSheet.open
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -561,9 +561,10 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            val progress = nowPlayingSheet.progress.coerceIn(0f, 1f)
+                            val p = nowPlayingSheet.progress.coerceIn(0f, 1f)
                             val h = if (size.height > 0f) size.height else screenHeightPx
-                            translationY = (1f - progress) * h
+                            translationY = (1f - p) * h
+                            alpha = (p / 0.65f).coerceIn(0f, 1f)
                         },
                 ) {
                     NowPlayingScreen(

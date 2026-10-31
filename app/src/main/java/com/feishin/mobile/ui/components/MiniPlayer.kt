@@ -327,7 +327,6 @@ fun MiniPlayer(
             .graphicsLayer {
                 val dy = dragY.value
                 val progress = expansionSheet?.progress?.coerceIn(0f, 1f) ?: 0f
-                val sheetH = expansionSheet?.sheetHeightPx ?: 0f
                 // Enter/exit: rise + fade, driven by the same value the padding uses.
                 // Coupled upward expansion translates upward with Now Playing's leading edge
                 // and fades alpha from 1f to 0f via (1f - progress * 4f).coerceIn(0f, 1f).
@@ -338,7 +337,7 @@ fun MiniPlayer(
                 }
                 val verticalTranslation = when {
                     dy > 0f -> dy
-                    progress > 0f && sheetH > 0f -> -progress * sheetH
+                    progress > 0f -> -progress * upwardFadePx
                     else -> dy.coerceAtMost(0f)
                 }
                 translationY = verticalTranslation + (1f - enter.value) * 48f
@@ -403,7 +402,13 @@ fun MiniPlayer(
                         val v = tracker.calculateVelocity()
                         val locked = axis
                         if (locked == 2 && expansionSheet != null && (expansionSheet.dragging || ty < 0f)) {
-                            expansionSheet.onDragEnd(v.y)
+                            val minOpenDragPx = 36.dp.toPx()
+                            val minOpenVelocityPx = -300.dp.toPx()
+                            if (ty <= -minOpenDragPx || v.y <= minOpenVelocityPx) {
+                                expansionSheet.openSheet()
+                            } else {
+                                expansionSheet.onDragEnd(v.y)
+                            }
                             springBack()
                             onDragOffsetChanged(0f)
                             return@detectDragGestures
