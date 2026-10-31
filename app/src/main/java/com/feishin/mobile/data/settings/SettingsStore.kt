@@ -47,6 +47,8 @@ class SettingsStore internal constructor(
      * clears it after five minutes in the background.
      */
     private val lyricsModeSession = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val lyricsModeState: kotlinx.coroutines.flow.StateFlow<Boolean> = lyricsModeSession
+    val nowPlayingLyricsMode: Boolean get() = lyricsModeSession.value
 
     private object K {
         val theme = stringPreferencesKey("theme")

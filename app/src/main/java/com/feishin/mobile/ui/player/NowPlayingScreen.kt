@@ -413,8 +413,10 @@ fun NowPlayingScreen(
     LaunchedEffect(palette.lightBackdrop) { NowPlayingBarTint.report(palette.lightBackdrop) }
     DisposableEffect(Unit) { onDispose { NowPlayingBarTint.clear() } }
 
-    val npSettings by lyricsVm.settings.flow.collectAsStateWithLifecycle(initialValue = null)
-    val lyricsMode = npSettings?.nowPlayingLyricsMode ?: false
+    val lyricsMode by lyricsVm.settings.lyricsModeState.collectAsStateWithLifecycle(
+        initialValue = lyricsVm.settings.nowPlayingLyricsMode,
+    )
+    var userToggledTab by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -464,7 +466,11 @@ fun NowPlayingScreen(
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     SongLyricsToggle(
                         lyricsMode = lyricsMode,
-                        onSelect = { scope.launch { lyricsVm.settings.setNowPlayingLyricsMode(it) } },
+                        userToggledTab = userToggledTab,
+                        onSelect = {
+                            if (it != lyricsMode) userToggledTab = true
+                            scope.launch { lyricsVm.settings.setNowPlayingLyricsMode(it) }
+                        },
                         palette = palette,
                     )
                 }
@@ -508,19 +514,24 @@ fun NowPlayingScreen(
                 targetState = lyricsMode,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 transitionSpec = {
-                    // targetState == true is heading to Lyrics: the incoming
-                    // panel comes from the side it is travelling towards and the
-                    // outgoing one leaves the opposite way. Motion.Slow is
-                    // 300 ms and collapses to 0 when the system animation scale
-                    // is off (the travel is zeroed too, so nothing jumps).
-                    val forward = targetState
-                    val travel = { full: Int -> if (Motion.durationScale == 0f) 0 else full / 5 }
-                    (slideInHorizontally(animationSpec = Motion.slide()) { w ->
-                        if (forward) travel(w) else -travel(w)
-                    } + fadeIn(animationSpec = Motion.fade(Motion.Slow))) togetherWith
-                        (slideOutHorizontally(animationSpec = Motion.slide()) { w ->
-                            if (forward) -travel(w) else travel(w)
-                        } + fadeOut(animationSpec = Motion.fade(Motion.Slow)))
+                    if (!userToggledTab) {
+                        androidx.compose.animation.EnterTransition.None togetherWith
+                            androidx.compose.animation.ExitTransition.None
+                    } else {
+                        // targetState == true is heading to Lyrics: the incoming
+                        // panel comes from the side it is travelling towards and the
+                        // outgoing one leaves the opposite way. Motion.Slow is
+                        // 300 ms and collapses to 0 when the system animation scale
+                        // is off (the travel is zeroed too, so nothing jumps).
+                        val forward = targetState
+                        val travel = { full: Int -> if (Motion.durationScale == 0f) 0 else full / 5 }
+                        (slideInHorizontally(animationSpec = Motion.slide()) { w ->
+                            if (forward) travel(w) else -travel(w)
+                        } + fadeIn(animationSpec = Motion.fade(Motion.Slow))) togetherWith
+                            (slideOutHorizontally(animationSpec = Motion.slide()) { w ->
+                                if (forward) -travel(w) else travel(w)
+                            } + fadeOut(animationSpec = Motion.fade(Motion.Slow)))
+                    }
                 },
                 label = "np-tab-content",
             ) { showLyrics ->
@@ -746,6 +757,7 @@ private fun SongLyricsToggle(
     lyricsMode: Boolean,
     onSelect: (Boolean) -> Unit,
     palette: NowPlayingPalette,
+    userToggledTab: Boolean = true,
 ) {
     // One accent pair for the whole screen: the "on" segment and its ink come
     // from the resolved palette, so the selected pill can never disagree with
@@ -765,7 +777,7 @@ private fun SongLyricsToggle(
     var innerHeightPx by remember { mutableIntStateOf(0) }
     val slide by animateFloatAsState(
         targetValue = if (lyricsMode) 1f else 0f,
-        animationSpec = Motion.value(Motion.Slow),
+        animationSpec = if (userToggledTab) Motion.value(Motion.Slow) else snap(),
         label = "np-tab-slide",
     )
     val container by animateColorAsState(
