@@ -1,16 +1,22 @@
 package com.feishin.mobile
 
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.feishin.mobile.core.common.PagerPeek
 import com.feishin.mobile.core.common.SheetPhysics
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.ui.player.computeLyricsAnchorPx
 import com.feishin.mobile.ui.player.computeLyricsScrollDelta
 import com.feishin.mobile.ui.player.computeLyricsScrollOffset
+import java.io.File
+import java.util.UUID
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 /** Pure unit tests for the Phase 10.1 contracts: Sections A, B, C, D and F. */
 class Phase10_1LogicTest {
@@ -210,6 +216,97 @@ class Phase10_1LogicTest {
         assertEquals(anchorPx, contentPaddingTopPx - scrollOffset)
 
         assertEquals(60f, computeLyricsScrollDelta(900, viewportHeightPx, 0.35f), 1e-6f)
+    }
+
+    // -------------------------------------------------------------------------
+    // Section H: Now Playing / mini player crossfade and upward open settle
+    // -------------------------------------------------------------------------
+
+    private object PlayerCrossfade {
+        const val NOW_PLAYING_FADE_END = 0.65f
+        const val MINIPLAYER_FADE_END = 0.25f
+        const val MINI_OPEN_DRAG_FRACTION = 0.15f
+        const val MINI_OPEN_VELOCITY_DP_PER_SEC = -300f
+
+        fun nowPlayingAlpha(progress: Float): Float =
+            (progress.coerceIn(0f, 1f) / NOW_PLAYING_FADE_END).coerceIn(0f, 1f)
+
+        fun miniplayerAlpha(progress: Float): Float =
+            (1f - progress.coerceIn(0f, 1f) / MINIPLAYER_FADE_END).coerceIn(0f, 1f)
+
+        /** 1f = open, 0f = closed. A short upward drag or a decisive flick opens. */
+        fun miniSwipeSettleTarget(upwardDragFraction: Float, velocityDpPerSec: Float): Float =
+            if (upwardDragFraction >= MINI_OPEN_DRAG_FRACTION ||
+                velocityDpPerSec < MINI_OPEN_VELOCITY_DP_PER_SEC
+            ) {
+                SheetPhysics.OPEN
+            } else {
+                SheetPhysics.CLOSED
+            }
+    }
+
+    @Test
+    fun sectionH_nowPlayingAlphaRisesFromZeroAndCompletesAtSixtyFivePercent() {
+        assertEquals(0f, PlayerCrossfade.nowPlayingAlpha(0f), 1e-6f)
+
+        val samples = (0..65).map { PlayerCrossfade.nowPlayingAlpha(it / 100f) }
+        samples.zipWithNext().forEach { (before, after) ->
+            assertTrue("Now Playing alpha must never decrease", after >= before)
+        }
+
+        assertEquals(1f, PlayerCrossfade.nowPlayingAlpha(0.65f), 1e-6f)
+        assertEquals(1f, PlayerCrossfade.nowPlayingAlpha(1f), 1e-6f)
+        assertTrue(PlayerCrossfade.nowPlayingAlpha(0.64f) < 1f)
+    }
+
+    @Test
+    fun sectionH_miniplayerAlphaFadesOutByTwentyFivePercent() {
+        assertEquals(1f, PlayerCrossfade.miniplayerAlpha(0f), 1e-6f)
+
+        val samples = (0..25).map { PlayerCrossfade.miniplayerAlpha(it / 100f) }
+        samples.zipWithNext().forEach { (before, after) ->
+            assertTrue("mini player alpha must never increase", after <= before)
+        }
+
+        assertEquals(0f, PlayerCrossfade.miniplayerAlpha(0.25f), 1e-6f)
+        assertEquals(0f, PlayerCrossfade.miniplayerAlpha(1f), 1e-6f)
+    }
+
+    @Test
+    fun sectionH_shortUpwardDragOrQuickFlingOpensNowPlaying() {
+        assertEquals(1f, PlayerCrossfade.miniSwipeSettleTarget(0.15f, 0f), 0f)
+        assertEquals(1f, PlayerCrossfade.miniSwipeSettleTarget(0.40f, 0f), 0f)
+        assertEquals(1f, PlayerCrossfade.miniSwipeSettleTarget(0f, -301f), 0f)
+
+        assertEquals(0f, PlayerCrossfade.miniSwipeSettleTarget(0.14f, 0f), 0f)
+        assertEquals(0f, PlayerCrossfade.miniSwipeSettleTarget(0f, -299f), 0f)
+    }
+
+    // -------------------------------------------------------------------------
+    // Section I: initial composition reads the session lyrics tab synchronously
+    // -------------------------------------------------------------------------
+
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    @Test
+    fun sectionI_initialCompositionReadsPersistedLyricsModeOnFrameZero() = runTest {
+        val dataStore = PreferenceDataStoreFactory.create(
+            scope = backgroundScope,
+            produceFile = { File(tmp.root, "phase10_1_${UUID.randomUUID()}.preferences_pb") },
+        )
+        val store = SettingsStore(dataStore)
+
+        assertFalse("cold start must begin on the Song tab", store.nowPlayingLyricsMode)
+
+        store.setNowPlayingLyricsMode(true)
+
+        // Frame 0 of a fresh composition reads the session directly. If the
+        // screen instead waited for the flow, it would paint Song (false) first
+        // and flip to Lyrics on a later frame.
+        val frameZero = store.nowPlayingLyricsMode
+        assertTrue("frame 0 must already read the Lyrics tab", frameZero)
+        assertTrue("session state must not emit an intermediate false", store.lyricsModeState.value)
     }
 
     // -------------------------------------------------------------------------

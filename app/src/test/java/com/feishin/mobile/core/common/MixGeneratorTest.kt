@@ -75,6 +75,64 @@ class MixGeneratorTest {
     }
 
     @Test
+    fun skewedLibraryStillProducesFiveDistinctMixes() {
+        // 80% of the pool shares one artist, one genre and one year: the edge
+        // case where the era/genre cluster used to collapse onto Mix 1.
+        val skewed = (1..40).map { i ->
+            if (i <= 32) {
+                track(i).copy(
+                    album = "Same Album",
+                    albumId = "alb-same",
+                    artist = "Same Artist",
+                    artistId = "art-same",
+                    coverArt = if (i == 1) "cover-starred" else "cover-${i % 8}",
+                    year = 1998,
+                    genre = "Rock",
+                )
+            } else {
+                val variant = i % 4
+                track(i).copy(
+                    album = "Album $variant",
+                    albumId = "alb-$variant",
+                    artist = "Artist $variant",
+                    artistId = "art-$variant",
+                    coverArt = "cover-${8 + i % 8}",
+                    year = 1970 + variant * 10,
+                    genre = listOf("Jazz", "Pop", "Electronic", "Folk")[variant],
+                )
+            }
+        }
+
+        val mixes = MixGenerator.generate(
+            randomSongs = skewed,
+            starredTracks = listOf(skewed.first()),
+            batchSize = 25,
+            seed = 42L,
+        )
+        assertEquals(5, mixes.size)
+
+        val idLists = mixes.map { mix -> mix.tracks.map(Track::id) }
+        assertEquals(
+            "all five mixes must have distinct track lists",
+            5,
+            idLists.distinct().size,
+        )
+        for (a in idLists.indices) {
+            for (b in a + 1 until idLists.size) {
+                assertTrue("Mix ${a + 1} duplicates Mix ${b + 1}", idLists[a] != idLists[b])
+            }
+        }
+
+        assertTrue(skewed.mapNotNull { it.coverArt }.distinct().size >= 5)
+        val collages = mixes.map { mix -> mix.tracks.mapNotNull { it.coverArt }.take(4) }
+        assertEquals(
+            "all five mixes must have distinct cover collages",
+            5,
+            collages.distinct().size,
+        )
+    }
+
+    @Test
     fun mixesAreDeterministicForTheSameSeed() {
         val tracks = library(50)
         val first = MixGenerator.generate(randomSongs = tracks, seed = 7L).map { it.tracks.map(Track::id) }
