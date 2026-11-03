@@ -1635,3 +1635,20 @@ Version 1.3.1 (versionCode 15) — `applicationId com.feishin.mobile` unchanged.
 - **P10.1-J deduplicate 5 algorithmic mixes** (`MixGenerator.kt`, `MixGeneratorTest.kt`):
   - Root cause: Individual mix builders selected from the library independently without global tracking, allowing duplicate tracklists or identical 2x2 collages on skewed libraries.
   - Fix: Added global seed tracking (`usedSeedKeys`), 5-way disjoint seed partitions, and post-generation pairwise deduplication passes rotating lead tracks and covers to ensure all 5 mixes are strictly distinct.
+
+## Phase 10.2 status: stationary fading now playing background, unstuck close drag, lyrics reopen sync & in-app downloaded scrub crash fix (1.3.2)
+
+Version 1.3.2 (versionCode 16) — `applicationId com.feishin.mobile` unchanged.
+
+- **P10.2-A stationary fading nowplaying background** (`Nav.kt`, `NowPlayingScreen.kt`, `Phase10_2LogicTest.kt`):
+  - Root cause: `Nav.kt` applied `translationY = (1f - p) * h` to the entire screen including the backdrop, moving the background rectangle with a hard horizontal cut-off edge across the screen.
+  - Fix: Split `NowPlayingScreen` into an outer stationary container (`translationY = 0f`), a stationary full-screen backdrop fading smoothly via `alpha = (p / 0.65f).coerceIn(0f, 1f)`, and an inner sliding foreground UI layer (`translationY = (1f - p) * h`).
+- **P10.2-B fix nowplaying close drag stall** (`NowPlayingScreen.kt`, `SheetState.kt`, `Phase10_2LogicTest.kt`):
+  - Root cause: Downward drag was clamped to `700f` (`dragOffset.value.coerceAtMost(700f)`), stalling drags at 25–35% of tall screens, and `.offset` preceded `.pointerInput` (moving coordinate system bug).
+  - Fix: Removed `700f` clamp; attached vertical `draggable` and nested scroll connection to the stationary root container, driving `nowPlayingSheet` smoothly from `1.0f` down to `0.0f` across the full screen height on both `Song` and `Lyrics` tabs.
+- **P10.2-C fix lyrics sync on close and reopen** (`NowPlayingScreen.kt`, `Nav.kt`, `Phase10_2LogicTest.kt`):
+  - Root cause: Closing drag leaked into `LazyColumn(state = lyricsListState)` and unanchored the list; on reopen `activeIndex == lastScrolledIndex` caused `resolveLyricsScrollStep` to return null, stranding the active line at the bottom.
+  - Fix: Froze lyrics scrolling during close gestures (`isLeaving = !lyricsMode || isClosingOrDragging`), reset `lastScrolledLyricsIndex` on close, and applied unified pre-frame-1 snap ensuring the active line is always anchored at ~35% from the top upon reopen.
+- **P10.2-D fix downloaded song in-app scrub crash** (`BoundedQueuePlayer.kt`, `PlayerManager.kt`, `NowPlayingScreen.kt`, `BoundedQueuePlayerTest.kt`):
+  - Root cause: In Media3, `MediaController.seekTo(pos)` sends `seekTo(getCurrentMediaItemIndex(), pos)` across Binder. `BoundedQueuePlayer` overridden `getCurrentMediaItemIndex()` returned a relative index (0..99), but did NOT override `seekTo(index, pos)`, passing the relative index to ExoPlayer and seeking backwards by `windowStart` items into wrong or un-downloaded tracks in large queues (like 900+ songs in Downloads), causing fatal timeline crashes.
+  - Fix: Overrode `seekTo(mediaItemIndex, positionMs)`, `seekToDefaultPosition(mediaItemIndex)`, and `seekTo(positionMs)` in `BoundedQueuePlayer` to map window-relative indices back to real ExoPlayer indices via `windowStart()`. Hardened `SeekBar` and `PlayerManager.seekTo` with `runCatching` and `dur <= 0L` checks.

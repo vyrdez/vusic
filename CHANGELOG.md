@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.3.2
+
+### Fixed
+- **Stationary Fading Now Playing Background**:
+  - Split `NowPlayingScreen` into a stationary full-screen backdrop layer (`translationY = 0f`) and an inner sliding foreground UI layer. The backdrop smoothly fades in and out (`alpha = (p / 0.65f).coerceIn(0f, 1f)`) over Home without creating a moving horizontal cut-off edge.
+- **Unstuck Downward Close Drag on Now Playing**:
+  - Removed the `700f` hard-clamp (which previously stalled downward drags at 25–35% on tall displays) and moving-coordinate `pointerInput`. Attached `draggable` and nested scroll connection directly to the stationary root container, driving `nowPlayingSheet` smoothly 1:1 all the way down from `1.0f` to `0.0f` on both `Song` and `Lyrics` tabs.
+- **Lyrics Reopen Sync Preservation**:
+  - Froze lyrics list scroll position during close drag (`isLeaving = !lyricsMode || isClosingOrDragging`) to prevent drag events from scrolling the list toward line 0.
+  - Automatically re-anchors the active lyric line at the ~35% top viewport anchor upon reopen (matching `Song -> Lyrics` tab switches) so the active line never shifts to the bottom of the screen.
+- **Downloaded Song In-App Progress Bar Scrub Crash**:
+  - Overrode `seekTo(mediaItemIndex, positionMs)`, `seekToDefaultPosition(mediaItemIndex)`, and `seekTo(positionMs)` in `BoundedQueuePlayer` to translate window-relative indices back to true ExoPlayer timeline indices using `windowStart()`.
+  - Fixed an IPC seek bug where MediaController's window-relative index caused ExoPlayer to seek backwards into wrong or un-downloaded tracks in large queues (like 900+ songs in Downloads).
+  - Hardened `SeekBar` and `PlayerManager.seekTo` with duration safety checks (`dur <= 0L`) and `runCatching` to guarantee zero seek crashes.
+
 ## 1.3.1
 
 ### Added
