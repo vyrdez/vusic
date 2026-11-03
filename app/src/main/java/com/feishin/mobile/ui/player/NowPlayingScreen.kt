@@ -252,6 +252,7 @@ fun NowPlayingScreen(
     onArtist: (String) -> Unit,
     onAlbum: (String) -> Unit,
     onActions: (ActionTarget) -> Unit,
+    nowPlayingSheet: SheetState? = null,
     lyricsListState: LazyListState = rememberLazyListState(),
     lastScrolledLyricsIndex: Int = -1,
     onUpdateLastScrolledLyricsIndex: ((Int) -> Unit)? = null,
@@ -445,299 +446,438 @@ fun NowPlayingScreen(
         }
     }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .pointerInput(Unit) { detectTapGestures { /* consume */ } }
-            .background(backdrop)
-            // The bottom strip paints under the gesture bar and applies the
-            // navigation-bar inset itself, which is why this root does not.
-            .statusBarsPadding(),
-    ) {
-        Column(Modifier.fillMaxSize()) {
-            // Top row: collapse far left, Song|Lyrics pill centred, ⋮ far right.
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = VusicSpacing.ScreenHorizontal, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Default.KeyboardArrowDown, "Close", tint = content)
-                }
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    SongLyricsToggle(
-                        lyricsMode = lyricsMode,
-                        userToggledTab = userToggledTab,
-                        onSelect = {
-                            if (it != lyricsMode) userToggledTab = true
-                            scope.launch { lyricsVm.settings.setNowPlayingLyricsMode(it) }
-                        },
-                        palette = palette,
-                    )
-                }
-                var showLyricsMenu by remember { mutableStateOf(false) }
-                IconButton(
-                    onClick = {
-                        if (lyricsMode) {
-                            showLyricsMenu = true
-                        } else {
-                            onActions(ActionTarget.Track(current))
-                        }
-                    },
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(Icons.Default.MoreVert, "Options", tint = content)
-                }
-                if (showLyricsMenu && lyricsSettings != null) {
-                    LyricsMenuSheet(
-                        track = current,
-                        lyricsUi = lyricsUi,
-                        lyricsVm = lyricsVm,
-                        settings = lyricsSettings!!,
-                        onDismiss = { showLyricsMenu = false },
-                        onShowMessage = { messenger.show(it) },
-                        onTrackDetails = {
-                            showLyricsMenu = false
-                            onActions(ActionTarget.Track(current))
-                        },
-                    )
+    val isClosingOrDragging = nowPlayingSheet?.closingOrDragging == true
+    var fallbackDragPx by remember { mutableFloatStateOf(0f) }
+    val currentLyricsMode by rememberUpdatedState(lyricsMode)
+    val currentLyricsUi by rememberUpdatedState(lyricsUi)
+
+    val nowPlayingNestedScroll = remember(nowPlayingSheet) {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            var moved = false
+
+            fun isLyricsAtTop(): Boolean {
+                if (!currentLyricsMode) return true
+                return when (currentLyricsUi) {
+                    is LyricsUi.Synced ->
+                        lyricsListState.firstVisibleItemIndex == 0 &&
+                            lyricsListState.firstVisibleItemScrollOffset == 0
+                    is LyricsUi.Plain ->
+                        plainLyricsScrollState.value == 0
+                    else -> true
                 }
             }
-            // Swipe-down-to-close area: art, titles, chips, seek, controls.
-            // An Animatable, so a release/cancel always springs back to a
-            // settled offset instead of stranding the layout mid-drag.
-            val dragOffset = remember { androidx.compose.animation.core.Animatable(0f) }
-            // Song <-> Lyrics is a transition, not a swap: the two panels
-            // cross-fade with a short horizontal travel while the selection pill
-            // slides (see SongLyricsToggle). Playback, the progress bar and the
-            // queue are untouched - they live in the player, not in here.
-            AnimatedContent(
-                targetState = lyricsMode,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                transitionSpec = {
-                    if (!userToggledTab) {
-                        androidx.compose.animation.EnterTransition.None togetherWith
-                            androidx.compose.animation.ExitTransition.None
-                    } else {
-                        // targetState == true is heading to Lyrics: the incoming
-                        // panel comes from the side it is travelling towards and the
-                        // outgoing one leaves the opposite way. Motion.Slow is
-                        // 300 ms and collapses to 0 when the system animation scale
-                        // is off (the travel is zeroed too, so nothing jumps).
-                        val forward = targetState
-                        val travel = { full: Int -> if (Motion.durationScale == 0f) 0 else full / 5 }
-                        (slideInHorizontally(animationSpec = Motion.slide()) { w ->
-                            if (forward) travel(w) else -travel(w)
-                        } + fadeIn(animationSpec = Motion.fade(Motion.Slow))) togetherWith
-                            (slideOutHorizontally(animationSpec = Motion.slide()) { w ->
-                                if (forward) -travel(w) else travel(w)
-                            } + fadeOut(animationSpec = Motion.fade(Motion.Slow)))
+
+            override fun onPreScroll(
+                available: androidx.compose.ui.geometry.Offset,
+                source: NestedScrollSource,
+            ): androidx.compose.ui.geometry.Offset {
+                val npSheet = nowPlayingSheet ?: return androidx.compose.ui.geometry.Offset.Zero
+                if (sheet.open) return androidx.compose.ui.geometry.Offset.Zero
+                when (val handoff = com.feishin.mobile.core.common.QueueHandoff.decide(
+                    deltaY = available.y,
+                    sheetHeightPx = npSheet.sheetHeightPx,
+                    userInput = source == NestedScrollSource.UserInput,
+                    listAtTop = isLyricsAtTop(),
+                    sheetDragging = npSheet.dragging,
+                    sheetAtOpen = npSheet.progress >= 1f,
+                )) {
+                    is com.feishin.mobile.core.common.ListHandoff.PassToList -> {
+                        if (npSheet.closingOrDragging) {
+                            return androidx.compose.ui.geometry.Offset(0f, available.y)
+                        }
+                        return androidx.compose.ui.geometry.Offset.Zero
                     }
-                },
-                label = "np-tab-content",
-            ) { showLyrics ->
-            if (!showLyrics) {
-            BoxWithConstraints(Modifier.fillMaxSize()) {
-                // Nearly full-width art (16dp gutters) that still leaves room
-                // for everything below it on short screens: capped by height.
-                // Landscape/short screens get a compact budget instead.
-                val compact = maxHeight < 600.dp
-                val artSide = if (compact) {
-                    minOf(maxWidth * 0.5f, maxHeight * 0.30f)
-                } else {
-                    minOf(maxWidth - 32.dp, maxHeight * 0.42f)
+                    is com.feishin.mobile.core.common.ListHandoff.TakeBySheet -> {
+                        npSheet.dragBy(handoff.deltaProgress)
+                        moved = true
+                    }
                 }
-                val gapTop = if (compact) 12.dp else 24.dp
-                val gapArtTitle = if (compact) 8.dp else 12.dp
-                val gapArtistChips = if (compact) 8.dp else 18.dp
-                Column(
-                    Modifier
-                        .fillMaxSize()
-                        .offset { IntOffset(0, dragOffset.value.roundToInt()) }
-                        .graphicsLayer { alpha = (1f - dragOffset.value / 700f).coerceIn(0.35f, 1f) }
-                        .pointerInput(Unit) {
-                            detectVerticalDragGestures(
-                                onDragEnd = {
-                                    if (dragOffset.value > 260f) onClose()
-                                    scope.launch { dragOffset.animateTo(0f, Motion.snapBackSpring()) }
-                                },
-                                onDragCancel = {
-                                    // Cancelled drags must also settle.
-                                    scope.launch { dragOffset.animateTo(0f, Motion.snapBackSpring()) }
-                                },
-                                onVerticalDrag = { change, amount ->
-                                    if (amount > 0) {
-                                        change.consume()
-                                        val next = (dragOffset.value + amount).coerceAtMost(700f)
-                                        scope.launch { dragOffset.snapTo(next) }
-                                    }
-                                },
-                            )
-                        }
-                        .padding(horizontal = 16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Spacer(Modifier.height(gapTop))
-                    CoverImage(
-                        artUrl, current.title,
-                        modifier = Modifier.size(artSide),
-                        roundedDp = 16.dp,
-                        thumbnailUrl = thumbUrl,
-                    )
-                    Spacer(Modifier.height(gapArtTitle))
-                    // Title row: balanced 48dp slots on both sides keep the text
-                    // visually centred; short titles are centred, long ones marquee.
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Spacer(Modifier.size(48.dp))
-                        MarqueeTitle(
-                            text = current.title,
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = content,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                            if (current.albumId?.isNotBlank() == true) {
-                                IconButton(onClick = { current.albumId?.let(onAlbum) }, modifier = Modifier.size(48.dp)) {
-                                    Icon(Icons.Default.ChevronRight, "Go to album", tint = dim)
-                                }
-                            }
-                        }
-                    }
-                    // Artist: centred when short, marquee with a clean ellipsis
-                    // when long (multi-artist "A / B / C" included).
-                    MarqueeTitle(
-                        text = current.artist,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = dim,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                            .clickable(enabled = current.artistId?.isNotBlank() == true) {
-                                current.artistId?.let { onArtist(it) }
-                            },
-                    )
-                    Spacer(Modifier.height(gapArtistChips))
-                    // Optimistic favorite toggle with rollback; guarded so fast
-                    // taps can't interleave requests. Converges to the server
-                    // collection once loaded (the queue's snapshot can be stale).
-                    var starred by remember(current.id) { mutableStateOf(current.starred) }
-                    var starring by remember(current.id) { mutableStateOf(false) }
-                    val downloadState by downloads.observeSong(current.id).collectAsStateWithLifecycle(initialValue = null)
-                    val favTracks by favs.tracks.collectAsStateWithLifecycle()
-                    val favsLoaded by favs.loaded.collectAsStateWithLifecycle()
-                    LaunchedEffect(current.id, favTracks, favsLoaded) {
-                        if (favsLoaded && !starring) {
-                            starred = favTracks.any { it.id == current.id }
-                        }
-                    }
-                    LaunchedEffect(current.id) {
-                        scope.launch { favs.refresh() }
-                    }
-                    NpChipsRow(
-                        content = content,
-                        starred = starred,
-                        local = current.isLocal,
-                        downloadState = downloadState,
-                        onFavorite = {
-                            if (current.isLocal || starring) return@NpChipsRow
-                            val next = !starred
-                            starred = next
-                            starring = true
-                            scope.launch {
-                                when (favs.setTrackStarred(current.id, next)) {
-                                    is Result.Ok -> Unit
-                                    is Result.Err -> {
-                                        starred = !next
-                                        messenger.show("Could not update favorite")
-                                    }
-                                }
-                                starring = false
-                            }
-                        },
-                        onSave = { showPicker = true },
-                        onShare = { shareText(context, "${current.title} - ${current.artist}") },
-                        onDownload = {
-                            scope.launch {
-                                when (downloadState?.statusEnum) {
-                                    com.feishin.mobile.data.db.DownloadStatus.COMPLETED -> {
-                                        downloads.removeFromLibrary(current.id)
-                                        messenger.show("Download removed")
-                                    }
-                                    com.feishin.mobile.data.db.DownloadStatus.DOWNLOADING,
-                                    com.feishin.mobile.data.db.DownloadStatus.QUEUED,
-                                    -> {
-                                        downloads.pause(current.id)
-                                        messenger.show("Download cancelled")
-                                    }
-                                    com.feishin.mobile.data.db.DownloadStatus.PAUSED,
-                                    com.feishin.mobile.data.db.DownloadStatus.FAILED,
-                                    -> {
-                                        downloads.resume(current.id)
-                                        messenger.show("Download resumed")
-                                    }
-                                    null -> {
-                                        downloads.enqueueTracks(listOf(current))
-                                        messenger.show("Downloading: ${current.title}")
-                                    }
-                                }
-                            }
-                        },
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    SeekBar(player, content)
-                    Spacer(Modifier.height(4.dp))
-                    ControlsRow(player, content)
-                    // The queue entry sits near the bottom edge, above the
-                    // gesture bar: tappable and swipe-up draggable.
-                    Spacer(Modifier.weight(1f))
-                    Spacer(Modifier.height(8.dp))
-                }
+                return androidx.compose.ui.geometry.Offset(0f, available.y)
             }
-            } else {
-                val isTabActive = isLyricsTabReadyToScroll(showLyrics, lyricsMode)
-                val isLeaving = !lyricsMode
-                LyricsPanel(
-                    lyricsVm = lyricsVm,
-                    player = player,
-                    content = content,
-                    dim = dim,
-                    lazyListState = lyricsListState,
-                    plainScrollState = plainLyricsScrollState,
-                    onSearchAgain = { lyricsVm.searchAgain(current) },
-                    settings = lyricsSettings,
-                    isTabActive = isTabActive,
-                    isLeaving = isLeaving,
-                    lastScrolledIndex = effectiveLastScrolledIndex,
-                    onUpdateLastScrolledIndex = updateLastScrolledIndex,
-                    modifier = Modifier.fillMaxSize().lyricsEdgeFade(),
+
+            override fun onPostScroll(
+                consumed: androidx.compose.ui.geometry.Offset,
+                available: androidx.compose.ui.geometry.Offset,
+                source: NestedScrollSource,
+            ): androidx.compose.ui.geometry.Offset {
+                val npSheet = nowPlayingSheet ?: return androidx.compose.ui.geometry.Offset.Zero
+                if (sheet.open || source != NestedScrollSource.UserInput) {
+                    return androidx.compose.ui.geometry.Offset.Zero
+                }
+                val handoff = com.feishin.mobile.core.common.QueueHandoff.decide(
+                    deltaY = available.y,
+                    sheetHeightPx = npSheet.sheetHeightPx,
+                    userInput = true,
+                    listAtTop = isLyricsAtTop(),
+                    sheetDragging = npSheet.dragging,
+                    sheetAtOpen = npSheet.progress >= 1f,
                 )
+                if (handoff is com.feishin.mobile.core.common.ListHandoff.TakeBySheet) {
+                    npSheet.dragBy(handoff.deltaProgress)
+                    moved = true
+                }
+                return androidx.compose.ui.geometry.Offset.Zero
             }
+
+            override suspend fun onPreFling(
+                available: androidx.compose.ui.unit.Velocity,
+            ): androidx.compose.ui.unit.Velocity {
+                val npSheet = nowPlayingSheet ?: return androidx.compose.ui.unit.Velocity.Zero
+                if (moved) {
+                    moved = false
+                    npSheet.onDragEnd(available.y)
+                    return available
+                }
+                if (npSheet.closingOrDragging) {
+                    return available
+                }
+                return androidx.compose.ui.unit.Velocity.Zero
             }
-            // Reserve bottom clearance for the 72.dp peek strip + 8.dp bottom
-            // spacer + navigation-bar inset; the single unified QueueSheet
-            // container draws the peek strip and handle in this space.
-            Spacer(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(bottomBgColor)
-                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
-                    .height(80.dp),
-            )
+
+            override suspend fun onPostFling(
+                consumed: androidx.compose.ui.unit.Velocity,
+                available: androidx.compose.ui.unit.Velocity,
+            ): androidx.compose.ui.unit.Velocity {
+                val npSheet = nowPlayingSheet ?: return androidx.compose.ui.unit.Velocity.Zero
+                if (moved) {
+                    moved = false
+                    npSheet.settle(0f)
+                }
+                return androidx.compose.ui.unit.Velocity.Zero
+            }
         }
     }
 
-    // Unified single bottom sheet container: at progress = 0f it exposes the
-    // 72.dp peek strip with the single 36.dp x 4.dp stroke indicator pill and
-    // "Playing from <source>"; as progress moves 0f -> 1f that exact same pill
-    // travels upward with the sheet's top edge while the Queue header, list and
-    // bottom bar fade in directly below it.
-    if (queue.isNotEmpty()) {
-        QueueSheet(
-            sheet = sheet,
-            player = player, repo = repo, messenger = messenger,
-            palette = palette, playlistEvents = playlistEvents,
-            onActions = { onActions(ActionTarget.Track(it)) },
-            onDismiss = { sheet.close() },
+    // Outer root container at stationary translationY = 0f (never translates vertically).
+    // Holds the stationary full-screen fading backdrop and the translating foreground UI layer,
+    // and captures downward close drags in a stationary coordinate system.
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onSizeChanged {
+                if (it.height > 0 && nowPlayingSheet != null) {
+                    nowPlayingSheet.sheetHeightPx = it.height.toFloat()
+                }
+            }
+            .pointerInput(Unit) { detectTapGestures { /* consume */ } }
+            .nestedScroll(nowPlayingNestedScroll)
+            .draggable(
+                orientation = Orientation.Vertical,
+                enabled = !sheet.open,
+                state = rememberDraggableState { delta ->
+                    val npSheet = nowPlayingSheet
+                    if (npSheet != null) {
+                        if (delta > 0f || npSheet.dragging || npSheet.progress < 1f) {
+                            npSheet.dragByPixels(delta)
+                        }
+                    } else if (delta > 0f || fallbackDragPx > 0f) {
+                        fallbackDragPx = (fallbackDragPx + delta).coerceAtLeast(0f)
+                    }
+                },
+                onDragStopped = { velocity ->
+                    val npSheet = nowPlayingSheet
+                    if (npSheet != null) {
+                        if (npSheet.dragging || npSheet.progress < 1f) {
+                            npSheet.onDragEnd(velocity)
+                        }
+                    } else {
+                        if (fallbackDragPx > 260f || velocity > 800f) onClose()
+                        fallbackDragPx = 0f
+                    }
+                },
+            ),
+    ) {
+        // Stationary full-screen background layer: covers 100% of the screen at translationY = 0f
+        // and fades smoothly (0f -> 1f on expand, 1f -> 0f on collapse).
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val p = (nowPlayingSheet?.progress ?: 1f).coerceIn(0f, 1f)
+                    translationY = 0f
+                    alpha = (p / 0.65f).coerceIn(0f, 1f)
+                }
+                .background(backdrop),
         )
+
+        // Foreground UI content layer: translates vertically across the full screen height
+        // and fades smoothly with the sheet progress.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val p = (nowPlayingSheet?.progress ?: 1f).coerceIn(0f, 1f)
+                    val h = if (size.height > 0f) size.height else (nowPlayingSheet?.sheetHeightPx ?: 0f)
+                    translationY = if (nowPlayingSheet != null) (1f - p) * h else fallbackDragPx
+                    alpha = (p / 0.65f).coerceIn(0f, 1f)
+                },
+        ) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    // The bottom strip paints under the gesture bar and applies the
+                    // navigation-bar inset itself, which is why this column only pads status bars.
+                    .statusBarsPadding(),
+            ) {
+                // Top row: collapse far left, Song|Lyrics pill centred, ⋮ far right.
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = VusicSpacing.ScreenHorizontal, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Default.KeyboardArrowDown, "Close", tint = content)
+                    }
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        SongLyricsToggle(
+                            lyricsMode = lyricsMode,
+                            userToggledTab = userToggledTab,
+                            onSelect = {
+                                if (it != lyricsMode) userToggledTab = true
+                                scope.launch { lyricsVm.settings.setNowPlayingLyricsMode(it) }
+                            },
+                            palette = palette,
+                        )
+                    }
+                    var showLyricsMenu by remember { mutableStateOf(false) }
+                    IconButton(
+                        onClick = {
+                            if (lyricsMode) {
+                                showLyricsMenu = true
+                            } else {
+                                onActions(ActionTarget.Track(current))
+                            }
+                        },
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(Icons.Default.MoreVert, "Options", tint = content)
+                    }
+                    if (showLyricsMenu && lyricsSettings != null) {
+                        LyricsMenuSheet(
+                            track = current,
+                            lyricsUi = lyricsUi,
+                            lyricsVm = lyricsVm,
+                            settings = lyricsSettings!!,
+                            onDismiss = { showLyricsMenu = false },
+                            onShowMessage = { messenger.show(it) },
+                            onTrackDetails = {
+                                showLyricsMenu = false
+                                onActions(ActionTarget.Track(current))
+                            },
+                        )
+                    }
+                }
+                // Song <-> Lyrics is a transition, not a swap: the two panels
+                // cross-fade with a short horizontal travel while the selection pill
+                // slides (see SongLyricsToggle). Playback, the progress bar and the
+                // queue are untouched - they live in the player, not in here.
+                AnimatedContent(
+                    targetState = lyricsMode,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    transitionSpec = {
+                        if (!userToggledTab) {
+                            androidx.compose.animation.EnterTransition.None togetherWith
+                                androidx.compose.animation.ExitTransition.None
+                        } else {
+                            // targetState == true is heading to Lyrics: the incoming
+                            // panel comes from the side it is travelling towards and the
+                            // outgoing one leaves the opposite way. Motion.Slow is
+                            // 300 ms and collapses to 0 when the system animation scale
+                            // is off (the travel is zeroed too, so nothing jumps).
+                            val forward = targetState
+                            val travel = { full: Int -> if (Motion.durationScale == 0f) 0 else full / 5 }
+                            (slideInHorizontally(animationSpec = Motion.slide()) { w ->
+                                if (forward) travel(w) else -travel(w)
+                            } + fadeIn(animationSpec = Motion.fade(Motion.Slow))) togetherWith
+                                (slideOutHorizontally(animationSpec = Motion.slide()) { w ->
+                                    if (forward) -travel(w) else travel(w)
+                                } + fadeOut(animationSpec = Motion.fade(Motion.Slow)))
+                        }
+                    },
+                    label = "np-tab-content",
+                ) { showLyrics ->
+                if (!showLyrics) {
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    // Nearly full-width art (16dp gutters) that still leaves room
+                    // for everything below it on short screens: capped by height.
+                    // Landscape/short screens get a compact budget instead.
+                    val compact = maxHeight < 600.dp
+                    val artSide = if (compact) {
+                        minOf(maxWidth * 0.5f, maxHeight * 0.30f)
+                    } else {
+                        minOf(maxWidth - 32.dp, maxHeight * 0.42f)
+                    }
+                    val gapTop = if (compact) 12.dp else 24.dp
+                    val gapArtTitle = if (compact) 8.dp else 12.dp
+                    val gapArtistChips = if (compact) 8.dp else 18.dp
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Spacer(Modifier.height(gapTop))
+                        CoverImage(
+                            artUrl, current.title,
+                            modifier = Modifier.size(artSide),
+                            roundedDp = 16.dp,
+                            thumbnailUrl = thumbUrl,
+                        )
+                        Spacer(Modifier.height(gapArtTitle))
+                        // Title row: balanced 48dp slots on both sides keep the text
+                        // visually centred; short titles are centred, long ones marquee.
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Spacer(Modifier.size(48.dp))
+                            MarqueeTitle(
+                                text = current.title,
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = content,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                                if (current.albumId?.isNotBlank() == true) {
+                                    IconButton(onClick = { current.albumId?.let(onAlbum) }, modifier = Modifier.size(48.dp)) {
+                                        Icon(Icons.Default.ChevronRight, "Go to album", tint = dim)
+                                    }
+                                }
+                            }
+                        }
+                        // Artist: centred when short, marquee with a clean ellipsis
+                        // when long (multi-artist "A / B / C" included).
+                        MarqueeTitle(
+                            text = current.artist,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = dim,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                                .clickable(enabled = current.artistId?.isNotBlank() == true) {
+                                    current.artistId?.let { onArtist(it) }
+                                },
+                        )
+                        Spacer(Modifier.height(gapArtistChips))
+                        // Optimistic favorite toggle with rollback; guarded so fast
+                        // taps can't interleave requests. Converges to the server
+                        // collection once loaded (the queue's snapshot can be stale).
+                        var starred by remember(current.id) { mutableStateOf(current.starred) }
+                        var starring by remember(current.id) { mutableStateOf(false) }
+                        val downloadState by downloads.observeSong(current.id).collectAsStateWithLifecycle(initialValue = null)
+                        val favTracks by favs.tracks.collectAsStateWithLifecycle()
+                        val favsLoaded by favs.loaded.collectAsStateWithLifecycle()
+                        LaunchedEffect(current.id, favTracks, favsLoaded) {
+                            if (favsLoaded && !starring) {
+                                starred = favTracks.any { it.id == current.id }
+                            }
+                        }
+                        LaunchedEffect(current.id) {
+                            scope.launch { favs.refresh() }
+                        }
+                        NpChipsRow(
+                            content = content,
+                            starred = starred,
+                            local = current.isLocal,
+                            downloadState = downloadState,
+                            onFavorite = {
+                                if (current.isLocal || starring) return@NpChipsRow
+                                val next = !starred
+                                starred = next
+                                starring = true
+                                scope.launch {
+                                    when (favs.setTrackStarred(current.id, next)) {
+                                        is Result.Ok -> Unit
+                                        is Result.Err -> {
+                                            starred = !next
+                                            messenger.show("Could not update favorite")
+                                        }
+                                    }
+                                    starring = false
+                                }
+                            },
+                            onSave = { showPicker = true },
+                            onShare = { shareText(context, "${current.title} - ${current.artist}") },
+                            onDownload = {
+                                scope.launch {
+                                    when (downloadState?.statusEnum) {
+                                        com.feishin.mobile.data.db.DownloadStatus.COMPLETED -> {
+                                            downloads.removeFromLibrary(current.id)
+                                            messenger.show("Download removed")
+                                        }
+                                        com.feishin.mobile.data.db.DownloadStatus.DOWNLOADING,
+                                        com.feishin.mobile.data.db.DownloadStatus.QUEUED,
+                                        -> {
+                                            downloads.pause(current.id)
+                                            messenger.show("Download cancelled")
+                                        }
+                                        com.feishin.mobile.data.db.DownloadStatus.PAUSED,
+                                        com.feishin.mobile.data.db.DownloadStatus.FAILED,
+                                        -> {
+                                            downloads.resume(current.id)
+                                            messenger.show("Download resumed")
+                                        }
+                                        null -> {
+                                            downloads.enqueueTracks(listOf(current))
+                                            messenger.show("Downloading: ${current.title}")
+                                        }
+                                    }
+                                }
+                            },
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        SeekBar(player, content)
+                        Spacer(Modifier.height(4.dp))
+                        ControlsRow(player, content)
+                        // The queue entry sits near the bottom edge, above the
+                        // gesture bar: tappable and swipe-up draggable.
+                        Spacer(Modifier.weight(1f))
+                        Spacer(Modifier.height(8.dp))
+                    }
+                }
+                } else {
+                    val isTabActive = isLyricsTabReadyToScroll(showLyrics, lyricsMode)
+                    val isLeaving = !lyricsMode || isClosingOrDragging
+                    LyricsPanel(
+                        lyricsVm = lyricsVm,
+                        player = player,
+                        content = content,
+                        dim = dim,
+                        lazyListState = lyricsListState,
+                        plainScrollState = plainLyricsScrollState,
+                        onSearchAgain = { lyricsVm.searchAgain(current) },
+                        settings = lyricsSettings,
+                        isTabActive = isTabActive,
+                        isLeaving = isLeaving,
+                        lastScrolledIndex = effectiveLastScrolledIndex,
+                        onUpdateLastScrolledIndex = updateLastScrolledIndex,
+                        modifier = Modifier.fillMaxSize().lyricsEdgeFade(),
+                    )
+                }
+                }
+                // Reserve bottom clearance for the 72.dp peek strip + 8.dp bottom
+                // spacer + navigation-bar inset; the single unified QueueSheet
+                // container draws the peek strip and handle in this space.
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                        .height(80.dp),
+                )
+            }
+
+            // Unified single bottom sheet container: at progress = 0f it exposes the
+            // 72.dp peek strip with the single 36.dp x 4.dp stroke indicator pill and
+            // "Playing from <source>"; as progress moves 0f -> 1f that exact same pill
+            // travels upward with the sheet's top edge while the Queue header, list and
+            // bottom bar fade in directly below it.
+            if (queue.isNotEmpty()) {
+                QueueSheet(
+                    sheet = sheet,
+                    nowPlayingSheet = nowPlayingSheet,
+                    player = player, repo = repo, messenger = messenger,
+                    palette = palette, playlistEvents = playlistEvents,
+                    onActions = { onActions(ActionTarget.Track(it)) },
+                    onDismiss = { sheet.close() },
+                )
+            }
+        }
     }
     // One close path for back press, tap-outside and the chevron.
     androidx.activity.compose.BackHandler(enabled = sheet.open) {
@@ -928,7 +1068,7 @@ private fun SeekBar(player: PlayerManager, content: Color) {
                 .fillMaxWidth()
                 .height(32.dp)
                 .pointerInput(known, dur) {
-                    if (!known) return@pointerInput
+                    if (!known || dur <= 0L) return@pointerInput
                     fun msAt(x: Float): Long {
                         val w = size.width
                         if (w <= 0) return 0L
@@ -936,7 +1076,10 @@ private fun SeekBar(player: PlayerManager, content: Color) {
                     }
                     detectHorizontalDragGestures(
                         onDragStart = { off -> dragging = true; scrubMs = msAt(off.x) },
-                        onHorizontalDrag = { change, _ -> scrubMs = msAt(change.position.x) },
+                        onHorizontalDrag = { change, _ ->
+                            change.consume()
+                            scrubMs = msAt(change.position.x)
+                        },
                         onDragEnd = {
                             scrubMs?.let { player.seekTo(it) }
                             scrubMs = null
@@ -946,7 +1089,7 @@ private fun SeekBar(player: PlayerManager, content: Color) {
                     )
                 }
                 .pointerInput(known, dur) {
-                    if (!known) return@pointerInput
+                    if (!known || dur <= 0L) return@pointerInput
                     detectTapGestures { off ->
                         val w = size.width
                         if (w > 0) {
@@ -1128,6 +1271,7 @@ private fun Modifier.lyricsEdgeFade(): Modifier = this
         )
     }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun LyricsPanel(
     lyricsVm: LyricsViewModel,
@@ -1207,6 +1351,7 @@ private fun LyricsPanel(
                     Column(
                         Modifier
                             .fillMaxSize()
+                            .overscroll(com.feishin.mobile.core.common.PassThroughOverscroll)
                             .verticalScroll(plainScrollState)
                             .padding(horizontal = 24.dp, vertical = 32.dp),
                     ) {
@@ -1270,6 +1415,7 @@ private fun LyricsPanel(
 
 val LyricsDisplayTokens.QueueStripPadding: Dp get() = 88.dp
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun SyncedLyricsList(
     lyrics: com.feishin.mobile.core.network.Lyrics,
@@ -1319,8 +1465,10 @@ private fun SyncedLyricsList(
     val isDragged by listState.interactionSource.collectIsDraggedAsState()
     var userScrolledAway by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isDragged) {
-        if (isDragged) {
+    LaunchedEffect(isDragged, isLeaving) {
+        if (isLeaving) {
+            userScrolledAway = false
+        } else if (isDragged) {
             userScrolledAway = true
         } else if (userScrolledAway) {
             delay(3500)
@@ -1328,16 +1476,10 @@ private fun SyncedLyricsList(
         }
     }
 
-    val atLineZeroWhileActive = listState.firstVisibleItemIndex == 0 &&
-        listState.firstVisibleItemScrollOffset == 0 &&
-        activeIndex > 0
-
-    // Synchronous pre-frame-1 snap when listState is at line 0 while activeIndex > 0
-    remember(lyrics, activeIndex > 0) {
-        if (autoScroll && activeIndex > 0 &&
-            listState.firstVisibleItemIndex == 0 &&
-            listState.firstVisibleItemScrollOffset == 0
-        ) {
+    // Synchronous pre-frame-1 snap when entering composition while activeIndex >= 0,
+    // ensuring both tab switches (Song -> Lyrics) and close/reopen anchor activeIndex at ~35%.
+    remember(lyrics, activeIndex >= 0) {
+        if (autoScroll && activeIndex >= 0 && lyrics.lines.isNotEmpty()) {
             val knownViewport = (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset)
                 .takeIf { it > 0 } ?: estimatedViewportPx
             val initialOffset = computeLyricsScrollOffset(knownViewport, contentPaddingTopPx, 0.35f)
@@ -1346,17 +1488,25 @@ private fun SyncedLyricsList(
         true
     }
 
-    val needsInitialSnap = autoScroll && activeIndex >= 0 && lyrics.lines.isNotEmpty() &&
-        (atLineZeroWhileActive || activeIndex != lastScrolledIndex)
+    val needsInitialSnap = autoScroll && activeIndex >= 0 && lyrics.lines.isNotEmpty()
     var isFirstEntry by remember { mutableStateOf(needsInitialSnap) }
-    var isInitialSnapComplete by remember { mutableStateOf(!needsInitialSnap) }
+    var isInitialSnapComplete by remember {
+        val hasMeasuredViewport = (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset) > 0
+        mutableStateOf(!needsInitialSnap || hasMeasuredViewport)
+    }
+
+    LaunchedEffect(isLeaving) {
+        if (!isLeaving && autoScroll && activeIndex >= 0 && lyrics.lines.isNotEmpty()) {
+            isFirstEntry = true
+        }
+    }
 
     LaunchedEffect(Unit) {
         delay(500L)
         isInitialSnapComplete = true
     }
 
-    LaunchedEffect(activeIndex, isTabActive, isLeaving, userScrolledAway, autoScroll) {
+    LaunchedEffect(activeIndex, isTabActive, isLeaving, userScrolledAway, autoScroll, isFirstEntry) {
         if (!shouldRunLyricsScroll(isTabActive, isLeaving, userScrolledAway) || activeIndex < 0 || !autoScroll) {
             if (!autoScroll || activeIndex < 0) {
                 isInitialSnapComplete = true
@@ -1416,6 +1566,7 @@ private fun SyncedLyricsList(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
+                .overscroll(com.feishin.mobile.core.common.PassThroughOverscroll)
                 .graphicsLayer { alpha = if (isInitialSnapComplete) 1f else 0f },
             contentPadding = PaddingValues(start = 24.dp, top = 32.dp, end = 24.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(LyricsDisplayTokens.lineGap(settings?.lyricsLineGapPercent ?: 100)),
@@ -1892,6 +2043,7 @@ private fun QueueSheet(
     repo: MusicDataRepository,
     messenger: UiMessenger,
     palette: NowPlayingPalette,
+    nowPlayingSheet: SheetState? = null,
     playlistEvents: PlaylistEvents? = null,
     onActions: (com.feishin.mobile.domain.model.Track) -> Unit = {},
     onDismiss: () -> Unit,
@@ -2107,11 +2259,21 @@ private fun QueueSheet(
                 .nestedScroll(nestedScroll)
                 .draggable(
                     orientation = Orientation.Vertical,
-                    state = rememberDraggableState { delta -> sheet.dragByPixels(delta) },
+                    state = rememberDraggableState { delta ->
+                        if (!sheet.open && !sheet.dragging && (delta > 0f || nowPlayingSheet?.dragging == true)) {
+                            nowPlayingSheet?.dragByPixels(delta)
+                        } else {
+                            sheet.dragByPixels(delta)
+                        }
+                    },
                     // Fling velocity is normalized to progress units so the
                     // decision lives in SheetPhysics, not here.
                     onDragStopped = { velocity ->
-                        sheet.onDragEnd(velocity)
+                        if (nowPlayingSheet?.dragging == true) {
+                            nowPlayingSheet.onDragEnd(velocity)
+                        } else {
+                            sheet.onDragEnd(velocity)
+                        }
                     },
                 )
                 .padding(horizontal = 16.dp),

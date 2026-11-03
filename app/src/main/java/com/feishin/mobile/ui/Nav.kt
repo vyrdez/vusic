@@ -205,6 +205,15 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
         }
     }
 
+    LaunchedEffect(showNowPlaying) {
+        if (showNowPlaying) {
+            focusManager.clearFocus()
+            keyboardController?.hide()
+        } else {
+            lastScrolledLyricsIndex = -1
+        }
+    }
+
     // Replay queued scrobbles/stars as soon as the network comes back.
     val online by main.network.isOnline.collectAsStateWithLifecycle()
     val pendingUploads by main.offlineSync.pendingCount.collectAsStateWithLifecycle(initialValue = 0)
@@ -561,10 +570,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                     Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            val p = nowPlayingSheet.progress.coerceIn(0f, 1f)
-                            val h = if (size.height > 0f) size.height else screenHeightPx
-                            translationY = (1f - p) * h
-                            alpha = (p / 0.65f).coerceIn(0f, 1f)
+                            translationY = 0f
                         },
                 ) {
                     NowPlayingScreen(
@@ -587,6 +593,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                             nav.navigate(Routes.album(it))
                         },
                         onActions = { actionsTarget = it },
+                        nowPlayingSheet = nowPlayingSheet,
                         lyricsListState = lyricsListState,
                         lastScrolledLyricsIndex = lastScrolledLyricsIndex,
                         onUpdateLastScrolledLyricsIndex = { lastScrolledLyricsIndex = it },
