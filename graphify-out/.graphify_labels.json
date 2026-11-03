@@ -1,5 +1,4 @@
 {
-  "3": "Color Science Utilities",
   "4": "Playlist Batching Lyrics Parsing",
   "5": "Subsonic API DTOs",
   "12": "Settings Preferences Store",
@@ -23,7 +22,6 @@
   "58": "Compose Performance Reference",
   "59": "Cached Track Store",
   "62": "Radio Programmer",
-  "64": "Lyrics Scroll Corrections",
   "68": "Gradle Run Status Tests",
   "69": "Avatar LRU Cache",
   "70": "Queue Operations Tests",
@@ -82,7 +80,6 @@
   "221": "Brand Identity Guidelines",
   "226": "Gradle Wrapper Script",
   "228": "Lyrics Provider Catalog",
-  "229": "Dark Tone Spec",
   "230": "Android Benchmark Comparison",
   "231": "Gradle Build Script",
   "232": "Kotlin Build Script",
