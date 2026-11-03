@@ -19,9 +19,9 @@ class BoundedQueuePlayer(
 ) : ForwardingPlayer(player) {
 
     private fun windowStart(): Int {
-        val full = currentTimeline
+        val full = super.getCurrentTimeline()
         if (full.isEmpty || full.windowCount <= maxWindow) return 0
-        val current = currentMediaItemIndex
+        val current = super.getCurrentMediaItemIndex()
         val half = maxWindow / 2
         return (current - half).coerceIn(0, maxOf(0, full.windowCount - maxWindow))
     }
@@ -88,5 +88,31 @@ class BoundedQueuePlayer(
         val start = (current - half).coerceIn(0, maxOf(0, full.windowCount - maxWindow))
         val realIndex = (start + index).coerceIn(0, super.getMediaItemCount() - 1)
         return super.getMediaItemAt(realIndex)
+    }
+
+    override fun seekTo(mediaItemIndex: Int, positionMs: Long) {
+        val full = super.getCurrentTimeline()
+        if (full.isEmpty || full.windowCount <= maxWindow) {
+            super.seekTo(mediaItemIndex, positionMs)
+            return
+        }
+        val start = windowStart()
+        val realIndex = (start + mediaItemIndex).coerceIn(0, maxOf(0, full.windowCount - 1))
+        super.seekTo(realIndex, positionMs)
+    }
+
+    override fun seekToDefaultPosition(mediaItemIndex: Int) {
+        val full = super.getCurrentTimeline()
+        if (full.isEmpty || full.windowCount <= maxWindow) {
+            super.seekToDefaultPosition(mediaItemIndex)
+            return
+        }
+        val start = windowStart()
+        val realIndex = (start + mediaItemIndex).coerceIn(0, maxOf(0, full.windowCount - 1))
+        super.seekToDefaultPosition(realIndex)
+    }
+
+    override fun seekTo(positionMs: Long) {
+        super.seekTo(super.getCurrentMediaItemIndex(), positionMs)
     }
 }

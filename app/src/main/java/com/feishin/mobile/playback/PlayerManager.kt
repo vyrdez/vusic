@@ -1250,7 +1250,15 @@ class PlayerManager @Inject constructor(
     }
 
     fun seekTo(ms: Long) {
-        controller?.seekTo(ms)
+        val c = controller ?: return
+        runCatching {
+            val dur = c.duration.takeIf { it > 0L } ?: _duration.value.takeIf { it > 0L } ?: 0L
+            val targetMs = if (dur > 0L) ms.coerceIn(0L, maxOf(0L, dur)) else ms.coerceAtLeast(0L)
+            c.seekTo(targetMs)
+            _position.value = targetMs
+        }.onFailure { e ->
+            VLog.w(TAG, "seekTo failed for ms=$ms", e)
+        }
     }
 
     /**
