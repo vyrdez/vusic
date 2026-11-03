@@ -55,6 +55,14 @@ class SheetState internal constructor(
     val dragging: Boolean get() = gestureActive
 
     /**
+     * True while a finger is actively dragging the sheet or the sheet is
+     * settling toward [SheetPhysics.CLOSED]. False while resting open or
+     * animating toward [SheetPhysics.OPEN].
+     */
+    val closingOrDragging: Boolean
+        get() = gestureActive || dragValue < 0.5f
+
+    /**
      * True while the sheet and its touch-blocking scrim are part of the
      * composition. Never true at rest-closed.
      */
