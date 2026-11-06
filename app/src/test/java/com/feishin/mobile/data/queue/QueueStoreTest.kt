@@ -180,4 +180,76 @@ class QueueStoreTest {
         assertEquals("content://media/external/audio/media/42", loadedLocal.localUri)
         assertEquals(1700000000L, loadedLocal.localModifiedSec)
     }
+
+    @Test
+    fun saveAndLoad_906DownloadsQueue_persists100PercentIntactWithOriginalIds() = runTest {
+        assertEquals(2000, QueueStore.MAX_PERSISTED_TRACKS)
+        val s = store()
+        val catalogIds = (1L..906L).toList()
+        val shuffledState = com.feishin.mobile.core.common.ShuffleModel.shuffle(
+            com.feishin.mobile.core.common.ShuffleState(
+                displayedIds = catalogIds,
+                currentQueueId = 450L,
+            ),
+            kotlin.random.Random(42),
+        )
+        val displayedTracks = shuffledState.displayedIds.map { id -> track("dl_$id", "Download $id") }
+
+        s.save(
+            tracks = displayedTracks,
+            currentIndex = 0,
+            positionMs = 77_000L,
+            sourceName = "Downloads",
+            queueIds = shuffledState.displayedIds,
+            shuffleActive = true,
+            shuffleOrder = shuffledState.originalIds,
+            queueSeq = 907L,
+        )
+
+        val loaded = s.load()!!
+        // All 906 songs and originalIds survive 100% intact without truncation
+        assertEquals(906, loaded.tracks.size)
+        assertEquals(shuffledState.displayedIds, loaded.tracks.map { it.queueId })
+        assertTrue(loaded.shuffleActive)
+        assertEquals(catalogIds, loaded.shuffleOrder)
+        assertEquals(0, loaded.currentIndex)
+        assertEquals(77_000L, loaded.positionMs)
+
+        // Unshuffling after process restart restores exact 906-song catalog order with 450L at index 449
+        val restoredState = com.feishin.mobile.core.common.ShuffleState(
+            displayedIds = loaded.tracks.map { it.queueId },
+            originalIds = loaded.shuffleOrder,
+            currentQueueId = loaded.tracks[loaded.currentIndex].queueId,
+            shuffleEnabled = loaded.shuffleActive,
+        )
+        val unshuffled = com.feishin.mobile.core.common.ShuffleModel.unshuffle(restoredState)
+        assertEquals(catalogIds, unshuffled.displayedIds)
+        assertEquals(450L, unshuffled.currentQueueId)
+        assertEquals(449, unshuffled.displayedIds.indexOf(450L))
+    }
+
+    @Test
+    fun saveAndLoad_5000Items_capsToMaxPersistedTracksAroundCurrentIndexAndFiltersOriginalIds() = runTest {
+        val s = store()
+        val catalogIds = (1L..5_000L).toList()
+        val tracks = catalogIds.map { id -> track("s_$id", "Song $id") }
+        val activeIndex = 2_500 // queueId = 2501L
+
+        s.save(
+            tracks = tracks,
+            currentIndex = activeIndex,
+            positionMs = 15_000L,
+            sourceName = "Big Playlist",
+            queueIds = catalogIds,
+            shuffleActive = true,
+            shuffleOrder = catalogIds.reversed(),
+            queueSeq = 5_001L,
+        )
+
+        val loaded = s.load()!!
+        assertEquals(QueueStore.MAX_PERSISTED_TRACKS, loaded.tracks.size)
+        assertEquals(2_501L, loaded.tracks[loaded.currentIndex].queueId)
+        assertEquals(QueueStore.MAX_PERSISTED_TRACKS, loaded.shuffleOrder.size)
+        assertEquals(loaded.tracks.map { it.queueId }.toSet(), loaded.shuffleOrder.toSet())
+    }
 }

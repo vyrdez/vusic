@@ -20,7 +20,9 @@ import com.feishin.mobile.core.common.RadioProgrammer
 import com.feishin.mobile.core.common.RadioTrigger
 import com.feishin.mobile.core.common.RadioMemory
 import com.feishin.mobile.core.common.Result
+import com.feishin.mobile.core.common.ShuffleModel
 import com.feishin.mobile.core.common.ShufflePlan
+import com.feishin.mobile.core.common.ShuffleState
 import com.feishin.mobile.core.common.NetworkClass
 import com.feishin.mobile.core.common.QualityPolicy
 import com.feishin.mobile.core.common.PlaybackSource
@@ -35,11 +37,13 @@ import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.withContext
 import com.google.common.util.concurrent.ListenableFuture
@@ -90,8 +94,83 @@ class PlayerManager @Inject constructor(
     // thread. CrashGuard would swallow that and playback would silently never
     // start, so keep the dispatcher explicit and the handler beside it.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main + com.feishin.mobile.core.common.CrashGuard.handler)
-    private companion object {
+    internal companion object {
         const val TAG = "PlayerManager"
+
+        /**
+         * Reorders [player]'s timeline around the active item at [currentIdx] ([keepId])
+         * using prefix/suffix removal and insertion so the active item is never removed,
+         * replaced, or re-prepared (0ms audio cutout).
+         */
+        internal fun applyTimelineReorder(
+            player: Player,
+            before: List<QueueItem>,
+            currentIdx: Int,
+            keepId: Long?,
+            reordered: List<QueueItem>,
+            reorderedMediaItems: List<MediaItem>,
+            mediaItemLookup: (Long) -> MediaItem? = { null },
+            chunkForBoundedController: Boolean = false,
+        ): Int {
+            if (before.isEmpty() || reordered.isEmpty()) return 0
+            val safeBeforeIdx = currentIdx.coerceIn(0, before.lastIndex)
+            val plan = ShufflePlan.sliceAroundKeep(before.size, safeBeforeIdx, reordered, keepId) { it.queueId }
+            val targetIndex = plan.targetIndex
+
+            val playerCount = player.mediaItemCount.takeIf { it > 0 } ?: before.size
+            val liveCurIdx = if (player.mediaItemCount > 0 && player.currentMediaItemIndex in 0 until player.mediaItemCount) {
+                player.currentMediaItemIndex
+            } else {
+                safeBeforeIdx.coerceIn(0, maxOf(0, playerCount - 1))
+            }
+
+            // 1. Remove suffix after playing item
+            if (liveCurIdx + 1 < playerCount) {
+                player.removeMediaItems(liveCurIdx + 1, playerCount)
+            }
+            // 2. Remove prefix before playing item (active item is now at index 0)
+            if (liveCurIdx > 0) {
+                player.removeMediaItems(0, liveCurIdx)
+            }
+            // 3. Insert new prefix before playing item (active item shifts to targetIndex)
+            val headMediaItems = if (reorderedMediaItems.size == reordered.size) {
+                reorderedMediaItems.subList(0, targetIndex)
+            } else {
+                plan.head.mapNotNull { qi -> mediaItemLookup(qi.queueId) }
+            }
+            if (headMediaItems.isNotEmpty()) {
+                if (!chunkForBoundedController || headMediaItems.size <= QueueWindow.DEFAULT_MAX_WINDOW) {
+                    player.addMediaItems(0, headMediaItems)
+                } else {
+                    var offset = 0
+                    while (offset < headMediaItems.size) {
+                        val end = minOf(headMediaItems.size, offset + QueueWindow.DEFAULT_MAX_WINDOW)
+                        player.addMediaItems(offset, headMediaItems.subList(offset, end))
+                        offset = end
+                    }
+                }
+            }
+            // 4. Insert new suffix after playing item
+            val tailMediaItems = if (reorderedMediaItems.size == reordered.size) {
+                reorderedMediaItems.subList(targetIndex + 1, reorderedMediaItems.size)
+            } else {
+                plan.tail.mapNotNull { qi -> mediaItemLookup(qi.queueId) }
+            }
+            if (tailMediaItems.isNotEmpty()) {
+                val insertStart = targetIndex + 1
+                if (!chunkForBoundedController || tailMediaItems.size <= QueueWindow.DEFAULT_MAX_WINDOW) {
+                    player.addMediaItems(insertStart, tailMediaItems)
+                } else {
+                    var offset = 0
+                    while (offset < tailMediaItems.size) {
+                        val end = minOf(tailMediaItems.size, offset + QueueWindow.DEFAULT_MAX_WINDOW)
+                        player.addMediaItems(insertStart + offset, tailMediaItems.subList(offset, end))
+                        offset = end
+                    }
+                }
+            }
+            return targetIndex
+        }
     }
     private var queueSeq = 0L
     private var restored = false
@@ -112,11 +191,37 @@ class PlayerManager @Inject constructor(
     @Volatile private var crossfadeFactor: Float = 1f
 
     /**
-     * The order to restore when shuffle is turned off (queue ids, not tracks or
-     * positions). Null whenever shuffle is off, so "off" is always the real order.
+     * Single source of truth for app-side queue shuffle and original catalog restoration.
      */
-    private var shuffleOrder: List<Long>? = null
-    private val mediaItemCache = java.util.concurrent.ConcurrentHashMap<Long, MediaItem>(); private var shuffleJob: kotlinx.coroutines.Job? = null
+    @Volatile private var shuffleState = ShuffleState()
+    val shuffleOrder: List<Long>?
+        get() = shuffleState.originalIds.takeIf { _shuffle.value && it.isNotEmpty() }
+    private val shuffleGeneration = AtomicLong(0L)
+    private val mediaItemCache = java.util.concurrent.ConcurrentHashMap<Long, MediaItem>()
+    private var shuffleJob: kotlinx.coroutines.Job? = null
+
+    private fun currentShuffleState(): ShuffleState {
+        val displayed = _queue.value.map { it.queueId }
+        val curId = currentQueueId()
+        val enabled = _shuffle.value
+        val orig = if (enabled) {
+            shuffleState.originalIds.ifEmpty { displayed }
+        } else {
+            emptyList()
+        }
+        val anchor = if (enabled) {
+            shuffleState.anchorOriginalIndex.coerceIn(0, orig.size)
+        } else {
+            0
+        }
+        return ShuffleState(
+            displayedIds = displayed,
+            originalIds = orig,
+            currentQueueId = curId,
+            shuffleEnabled = enabled,
+            anchorOriginalIndex = anchor,
+        )
+    }
 
     @Volatile private var controller: MediaController? = null
     @Volatile private var localPlayer: Player? = null
@@ -435,6 +540,9 @@ class PlayerManager @Inject constructor(
         }
 
         val newQueueId = q.getOrNull(resolved.index)?.queueId
+        if (newQueueId != null) {
+            shuffleState = ShuffleModel.select(currentShuffleState(), newQueueId)
+        }
         val changed = fromTransition ||
             resolved.index != prevIdx ||
             resolved.track?.id != prevTrackId ||
@@ -508,6 +616,21 @@ class PlayerManager @Inject constructor(
         _queue.value = rebuilt
         // Never reuse a key that the surviving queue already owns.
         queueSeq = maxOf(queueSeq, maxId + 1)
+        val liveIds = rebuilt.map { it.queueId }
+        shuffleState = if (_shuffle.value) {
+            shuffleState.copy(
+                displayedIds = liveIds,
+                originalIds = shuffleState.originalIds.ifEmpty { liveIds },
+                currentQueueId = currentQueueId(),
+            )
+        } else {
+            ShuffleState(
+                displayedIds = liveIds,
+                originalIds = emptyList(),
+                currentQueueId = currentQueueId(),
+                shuffleEnabled = false,
+            )
+        }
     }
 
     /**
@@ -534,7 +657,7 @@ class PlayerManager @Inject constructor(
         if (snapshot == null) return false
         val persisted = snapshot.tracks
         val tracks = persisted.map { it.toDomain() }
-        var maxId = queueSeq - 1
+        var maxId = maxOf(queueSeq - 1, snapshot.queueSeq - 1)
         val entries = ArrayList<QueueItem>(persisted.size)
         val built = ArrayList<Pair<QueueItem, MediaItem>>(persisted.size)
         for (p in persisted) {
@@ -558,12 +681,24 @@ class PlayerManager @Inject constructor(
         _radioActive.value = snapshot.radioActive
         _radioSeed.value = snapshot.radioSeedId?.let { id -> tracks.find { it.id == id } }
         _shuffle.value = snapshot.shuffleActive
-        val live = entries.map { it.queueId }.toSet()
-        shuffleOrder = if (snapshot.shuffleActive) {
-            snapshot.shuffleOrder.filter { it in live }
+        val liveIds = entries.map { it.queueId }
+        val liveSet = liveIds.toHashSet()
+        val restoredOrig = if (snapshot.shuffleActive) {
+            snapshot.shuffleOrder.filter { it in liveSet }.ifEmpty { liveIds }
         } else {
-            null
+            emptyList()
         }
+        val curQid = entries.getOrNull(_currentIndex.value)?.queueId
+        val anchorIdx = if (snapshot.shuffleActive && curQid != null) {
+            restoredOrig.indexOf(curQid).takeIf { it >= 0 } ?: 0
+        } else 0
+        shuffleState = ShuffleState(
+            displayedIds = liveIds,
+            originalIds = restoredOrig,
+            currentQueueId = curQid,
+            shuffleEnabled = snapshot.shuffleActive,
+            anchorOriginalIndex = anchorIdx,
+        )
         val p = localPlayer ?: c
         _duration.value = p.duration.takeIf { it > 0 } ?: 0L
         if (seedPlayer) {
@@ -663,7 +798,7 @@ class PlayerManager @Inject constructor(
         c.seekTo(steps.last(), positionMs)
     }
 
-    private suspend fun persist() {
+    internal suspend fun persist() {
         val q = _queue.value
         // A cold start shows an EMPTY mirror until the restore has run: never
         // wipe a persisted snapshot because the mirror hasn't been filled yet.
@@ -671,6 +806,12 @@ class PlayerManager @Inject constructor(
         if (q.isEmpty()) {
             runCatching { queueStore.clear() }
             return
+        }
+        val liveIds = q.map { it.queueId }
+        val origIds = if (_shuffle.value) {
+            shuffleState.originalIds.ifEmpty { liveIds }
+        } else {
+            emptyList()
         }
         runCatching {
             queueStore.save(
@@ -680,11 +821,19 @@ class PlayerManager @Inject constructor(
                 _sourceName.value,
                 _radioActive.value,
                 _radioSeed.value?.id,
-                queueIds = q.map { it.queueId },
+                queueIds = liveIds,
                 shuffleActive = _shuffle.value,
-                shuffleOrder = shuffleOrder.orEmpty(),
+                shuffleOrder = origIds,
                 queueSeq = queueSeq,
+                repeatMode = _repeatMode.value,
             )
+        }
+    }
+
+    /** Captures live player position on the main thread before service teardown. */
+    fun snapshotPositionFromPlayer() {
+        runCatching {
+            activePlayer()?.currentPosition?.coerceAtLeast(0L)?.let { _position.value = it }
         }
     }
 
@@ -810,35 +959,73 @@ class PlayerManager @Inject constructor(
     /** Plays [tracks] starting at [startIndex]; the caller's list is the queue. */
     fun playAll(tracks: List<Track>, startIndex: Int = 0, shuffle: Boolean = false, source: String? = null) {
         cancelRadio()
+        shuffleGeneration.incrementAndGet()
+        shuffleJob?.cancel()
         scope.launch {
             val c = awaitController() ?: return@launch
             if (tracks.isEmpty()) return@launch
-            val entries = tracks.map { QueueItem(it, queueSeq++) }
+            val catalogEntries = tracks.map { QueueItem(it, queueSeq++) }
             val completedPaths = withContext(Dispatchers.IO) {
                 runCatching { downloads.completedPathMap() }.getOrDefault(emptyMap())
             }
-            val (queue, mediaItems) = withContext(Dispatchers.Default) {
-                val ordered = if (shuffle) entries.shuffled() else entries
-                val built = ordered.mapNotNull { qi ->
-                    toMediaItem(qi.song, qi.queueId, completedPaths)?.let { qi to it }
+            val (queue, mediaItems, nextShuffleState) = withContext(Dispatchers.Default) {
+                val playableCatalog = ArrayList<Pair<QueueItem, MediaItem>>(catalogEntries.size)
+                val byId = HashMap<Long, Pair<QueueItem, MediaItem>>(catalogEntries.size * 2)
+                for (qi in catalogEntries) {
+                    val mi = toMediaItem(qi.song, qi.queueId, completedPaths) ?: continue
+                    mediaItemCache[qi.queueId] = mi
+                    val pair = qi to mi
+                    playableCatalog.add(pair)
+                    byId[qi.queueId] = pair
                 }
-                built.forEach { (qi, mi) -> mediaItemCache[qi.queueId] = mi }
-                built.map { it.first } to built.map { it.second }
+                val catalogIds = playableCatalog.map { it.first.queueId }
+                val requestedStartId = if (startIndex in catalogEntries.indices && startIndex > 0) {
+                    catalogEntries[startIndex].queueId.takeIf { it in byId }
+                } else null
+                val computedState = if (shuffle) {
+                    ShuffleModel.fromPlaylistShuffle(
+                        allQueueIds = catalogIds,
+                        startQueueId = requestedStartId,
+                    )
+                } else {
+                    val clampedIdx = startIndex.coerceIn(0, maxOf(0, playableCatalog.lastIndex))
+                    ShuffleState(
+                        displayedIds = catalogIds,
+                        originalIds = emptyList(),
+                        currentQueueId = playableCatalog.getOrNull(clampedIdx)?.first?.queueId,
+                        shuffleEnabled = false,
+                        anchorOriginalIndex = 0,
+                    )
+                }
+                val orderedPairs = if (shuffle) {
+                    computedState.displayedIds.mapNotNull { byId[it] }
+                } else {
+                    playableCatalog
+                }
+                Triple(orderedPairs.map { it.first }, orderedPairs.map { it.second }, computedState)
             }
             if (queue.isEmpty()) return@launch
+            val p = localPlayer ?: c
+            p.shuffleModeEnabled = false
             _queue.value = queue
-            val start = startIndex.coerceIn(0, queue.size - 1)
-            setMediaItemsChunked(c, mediaItems, start, 0L)
-            c.prepare()
-            c.play()
+            val start = if (shuffle) {
+                0
+            } else {
+                startIndex.coerceIn(0, queue.size - 1)
+            }
+            setMediaItemsChunked(p, mediaItems, start, 0L)
+            p.prepare()
+            p.play()
             _currentIndex.value = start
             _current.value = queue.getOrNull(start)?.song
+            _shuffle.value = shuffle
+            shuffleState = nextShuffleState.copy(
+                displayedIds = queue.map { it.queueId },
+                currentQueueId = queue.getOrNull(start)?.queueId,
+                shuffleEnabled = shuffle,
+            )
             _current.value?.let { recordRecent(it) }
             applyReplayGain(_current.value)
-            _shuffle.value = shuffle
-            // Shuffle on: remember the page's own order so toggling off restores it.
-            val liveKeys = queue.map { it.queueId }.toSet()
-            shuffleOrder = if (shuffle) entries.map { it.queueId }.filter { it in liveKeys } else null
             if (source != null) _sourceName.value = source
             persistAsync()
         }
@@ -1034,10 +1221,11 @@ class PlayerManager @Inject constructor(
         }
         if (built.isEmpty() || gen != radioTrigger.currentGeneration()) return
         built.forEach { (qi, mi) -> mediaItemCache[qi.queueId] = mi }
-        c.addMediaItems(built.map { it.second })
+        val baseState = currentShuffleState()
+        (localPlayer ?: c).addMediaItems(built.map { it.second })
         val entries = built.map { it.first }
         _queue.value = QueueOps.appendAll(_queue.value, entries)
-        shuffleOrder = shuffleOrder?.let { it + entries.map { e -> e.queueId } }
+        shuffleState = ShuffleModel.addToQueue(baseState, entries.map { it.queueId })
         entries.forEach { rememberRadioPlayed(it.song.id) }
     }
 
@@ -1049,15 +1237,11 @@ class PlayerManager @Inject constructor(
             val c = awaitController() ?: return@launch
             val qi = QueueItem(track, queueSeq++)
             val item = toMediaItem(track, qi.queueId)?.also { mediaItemCache[qi.queueId] = it } ?: return@launch
+            val baseState = currentShuffleState()
             val at = (_currentIndex.value + 1).coerceIn(0, _queue.value.size)
             _queue.value = QueueOps.insertNext(_queue.value, qi, _currentIndex.value)
-            // `at` is a real-queue index and is forwarded untranslated to the
-            // real player; clamping it to the bounded published window would
-            // insert the track at the window edge instead.
-            c.addMediaItem(at, item)
-            // Mirror the add into the restore snapshot: "play next" belongs right
-            // after the current entry there too.
-            shuffleOrder = shuffleOrder?.let { ShufflePlan.insertAfter(it, currentQueueId(), qi.queueId) }
+            (localPlayer ?: c).addMediaItem(at, item)
+            shuffleState = ShuffleModel.playNext(baseState, listOf(qi.queueId))
             persistAsync()
         }
     }
@@ -1079,12 +1263,11 @@ class PlayerManager @Inject constructor(
                 built.map { it.first } to built.map { it.second }
             }
             if (mediaItems.isEmpty()) return@launch
+            val baseState = currentShuffleState()
             val at = (_currentIndex.value + 1).coerceIn(0, _queue.value.size)
-            c.addMediaItems(at, mediaItems)
+            (localPlayer ?: c).addMediaItems(at, mediaItems)
             _queue.value = _queue.value.toMutableList().apply { addAll(at, entries) }
-            shuffleOrder = shuffleOrder?.let {
-                ShufflePlan.insertAllAfter(it, currentQueueId(), entries.map { e -> e.queueId })
-            }
+            shuffleState = ShuffleModel.playNext(baseState, entries.map { it.queueId })
             persistAsync()
         }
     }
@@ -1094,9 +1277,10 @@ class PlayerManager @Inject constructor(
             val c = awaitController() ?: return@launch
             val qi = QueueItem(track, queueSeq++)
             val item = toMediaItem(track, qi.queueId)?.also { mediaItemCache[qi.queueId] = it } ?: return@launch
-            c.addMediaItem(item)
+            val baseState = currentShuffleState()
+            (localPlayer ?: c).addMediaItem(item)
             _queue.value = QueueOps.append(_queue.value, qi)
-            shuffleOrder = shuffleOrder?.let { it + qi.queueId }
+            shuffleState = ShuffleModel.addToQueue(baseState, listOf(qi.queueId))
             persistAsync()
         }
     }
@@ -1117,23 +1301,27 @@ class PlayerManager @Inject constructor(
                 built.map { it.first } to built.map { it.second }
             }
             if (mediaItems.isEmpty()) return@launch
-            c.addMediaItems(mediaItems)
+            val baseState = currentShuffleState()
+            (localPlayer ?: c).addMediaItems(mediaItems)
             _queue.value = QueueOps.appendAll(_queue.value, entries)
-            shuffleOrder = shuffleOrder?.let { it + entries.map { e -> e.queueId } }
+            shuffleState = ShuffleModel.addToQueue(baseState, entries.map { it.queueId })
             persistAsync()
         }
     }
 
     fun removeAt(index: Int) {
         val c = activePlayer() ?: return
-        val removedId = _queue.value.getOrNull(index)?.queueId
-        val (next, adjusted) = QueueOps.removeAt(_queue.value, index, _currentIndex.value)
-        if (next === _queue.value) return
+        val before = _queue.value
+        val removedId = before.getOrNull(index)?.queueId ?: return
+        val baseState = currentShuffleState()
+        val (next, adjusted) = QueueOps.removeAt(before, index, _currentIndex.value)
+        if (next === before) return
         _queue.value = next
         _currentIndex.value = adjusted
         _current.value = next.getOrNull(adjusted)?.song
-        shuffleOrder = shuffleOrder?.filterNot { it == removedId }; if (removedId != null) mediaItemCache.remove(removedId)
-        c.removeMediaItem(index)
+        shuffleState = ShuffleModel.remove(baseState, removedId)
+        mediaItemCache.remove(removedId)
+        (localPlayer ?: c).removeMediaItem(index)
         persistAsync()
     }
 
@@ -1151,16 +1339,21 @@ class PlayerManager @Inject constructor(
         if (index < 0) return
         removeAt(index)
     }
+
+    fun removeByQueueId(queueId: Long) = removeById(queueId)
+
     fun move(from: Int, to: Int) {
         val c = activePlayer() ?: return
+        val baseState = currentShuffleState()
         val (next, adjusted) = QueueOps.move(_queue.value, from, to, _currentIndex.value)
         if (next === _queue.value) return
         _queue.value = next
         _currentIndex.value = adjusted
-        c.moveMediaItem(from, to)
-        // A manual drag while shuffled becomes the new base order (restoring to
-        // the pre-shuffle order would silently discard the user's arrangement).
-        if (shuffleOrder != null) shuffleOrder = next.map { it.queueId }
+        _current.value = next.getOrNull(adjusted)?.song
+        (localPlayer ?: c).moveMediaItem(from, to)
+        // Manual drag-reorder updates ONLY displayedIds and preserves originalIds
+        // so turning shuffle OFF still restores the original catalog order.
+        shuffleState = ShuffleModel.reorder(baseState, next.map { it.queueId })
         persistAsync()
     }
 
@@ -1178,6 +1371,7 @@ class PlayerManager @Inject constructor(
         val target = QueueCommit.targetIds(
             beforeIds, targetIds,
         ) ?: return
+        val baseState = currentShuffleState()
         val c = activePlayer()
         if (c == null) {
             val keepId = currentQueueId()
@@ -1187,6 +1381,8 @@ class PlayerManager @Inject constructor(
             val idx = reordered.indexOfFirst { it.queueId == keepId }
             _currentIndex.value = if (idx >= 0) idx
             else _currentIndex.value.coerceIn(0, maxOf(0, reordered.size - 1))
+            _current.value = reordered.getOrNull(_currentIndex.value)?.song
+            shuffleState = ShuffleModel.reorder(baseState, reordered.map { it.queueId })
             return
         }
         val single = QueueCommit.singleMove(beforeIds, target)
@@ -1194,11 +1390,12 @@ class PlayerManager @Inject constructor(
             move(single.first, single.second)
             return
         }
+        val p = localPlayer ?: c
         val moves = ShufflePlan.moveSeq(beforeIds, target)
         var currentQueue = before
         var currentIdx = _currentIndex.value
         for ((from, to) in moves) {
-            c.moveMediaItem(from, to)
+            p.moveMediaItem(from, to)
             val (next, adjusted) = QueueOps.move(currentQueue, from, to, currentIdx)
             currentQueue = next
             currentIdx = adjusted
@@ -1206,7 +1403,7 @@ class PlayerManager @Inject constructor(
         _queue.value = currentQueue
         _currentIndex.value = currentIdx
         _current.value = currentQueue.getOrNull(currentIdx)?.song
-        if (shuffleOrder != null) shuffleOrder = currentQueue.map { it.queueId }
+        shuffleState = ShuffleModel.reorder(baseState, currentQueue.map { it.queueId })
         persistAsync()
     }
 
@@ -1226,13 +1423,14 @@ class PlayerManager @Inject constructor(
      * inside the Undo window stays cleared.
      */
     fun clearWithUndo(): ClearedQueue {
+        val liveIds = _queue.value.map { it.queueId }
         val snap = ClearedQueue(
             items = _queue.value.toList(),
             index = _currentIndex.value.coerceIn(0, maxOf(0, _queue.value.size - 1)),
             positionMs = _position.value,
             sourceName = _sourceName.value,
             shuffleActive = _shuffle.value,
-            shuffleOrder = shuffleOrder.orEmpty(),
+            shuffleOrder = if (_shuffle.value) shuffleState.originalIds.ifEmpty { liveIds } else emptyList(),
         )
         clear()
         return snap
@@ -1256,18 +1454,32 @@ class PlayerManager @Inject constructor(
             val index = snap.index.coerceIn(0, items.size - 1)
             // setMediaItems + prepare mirrors a fresh queue; pause keeps the
             // "restored paused" contract (never auto-plays from Undo).
-            setMediaItemsChunked(c, items, index, snap.positionMs)
-            c.prepare()
-            c.pause()
-            _queue.value = built.map { it.first }
+            val p = localPlayer ?: c
+            setMediaItemsChunked(p, items, index, snap.positionMs)
+            p.prepare()
+            p.pause()
+            val restoredQueue = built.map { it.first }
+            _queue.value = restoredQueue
             _currentIndex.value = index
-            _current.value = built.getOrNull(index)?.first?.song
+            _current.value = restoredQueue.getOrNull(index)?.song
             _sourceName.value = snap.sourceName
             _shuffle.value = snap.shuffleActive
-            val live = built.map { it.first.queueId }.toSet()
-            shuffleOrder = if (snap.shuffleActive) {
-                snap.shuffleOrder.filter { it in live }.ifEmpty { null }
-            } else null
+            val liveIds = restoredQueue.map { it.queueId }
+            val liveSet = liveIds.toHashSet()
+            val restoredOrig = if (snap.shuffleActive) {
+                snap.shuffleOrder.filter { it in liveSet }.ifEmpty { liveIds }
+            } else emptyList()
+            val curQid = restoredQueue.getOrNull(index)?.queueId
+            val anchorIdx = if (snap.shuffleActive && curQid != null) {
+                restoredOrig.indexOf(curQid).takeIf { it >= 0 } ?: 0
+            } else 0
+            shuffleState = ShuffleState(
+                displayedIds = liveIds,
+                originalIds = restoredOrig,
+                currentQueueId = curQid,
+                shuffleEnabled = snap.shuffleActive,
+                anchorOriginalIndex = anchorIdx,
+            )
             _position.value = snap.positionMs
             _isPlaying.value = false
             persistAsync()
@@ -1275,6 +1487,8 @@ class PlayerManager @Inject constructor(
     }
 
     fun clear() {
+        shuffleGeneration.incrementAndGet()
+        shuffleJob?.cancel()
         activePlayer()?.clearMediaItems()
         activePlayer()?.stop()
         cancelRadio()
@@ -1283,7 +1497,8 @@ class PlayerManager @Inject constructor(
         _current.value = null
         _sourceName.value = null
         _shuffle.value = false
-        shuffleOrder = null; mediaItemCache.clear()
+        shuffleState = ShuffleState()
+        mediaItemCache.clear()
         _isPlaying.value = false
         _position.value = 0
         _duration.value = 0
@@ -1319,7 +1534,8 @@ class PlayerManager @Inject constructor(
     fun playAt(index: Int) {
         val c = activePlayer() ?: return
         if (index in _queue.value.indices) {
-            val target = _queue.value[index].song
+            val entry = _queue.value[index]
+            val target = entry.song
             val fromIndex = _currentIndex.value
             scope.launch {
                 if (isOffline() && !isTrackPlayableOffline(target)) {
@@ -1331,6 +1547,7 @@ class PlayerManager @Inject constructor(
                 c.play()
                 _currentIndex.value = index
                 _current.value = target
+                shuffleState = ShuffleModel.select(currentShuffleState(), entry.queueId)
                 _current.value?.let { recordRecent(it) }
                 scope.launch { applyReplayGain(_current.value) }
                 persistAsync()
@@ -1370,6 +1587,7 @@ class PlayerManager @Inject constructor(
                 c.play()
                 _currentIndex.value = index
                 _current.value = target
+                shuffleState = ShuffleModel.select(currentShuffleState(), queueId)
                 _current.value?.let { recordRecent(it) }
                 scope.launch { applyReplayGain(_current.value) }
                 persistAsync()
@@ -1465,42 +1683,108 @@ class PlayerManager @Inject constructor(
     }
 
     /**
-     * App-side shuffle. The controller's own shuffle stays off, so the visible
-     * queue always matches the real playback order.
+     * App-side shuffle backed by [ShuffleModel]. The player's own shuffleModeEnabled
+     * stays off so the visible queue always matches the actual playback order.
      *
-     * On: snapshot the current order, then permute only the not-yet-played tail —
-     * the current item keeps playing untouched and history keeps its slots.
-     * Off: restore the snapshot order (minus removed entries, plus entries added
-     * while shuffled) and keep the same entry playing, found by its queue key.
-     *
-     * Both directions reorder with `moveMediaItem` only, so nothing is removed,
-     * re-inserted or re-prepared and playback never restarts.
+     * - Shuffle ON: places the currently playing item at index `0` (`#1`) and permutes
+     *   all other items (including items that were before `currentIndex`), saving
+     *   `originalIds` in [shuffleState].
+     * - Shuffle OFF: restores `originalIds` with explicit fallbacks for deleted/orphan/missing
+     *   items, placing the currently playing item at its original catalog slot `k`.
+     * - Uses `O(N)` `HashMap` pre-indexing on `Dispatchers.Default`, latest-wins
+     *   [shuffleGeneration] coalescing, and `withContext(NonCancellable + Dispatchers.Main.immediate)`
+     *   atomic timeline mutation around the active item so playback never restarts.
      */
     fun setShuffle(enabled: Boolean, random: Random = Random.Default) {
+        val gen = shuffleGeneration.incrementAndGet()
+        shuffleJob?.cancel()
         val c = activePlayer()
-        if (c == null) {
+        val live = _queue.value
+        if (live.isEmpty()) {
+            c?.shuffleModeEnabled = false
             _shuffle.value = enabled
-            shuffleOrder = if (!enabled) null else shuffleOrder
+            shuffleState = ShuffleState(shuffleEnabled = enabled)
+            persistAsync()
+            return
+        }
+        if (c == null) {
+            val base = currentShuffleState()
+            val nextState = if (enabled) ShuffleModel.shuffle(base, random) else ShuffleModel.unshuffle(base)
+            val byId = live.associateByTo(HashMap(live.size * 2)) { it.queueId }
+            val reordered = nextState.displayedIds.mapNotNull { byId[it] }
+            val targetIdx = reordered.indexOfFirst { it.queueId == nextState.currentQueueId }.coerceAtLeast(0)
+            _queue.value = reordered
+            _currentIndex.value = targetIdx
+            _current.value = reordered.getOrNull(targetIdx)?.song
+            _shuffle.value = enabled
+            shuffleState = nextState
             return
         }
         c.shuffleModeEnabled = false
-        val live = _queue.value
-        if (live.isEmpty()) { _shuffle.value = enabled; shuffleOrder = null; persistAsync(); return }
-        shuffleJob?.cancel(); val from = (_currentIndex.value + 1).coerceIn(0, live.size)
-        val snapshot = if (enabled) {
-            if (!_shuffle.value && shuffleOrder == null) live.map { it.queueId }.also { shuffleOrder = it } else shuffleOrder
-        } else shuffleOrder.also { shuffleOrder = null }
+        val liveIds = live.map { it.queueId }
+        val curId = currentQueueId()
+        if (enabled && shuffleState.originalIds.isEmpty()) {
+            val anchor = _currentIndex.value.coerceIn(0, maxOf(0, live.lastIndex))
+            shuffleState = ShuffleState(
+                displayedIds = liveIds,
+                originalIds = liveIds,
+                currentQueueId = curId,
+                shuffleEnabled = true,
+                anchorOriginalIndex = anchor,
+            )
+        }
+        _shuffle.value = enabled
+        val planInput = ShuffleState(
+            displayedIds = liveIds,
+            originalIds = shuffleState.originalIds.ifEmpty { liveIds },
+            currentQueueId = curId,
+            shuffleEnabled = shuffleState.shuffleEnabled || shuffleState.originalIds.isNotEmpty(),
+            anchorOriginalIndex = shuffleState.anchorOriginalIndex.coerceIn(0, liveIds.size),
+        )
         shuffleJob = scope.launch {
-            val (targetIds, reorderedMediaItems) = withContext(Dispatchers.Default) {
-                val target = if (enabled) ShufflePlan.shuffledTail(live.map { it.queueId }, from, random)
-                else snapshot?.let { ShufflePlan.restore(live.map { it.queueId }, it) } ?: live.map { it.queueId }
-                val items = target.mapNotNull { qid ->
-                    mediaItemCache[qid] ?: live.firstOrNull { it.queueId == qid }?.let { toMediaItem(it.song, it.queueId)?.also { mi -> mediaItemCache[qid] = mi } }
+            val planned = withContext(Dispatchers.Default) {
+                if (gen != shuffleGeneration.get()) return@withContext null
+                val byId = live.associateByTo(HashMap(live.size * 2)) { it.queueId }
+                val nextState = if (enabled) {
+                    ShuffleModel.shuffle(planInput, random)
+                } else {
+                    ShuffleModel.unshuffle(planInput)
                 }
-                target to items
+                if (gen != shuffleGeneration.get()) return@withContext null
+                val reorderedItems = ArrayList<QueueItem>(nextState.displayedIds.size)
+                val reorderedMediaItems = ArrayList<MediaItem>(nextState.displayedIds.size)
+                for (qid in nextState.displayedIds) {
+                    val qi = byId[qid] ?: continue
+                    reorderedItems.add(qi)
+                    val mi = mediaItemCache[qid]
+                        ?: toMediaItem(qi.song, qi.queueId)?.also { mediaItemCache[qid] = it }
+                    if (mi != null) reorderedMediaItems.add(mi)
+                }
+                Triple(nextState, reorderedItems, reorderedMediaItems)
+            } ?: return@launch
+
+            withContext(NonCancellable + Dispatchers.Main.immediate) {
+                if (gen != shuffleGeneration.get()) return@withContext
+                val (nextState, reorderedItems, reorderedMediaItems) = planned
+                val p = localPlayer ?: c
+                applyOrder(
+                    c = p,
+                    targetIds = nextState.displayedIds,
+                    reorderedItems = reorderedItems,
+                    reorderedMediaItems = reorderedMediaItems,
+                    keepId = nextState.currentQueueId,
+                )
+                val committedIds = _queue.value.map { it.queueId }
+                shuffleState = ShuffleState(
+                    displayedIds = committedIds,
+                    originalIds = if (enabled) nextState.originalIds else emptyList(),
+                    currentQueueId = currentQueueId(),
+                    shuffleEnabled = enabled,
+                    anchorOriginalIndex = if (enabled) nextState.anchorOriginalIndex else 0,
+                )
+                _shuffle.value = enabled
+                persistAsync()
             }
-            applyOrder(c, targetIds, reorderedMediaItems)
-            _shuffle.value = enabled; persistAsync()
         }
     }
 
@@ -1509,45 +1793,35 @@ class PlayerManager @Inject constructor(
      * using [removeMediaItems] and [addMediaItems], so the playing item is never
      * removed or re-prepared and playback continues without cutout.
      */
-    private fun applyOrder(c: Player, targetIds: List<Long>, reorderedMediaItems: List<MediaItem> = targetIds.mapNotNull { mediaItemCache[it] }) {
+    private fun applyOrder(
+        c: Player,
+        targetIds: List<Long>,
+        reorderedItems: List<QueueItem>? = null,
+        reorderedMediaItems: List<MediaItem> = targetIds.mapNotNull { mediaItemCache[it] },
+        keepId: Long? = currentQueueId(),
+    ) {
         val p = localPlayer ?: c
         val before = _queue.value
         if (before.isEmpty()) return
-        val keepId = currentQueueId()
-        val reordered = ShufflePlan.applyOrder(targetIds, before) { it.queueId }
+        val reordered = if (reorderedItems != null && reorderedItems.size == before.size) {
+            reorderedItems
+        } else {
+            ShufflePlan.applyOrder(targetIds, before) { it.queueId }
+        }
         require(reordered.size == before.size) {
             "queue reorder must not drop entries (${before.size} -> ${reordered.size})"
         }
         val currentIdx = _currentIndex.value.coerceIn(0, before.lastIndex)
-        val plan = ShufflePlan.sliceAroundKeep(before.size, currentIdx, reordered, keepId) { it.queueId }
-        val targetIndex = plan.targetIndex
-
-        // 1. Remove suffix after playing item
-        if (currentIdx + 1 < before.size) {
-            p.removeMediaItems(currentIdx + 1, before.size)
-        }
-        // 2. Remove prefix before playing item (active item is now at controller index 0)
-        if (currentIdx > 0) {
-            p.removeMediaItems(0, currentIdx)
-        }
-        // 3. Insert new prefix before playing item (active item shifts to targetIndex)
-        val headMediaItems = if (reorderedMediaItems.size == reordered.size) {
-            reorderedMediaItems.subList(0, targetIndex)
-        } else {
-            plan.head.mapNotNull { qi -> mediaItemCache[qi.queueId] }
-        }
-        if (headMediaItems.isNotEmpty()) {
-            p.addMediaItems(0, headMediaItems)
-        }
-        // 4. Insert new suffix after playing item
-        val tailMediaItems = if (reorderedMediaItems.size == reordered.size) {
-            reorderedMediaItems.subList(targetIndex + 1, reorderedMediaItems.size)
-        } else {
-            plan.tail.mapNotNull { qi -> mediaItemCache[qi.queueId] }
-        }
-        if (tailMediaItems.isNotEmpty()) {
-            p.addMediaItems(targetIndex + 1, tailMediaItems)
-        }
+        val targetIndex = applyTimelineReorder(
+            player = p,
+            before = before,
+            currentIdx = currentIdx,
+            keepId = keepId,
+            reordered = reordered,
+            reorderedMediaItems = reorderedMediaItems,
+            mediaItemLookup = { qid -> mediaItemCache[qid] },
+            chunkForBoundedController = (localPlayer == null),
+        )
         _queue.value = reordered
         _currentIndex.value = targetIndex
         _current.value = reordered.getOrNull(targetIndex)?.song
@@ -1567,13 +1841,20 @@ class PlayerManager @Inject constructor(
     fun adoptExternalQueue(tracks: List<Track>, source: String?) {
         if (tracks.isEmpty()) return
         cancelRadio()
+        shuffleGeneration.incrementAndGet()
+        shuffleJob?.cancel()
         val entries = tracks.map { QueueItem(it, queueSeq++) }
         _queue.value = entries
         _currentIndex.value = 0
         _current.value = entries.firstOrNull()?.song
         _current.value?.let { recordRecent(it) }
         _shuffle.value = false
-        shuffleOrder = null
+        shuffleState = ShuffleState(
+            displayedIds = entries.map { it.queueId },
+            originalIds = emptyList(),
+            currentQueueId = entries.firstOrNull()?.queueId,
+            shuffleEnabled = false,
+        )
         if (source != null) _sourceName.value = source
         prefetch.onQueue(entries.toList(), 0)
         persistAsync()

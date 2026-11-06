@@ -11,7 +11,9 @@ import com.feishin.mobile.domain.model.Track
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -127,6 +129,10 @@ class QueueStore internal constructor(
     @Inject
     constructor(@ApplicationContext context: Context) : this(context.queueDataStore)
 
+    companion object {
+        const val MAX_PERSISTED_TRACKS: Int = 2000
+    }
+
     private val json = Json { ignoreUnknownKeys = true }
     private val key: Preferences.Key<String> = stringPreferencesKey("queue_snapshot")
     /**
@@ -157,30 +163,69 @@ class QueueStore internal constructor(
             clear()
             return
         }
-        val pos = positionMs.coerceAtLeast(0)
-        val snapshot = QueueSnapshot(
-            tracks = tracks.mapIndexed { i, t ->
-                PersistedTrack.from(
-                    t,
-                    queueIds?.getOrNull(i) ?: -1L,
-                    downloaded = t.id in downloadedIds,
-                    cached = t.id in cachedIds,
-                )
-            },
-            currentIndex = currentIndex.coerceIn(0, tracks.size - 1),
-            positionMs = pos,
-            sourceName = sourceName,
-            radioActive = radioActive,
-            radioSeedId = radioSeedId,
-            shuffleActive = shuffleActive,
-            shuffleOrder = shuffleOrder,
-            queueSeq = queueSeq,
-            repeatMode = repeatMode,
-        )
-        runCatching {
-            store.edit {
-                it[key] = json.encodeToString(QueueSnapshot.serializer(), snapshot)
-                it[positionKey] = pos
+        withContext(Dispatchers.IO) {
+            val pos = positionMs.coerceAtLeast(0)
+            val clampedCurrent = currentIndex.coerceIn(0, tracks.size - 1)
+            val windowStart: Int
+            val windowEnd: Int
+            if (tracks.size <= MAX_PERSISTED_TRACKS) {
+                windowStart = 0
+                windowEnd = tracks.size
+            } else {
+                val half = MAX_PERSISTED_TRACKS / 2
+                windowStart = (clampedCurrent - half).coerceIn(0, tracks.size - MAX_PERSISTED_TRACKS)
+                windowEnd = windowStart + MAX_PERSISTED_TRACKS
+            }
+            val windowTracks = if (windowStart == 0 && windowEnd == tracks.size) {
+                tracks
+            } else {
+                tracks.subList(windowStart, windowEnd)
+            }
+            val windowQueueIds = if (queueIds == null) {
+                null
+            } else if (windowStart == 0 && windowEnd <= queueIds.size && queueIds.size == tracks.size) {
+                queueIds
+            } else {
+                val safeStart = windowStart.coerceAtMost(queueIds.size)
+                val safeEnd = windowEnd.coerceAtMost(queueIds.size)
+                queueIds.subList(safeStart, safeEnd)
+            }
+            val persistedIndex = (clampedCurrent - windowStart).coerceIn(0, windowTracks.size - 1)
+            val persistedShuffleOrder = if (!shuffleActive || shuffleOrder.isEmpty()) {
+                emptyList()
+            } else if (windowTracks.size == tracks.size) {
+                shuffleOrder
+            } else if (windowQueueIds != null) {
+                val survivingIds = windowQueueIds.toHashSet()
+                shuffleOrder.filter { it in survivingIds }
+            } else {
+                shuffleOrder.take(MAX_PERSISTED_TRACKS)
+            }
+            val snapshot = QueueSnapshot(
+                tracks = windowTracks.mapIndexed { i, t ->
+                    PersistedTrack.from(
+                        t,
+                        windowQueueIds?.getOrNull(i) ?: -1L,
+                        downloaded = t.id in downloadedIds,
+                        cached = t.id in cachedIds,
+                    )
+                },
+                currentIndex = persistedIndex,
+                positionMs = pos,
+                sourceName = sourceName,
+                radioActive = radioActive,
+                radioSeedId = radioSeedId,
+                shuffleActive = shuffleActive,
+                shuffleOrder = persistedShuffleOrder,
+                queueSeq = queueSeq,
+                repeatMode = repeatMode,
+            )
+            runCatching {
+                val encoded = json.encodeToString(QueueSnapshot.serializer(), snapshot)
+                store.edit {
+                    it[key] = encoded
+                    it[positionKey] = pos
+                }
             }
         }
     }
@@ -190,29 +235,35 @@ class QueueStore internal constructor(
      * when there is no snapshot: a position without a queue means nothing, and
      * it must never resurrect a cleared queue.
      */
-    suspend fun savePosition(positionMs: Long) {
+    suspend fun savePosition(positionMs: Long) = withContext(Dispatchers.IO) {
         runCatching {
             store.edit {
                 if (it.contains(key)) it[positionKey] = positionMs.coerceAtLeast(0)
             }
         }
+        Unit
     }
 
-    suspend fun load(): QueueSnapshot? = runCatching {
-        val prefs = store.data.first()
-        val raw = prefs[key] ?: return@runCatching null
-        val snapshot = json.decodeFromString(QueueSnapshot.serializer(), raw)
-        // The side key is written in the same edit as the snapshot, so it
-        // always belongs to the current track.
-        snapshot.copy(positionMs = prefs[positionKey] ?: snapshot.positionMs)
-    }.getOrNull()?.takeIf { it.tracks.isNotEmpty() }
+    suspend fun load(): QueueSnapshot? = withContext(Dispatchers.IO) {
+        runCatching {
+            val prefs = store.data.first()
+            val raw = prefs[key] ?: return@runCatching null
+            val snapshot = json.decodeFromString(QueueSnapshot.serializer(), raw)
+            // The side key is written in the same edit as the snapshot, so it
+            // always belongs to the current track.
+            snapshot.copy(positionMs = prefs[positionKey] ?: snapshot.positionMs)
+        }.getOrNull()?.takeIf { it.tracks.isNotEmpty() }
+    }
 
     suspend fun loadTracks(): List<Track> = load()?.tracks?.map { it.toDomain() }.orEmpty()
 
-    suspend fun clear() = runCatching {
-        store.edit {
-            it.remove(key)
-            it.remove(positionKey)
+    suspend fun clear() = withContext(Dispatchers.IO) {
+        runCatching {
+            store.edit {
+                it.remove(key)
+                it.remove(positionKey)
+            }
         }
-    }.let { }
+        Unit
+    }
 }
