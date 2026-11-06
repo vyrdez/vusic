@@ -121,28 +121,8 @@ fun ArtistScreen(
             LaunchedEffect(a.id, a.name) { vm.loadExtras(a.name) }
             val refreshing by vm.refreshing.collectAsStateWithLifecycle()
             var topExpanded by remember(a.id) { mutableStateOf(false) }
-            val topBar = LocalTopBarController.current
-            // Edge-to-edge hero: this screen draws its own back button over the
-            // image, so the shared bar stays hidden until the hero scrolls away.
-            LaunchedEffect(a.id) { topBar.hideBar = true }
-            androidx.compose.runtime.DisposableEffect(a.id) {
-                onDispose { topBar.hideBar = false }
-            }
             PullToRefreshBox(isRefreshing = refreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
                 val listState = rememberSavableListState()
-                // Publish the artist name so it fades into the shared top bar.
-                // Derived once per scroll change instead of re-reading the
-                // frequently-changing scroll state on every composition.
-                val barScrolled by remember {
-                    derivedStateOf {
-                        listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 200
-                    }
-                }
-                LaunchedEffect(a.name, barScrolled) {
-                    topBar.title = a.name
-                    // The hero is ~300dp tall: the title appears once it is gone.
-                    topBar.scrolled = barScrolled
-                }
                 // Collapsing hero.
                 //
                 // The hero item keeps a FIXED height and collapses by parallax
@@ -156,9 +136,12 @@ fun ArtistScreen(
                 val scrollPx by remember {
                     derivedStateOf { listState.firstVisibleItemScrollOffset.toFloat() }
                 }
-                val topInset = androidx.compose.foundation.layout.WindowInsets.statusBars
-                    .asPaddingValues().calculateTopPadding()
-                val heroHeight = 340.dp + topInset
+                // NavHost already applies status-bar padding from Scaffold.
+                // Keeping topInset at 0dp avoids double-padding the status bar,
+                // which previously pushed the collapsed top bar 48dp too low
+                // and clipped the "Albums" section header.
+                val topInset = 0.dp
+                val heroHeight = 340.dp
                 // 1 while the hero is still showing its identity, 0 once it is
                 // fully collapsed behind the top bar.
                 val heroVisible = (1f - scrollPx / 420f).coerceIn(0f, 1f)
@@ -442,7 +425,7 @@ private fun ArtistHero(
 private fun BoxScope.ArtistCollapsedTopBar(
     name: String,
     alpha: Float,
-    topInset: Dp,
+    topInset: Dp = 0.dp,
     onBack: () -> Unit,
 ) {
     if (alpha <= 0.001f) return
@@ -451,15 +434,8 @@ private fun BoxScope.ArtistCollapsedTopBar(
             .fillMaxWidth()
             .align(Alignment.TopCenter)
             .graphicsLayer { this.alpha = alpha }
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        VusicColors.Background.copy(alpha = 0.97f),
-                        VusicColors.Background.copy(alpha = 0.92f),
-                    ),
-                ),
-            )
-            .padding(top = topInset, bottom = 8.dp)
+            .background(VusicColors.Background)
+            .padding(top = topInset, bottom = 4.dp)
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

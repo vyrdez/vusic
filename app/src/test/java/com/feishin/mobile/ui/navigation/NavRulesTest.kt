@@ -53,6 +53,20 @@ class NavRulesTest {
     }
 
     @Test
+    fun detailTopBarRoutes_excludeSelfContainedHeroScreens() {
+        assertTrue(NavRules.showsDetailTopBar(Routes.ALBUM))
+        assertTrue(NavRules.showsDetailTopBar(Routes.PLAYLIST))
+        assertTrue(NavRules.showsDetailTopBar(Routes.DOWNLOADS))
+        assertTrue(NavRules.showsDetailTopBar(Routes.GENRE))
+        assertTrue(NavRules.showsDetailTopBar(Routes.GENRES))
+        assertFalse(NavRules.showsDetailTopBar(Routes.ARTIST))
+        assertFalse(NavRules.showsDetailTopBar(Routes.HOME))
+        assertFalse(NavRules.showsDetailTopBar(Routes.LIBRARY_PATTERN))
+        assertFalse(NavRules.showsDetailTopBar(Routes.SEARCH))
+        assertFalse(NavRules.showsDetailTopBar(Routes.SETTINGS))
+    }
+
+    @Test
     fun libraryTabSwitch_replacesTheEntry() {
         assertTrue(NavRules.libraryNeedsReplace(Routes.LIBRARY_PATTERN))
         // From anywhere else we simply navigate.

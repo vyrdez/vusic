@@ -8,12 +8,22 @@ import com.feishin.mobile.ui.Routes
  */
 object NavRules {
 
-    /** Routes that get the shared back-arrow top app bar. */
+    /** Routes that get detail navigation transitions. */
     val DETAIL_ROUTES = setOf(
         Routes.ALBUM, Routes.ARTIST, Routes.PLAYLIST, Routes.GENRE, Routes.GENRES, Routes.DOWNLOADS,
     )
 
     fun isDetail(route: String?): Boolean = route in DETAIL_ROUTES
+
+    /**
+     * Detail routes whose top app bar is provided by [DetailScreen] wrapper inside NavHost.
+     * ArtistScreen provides its own self-contained hero and collapsed top bar.
+     */
+    val DETAIL_TOP_BAR_ROUTES = setOf(
+        Routes.ALBUM, Routes.PLAYLIST, Routes.GENRE, Routes.GENRES, Routes.DOWNLOADS,
+    )
+
+    fun showsDetailTopBar(route: String?): Boolean = route in DETAIL_TOP_BAR_ROUTES
 
     /** Bottom-nav labels in order. */
     val BOTTOM_NAV_LABELS = listOf("Home", "Library", "Search", "Settings")

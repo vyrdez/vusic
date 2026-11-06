@@ -278,11 +278,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
             Scaffold(
                 snackbarHost = {},
                 containerColor = VusicColors.Background,
-                topBar = {
-                    if (isDetail && !topBar.hideBar) {
-                        AppTopBar(topBar, onBack = { nav.popBackStack() })
-                    }
-                },
+                topBar = {},
                 bottomBar = {
                     // Only the nav bar lives in the bottom slot, so it keeps its
                     // own surface. The mini player is an overlay above the
@@ -473,11 +469,13 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                             )
                         }
                         composable(Routes.ALBUM) {
-                            AlbumDetailScreen(
-                                player = main.player, repo = main.repo, messenger = main.messenger,
-                                onArtist = { nav.navigate(Routes.artist(it)) },
-                                onActions = { actionsTarget = it },
-                            )
+                            DetailScreen(onBack = { nav.popBackStack() }) {
+                                AlbumDetailScreen(
+                                    player = main.player, repo = main.repo, messenger = main.messenger,
+                                    onArtist = { nav.navigate(Routes.artist(it)) },
+                                    onActions = { actionsTarget = it },
+                                )
+                            }
                         }
                         composable(Routes.ARTIST) {
                             ArtistDetailScreen(
@@ -489,19 +487,27 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                             )
                         }
                         composable(Routes.PLAYLIST) {
-                            PlaylistDetailScreen(
-                                player = main.player, repo = main.repo, messenger = main.messenger,
-                                onActions = { actionsTarget = it },
-                            )
+                            DetailScreen(onBack = { nav.popBackStack() }) {
+                                PlaylistDetailScreen(
+                                    player = main.player, repo = main.repo, messenger = main.messenger,
+                                    onActions = { actionsTarget = it },
+                                )
+                            }
                         }
                         composable(Routes.DOWNLOADS) {
-                            DownloadsScreen(repo = main.repo)
+                            DetailScreen(onBack = { nav.popBackStack() }) {
+                                DownloadsScreen(repo = main.repo)
+                            }
                         }
                         composable(Routes.GENRE) {
-                            GenreScreen(repo = main.repo, onAlbum = { nav.navigate(Routes.album(it)) })
+                            DetailScreen(onBack = { nav.popBackStack() }) {
+                                GenreScreen(repo = main.repo, onAlbum = { nav.navigate(Routes.album(it)) })
+                            }
                         }
                         composable(Routes.GENRES) {
-                            GenresScreen(onGenre = { nav.navigate(Routes.genre(it)) })
+                            DetailScreen(onBack = { nav.popBackStack() }) {
+                                GenresScreen(onGenre = { nav.navigate(Routes.genre(it)) })
+                            }
                         }
                     }
 
@@ -668,6 +674,28 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     }
 }
 
+/**
+ * Wraps detail screens so that the top app bar is part of the destination's
+ * composition node within [NavHost]. This ensures the back arrow and bar
+ * animate seamlessly in lockstep with the page content during enter and exit
+ * transitions, avoiding late pop-ins, layout jumps, or shared controller leaks.
+ */
+@Composable
+private fun DetailScreen(
+    onBack: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val controller = remember { TopBarController() }
+    CompositionLocalProvider(LocalTopBarController provides controller) {
+        Column(Modifier.fillMaxSize()) {
+            AppTopBar(controller, onBack = onBack)
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                content()
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppTopBar(controller: TopBarController, onBack: () -> Unit) {
@@ -702,6 +730,7 @@ private fun AppTopBar(controller: TopBarController, onBack: () -> Unit) {
                 }
             }
         },
+        windowInsets = WindowInsets(0, 0, 0, 0),
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = VusicColors.Background,
             // Theme-aware: white-on-dark in Dark, dark-on-light in Light.
