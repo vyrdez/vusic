@@ -74,6 +74,9 @@ class DownloadRepository @Inject constructor(
     }
 
     companion object {
+        fun sanitizeCoverArtId(coverArtId: String): String =
+            coverArtId.replace(Regex("[^A-Za-z0-9._-]"), "_")
+
         fun isCorruptDownloadedFile(file: File?): Boolean {
             if (file == null || !file.exists()) return true
             if (file.length() < DownloadStateMachine.MIN_VALID_AUDIO_BYTES) return true
@@ -399,12 +402,24 @@ class DownloadRepository @Inject constructor(
             val req = okhttp3.Request.Builder().url(url).build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@use false
-                val f = File(coversDir(), "$coverArtId.jpg")
-                resp.body?.byteStream()?.use { input -> f.outputStream().use { input.copyTo(it) } }
-                if (f.length() > 0) {
-                    storeCover(coverArtId, f)
-                    true
-                } else false
+                val safeId = sanitizeCoverArtId(coverArtId)
+                val f = File(coversDir(), "$safeId.jpg")
+                val tempFile = File(coversDir(), "$safeId.part")
+                resp.body?.byteStream()?.use { input -> tempFile.outputStream().use { input.copyTo(it) } }
+                if (tempFile.length() > 0) {
+                    if (f.exists()) f.delete()
+                    if (!tempFile.renameTo(f)) {
+                        tempFile.copyTo(f, overwrite = true)
+                        tempFile.delete()
+                    }
+                    if (f.length() > 0) {
+                        storeCover(coverArtId, f)
+                        true
+                    } else false
+                } else {
+                    tempFile.delete()
+                    false
+                }
             }
         }.getOrDefault(false)
     }

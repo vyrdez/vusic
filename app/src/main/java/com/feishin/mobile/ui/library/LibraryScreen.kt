@@ -529,7 +529,14 @@ fun LibraryScreen(
                         is UiState.Error -> ErrorState(s.message, vm::refresh)
                         is UiState.Empty -> EmptyState("Nothing starred yet")
                         is UiState.Data -> {
-                            val favs = s.value
+                            val rawFavs = s.value
+                            val favs = remember(rawFavs) {
+                                rawFavs.copy(
+                                    tracks = rawFavs.tracks.distinctBy { it.id },
+                                    albums = rawFavs.albums.distinctBy { it.id },
+                                    artists = rawFavs.artists.distinctBy { it.id },
+                                )
+                            }
                             if (grid) {
                                 LazyVerticalGrid(
                                     GridCells.Fixed(2), Modifier.fillMaxSize(),

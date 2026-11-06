@@ -885,13 +885,13 @@ class PlayerService : MediaLibraryService() {
             val seed = playerManager.current.value
                 ?: (repo.randomSongs(1) as? Result.Ok)?.value?.firstOrNull()
             if (seed != null) {
-                val seedItem = resolveTrack(seed, -1L)
                 // Boot radio through the phone path (passthrough-safe), then
                 // answer the car's set with the same seed item: both writers
                 // converge on [seed] and the background batches append on top.
                 playerManager.startRadio(seed)
+                val queueId = playerManager.queue.value.firstOrNull()?.queueId ?: 0L
+                val seedItem = resolveTrack(seed, queueId)
                 if (seedItem != null) {
-                    playerManager.adoptExternalQueue(listOf(seed), "Android Auto")
                     return listOf(seedItem)
                 }
             }
@@ -905,13 +905,18 @@ class PlayerService : MediaLibraryService() {
         if (tracks.isEmpty()) return mediaItems
         val parent = mediaItems.firstOrNull()?.mediaMetadata?.extras?.getString(EXTRA_PARENT_ID)
         val shuffle = parent?.removePrefix("search::")?.let { shuffleQueries.remove(it) } == true
-        val resolved = tracks.mapIndexed { i, t -> resolveTrack(t, -1L) }
         // Drop offline-unresolvable entries, never play dead items.
-        val playable = tracks.zip(resolved).filter { it.second != null }
-        if (playable.isEmpty()) return mediaItems
-        playerManager.adoptExternalQueue(playable.map { it.first }, "Android Auto")
+        val playableTracks = if (isOffline()) {
+            tracks.filter { it.localUri != null || downloads.localFile(it.id) != null }
+        } else {
+            tracks
+        }
+        if (playableTracks.isEmpty()) return mediaItems
+        val queueItems = playerManager.adoptExternalQueue(playableTracks, "Android Auto")
+        val resolved = queueItems.mapNotNull { item -> resolveTrack(item.song, item.queueId) }
+        if (resolved.isEmpty()) return mediaItems
         if (shuffle) playerManager.setShuffle(true)
-        return playable.map { it.second!! }
+        return resolved
     }
 
     /** Coil-backed artwork for the session (notification + Auto now-playing). */

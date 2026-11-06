@@ -1,6 +1,7 @@
 package com.feishin.mobile.ui.library
 
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -149,6 +150,7 @@ fun DeviceFilesScreen(
     // Local Album Detail Screen
     val selectedAlbum = state.selectedAlbum
     if (selectedAlbum != null) {
+        BackHandler { vm.closeAlbum() }
         LocalAlbumDetailView(
             album = selectedAlbum,
             nowPlaying = nowPlaying,
@@ -165,6 +167,7 @@ fun DeviceFilesScreen(
     // Local Artist Detail Screen
     val selectedArtist = state.selectedArtist
     if (selectedArtist != null) {
+        BackHandler { vm.closeArtist() }
         LocalArtistDetailView(
             artist = selectedArtist,
             onBack = { vm.closeArtist() },

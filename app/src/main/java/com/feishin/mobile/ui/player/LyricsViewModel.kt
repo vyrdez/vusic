@@ -106,7 +106,9 @@ class LyricsViewModel @Inject constructor(
                 )
             }
             repository.saveCustomLyrics(track, toSave)
-            _ui.value = toUi(toSave)
+            if (currentKey == repository.cacheKeyForTrack(track)) {
+                _ui.value = toUi(toSave)
+            }
         }
     }
 
@@ -115,7 +117,9 @@ class LyricsViewModel @Inject constructor(
             val currentLyrics = (_ui.value as? LyricsUi.Synced)?.lyrics ?: return@launch
             val updated = currentLyrics.copy(offsetMs = offsetMs)
             repository.saveCustomLyrics(track, updated)
-            _ui.value = toUi(updated)
+            if (currentKey == repository.cacheKeyForTrack(track)) {
+                _ui.value = toUi(updated)
+            }
         }
     }
 
@@ -133,7 +137,9 @@ class LyricsViewModel @Inject constructor(
     fun applyCandidate(track: Track, candidate: LyricsCandidate) {
         viewModelScope.launch {
             repository.saveCustomLyrics(track, candidate.lyrics)
-            _ui.value = toUi(candidate.lyrics)
+            if (currentKey == repository.cacheKeyForTrack(track)) {
+                _ui.value = toUi(candidate.lyrics)
+            }
         }
     }
 

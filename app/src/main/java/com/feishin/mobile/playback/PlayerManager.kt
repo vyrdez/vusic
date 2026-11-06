@@ -199,6 +199,7 @@ class PlayerManager @Inject constructor(
     private val shuffleGeneration = AtomicLong(0L)
     private val mediaItemCache = java.util.concurrent.ConcurrentHashMap<Long, MediaItem>()
     private var shuffleJob: kotlinx.coroutines.Job? = null
+    private var playJob: Job? = null
 
     private fun currentShuffleState(): ShuffleState {
         val displayed = _queue.value.map { it.queueId }
@@ -704,6 +705,7 @@ class PlayerManager @Inject constructor(
         if (seedPlayer) {
             _position.value = snapshot.positionMs
             val items = built.map { it.second }
+            p.repeatMode = snapshot.repeatMode
             seedQueue(p, items, _currentIndex.value, snapshot.positionMs)
             VLog.d(TAG, "restore: ${entries.size} items, index=${_currentIndex.value} pos=${snapshot.positionMs}")
         } else {
@@ -723,6 +725,7 @@ class PlayerManager @Inject constructor(
      */
     private fun seedQueue(c: Player, items: List<MediaItem>, index: Int, positionMs: Long) {
         setMediaItemsChunked(c, items, index, positionMs)
+        c.repeatMode = _repeatMode.value
         c.pause()
     }
 
@@ -961,7 +964,8 @@ class PlayerManager @Inject constructor(
         cancelRadio()
         shuffleGeneration.incrementAndGet()
         shuffleJob?.cancel()
-        scope.launch {
+        playJob?.cancel()
+        playJob = scope.launch {
             val c = awaitController() ?: return@launch
             if (tracks.isEmpty()) return@launch
             val catalogEntries = tracks.map { QueueItem(it, queueSeq++) }
@@ -1443,7 +1447,8 @@ class PlayerManager @Inject constructor(
     fun restoreCleared(snap: ClearedQueue) {
         val c = activePlayer() ?: return
         if (snap.items.isEmpty()) return
-        scope.launch {
+        playJob?.cancel()
+        playJob = scope.launch {
             val built = snap.items.mapNotNull { qi ->
                 toMediaItem(qi.song, qi.queueId)?.let { qi to it }
             }
@@ -1489,6 +1494,7 @@ class PlayerManager @Inject constructor(
     fun clear() {
         shuffleGeneration.incrementAndGet()
         shuffleJob?.cancel()
+        playJob?.cancel()
         activePlayer()?.clearMediaItems()
         activePlayer()?.stop()
         cancelRadio()
@@ -1838,8 +1844,8 @@ class PlayerManager @Inject constructor(
      * transition listener, which re-points at the same entry by queue key
      * (duplicates safe).
      */
-    fun adoptExternalQueue(tracks: List<Track>, source: String?) {
-        if (tracks.isEmpty()) return
+    fun adoptExternalQueue(tracks: List<Track>, source: String?): List<QueueItem> {
+        if (tracks.isEmpty()) return emptyList()
         cancelRadio()
         shuffleGeneration.incrementAndGet()
         shuffleJob?.cancel()
@@ -1858,6 +1864,7 @@ class PlayerManager @Inject constructor(
         if (source != null) _sourceName.value = source
         prefetch.onQueue(entries.toList(), 0)
         persistAsync()
+        return entries
     }
 
     /** Session-era recent tracks for Auto Home, newest last. */

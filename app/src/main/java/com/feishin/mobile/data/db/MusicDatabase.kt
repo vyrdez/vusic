@@ -165,7 +165,7 @@ interface DownloadDao {
     @Query("DELETE FROM downloads WHERE status IN ('QUEUED', 'DOWNLOADING', 'PAUSED')")
     suspend fun clearPending()
 
-    @Query("SELECT filePath FROM downloads WHERE status IN ('DOWNLOADING', 'PAUSED') AND filePath IS NOT NULL")
+    @Query("SELECT tempPath FROM downloads WHERE status IN ('QUEUED', 'DOWNLOADING', 'PAUSED') AND tempPath IS NOT NULL")
     suspend fun partialFilePaths(): List<String>
 
     @Query("DELETE FROM downloads WHERE songId = :id")

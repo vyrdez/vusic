@@ -9,10 +9,12 @@ import com.feishin.mobile.core.network.LyricsSelection
 import com.feishin.mobile.core.network.LyricsSource
 import com.feishin.mobile.core.network.SyncedLyrics
 import com.feishin.mobile.core.network.fromSynced
+import com.feishin.mobile.data.auth.CredentialsStore
 import com.feishin.mobile.data.remote.SubsonicApi
 import com.feishin.mobile.domain.repo.LyricsProvider
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -35,10 +37,10 @@ import kotlinx.coroutines.withContext
 @Singleton
 class NavidromeLyricsProvider @Inject constructor(
     private val api: SubsonicApi,
+    private val creds: CredentialsStore,
 ) : LyricsProvider {
 
-    @Volatile
-    private var songLyricsSupported: Boolean? = null
+    private val songLyricsSupported = ConcurrentHashMap<String, Boolean>()
 
     override suspend fun lyricsForSong(
         songId: String,
@@ -52,13 +54,14 @@ class NavidromeLyricsProvider @Inject constructor(
         val deviceLang = Locale.getDefault().language
 
         // Check extensions if not yet known
-        var isSongLyricsSupported = songLyricsSupported
+        val serverKey = creds.state.value?.serverUrl ?: ""
+        var isSongLyricsSupported = songLyricsSupported[serverKey]
         if (isSongLyricsSupported == null) {
             try {
                 val extResp = api.getOpenSubsonicExtensions().response
                 val extensions = extResp.openSubsonicExtensions.orEmpty()
                 isSongLyricsSupported = extensions.any { it.name == "songLyrics" }
-                songLyricsSupported = isSongLyricsSupported
+                songLyricsSupported[serverKey] = isSongLyricsSupported
             } catch (e: Exception) {
                 // If extension call fails with network error, propagate
                 if (e is IOException) {

@@ -21,6 +21,8 @@ import java.nio.charset.StandardCharsets
  */
 object EmbeddedLyricsExtractor {
 
+    const val MAX_TAG_BYTES = 4 * 1024 * 1024
+
     fun extract(stream: InputStream): Lyrics? {
         // ContentResolver streams are often not markable, and the header peek
         // below rewinds. Buffer it ourselves rather than relying on mark/reset.
@@ -64,6 +66,8 @@ object EmbeddedLyricsExtractor {
             (header[7].toInt() and 0x7F shl 14) or
             (header[8].toInt() and 0x7F shl 7) or
             (header[9].toInt() and 0x7F)
+
+        if (tagSize <= 0 || tagSize > MAX_TAG_BYTES) return null
 
         val tagBytes = ByteArray(tagSize)
         var offset = 0
@@ -236,6 +240,8 @@ object EmbeddedLyricsExtractor {
                 (header[2].toInt() and 0xFF shl 8) or
                 (header[3].toInt() and 0xFF)
 
+            if (length <= 0 || length > MAX_TAG_BYTES) return null
+
             val blockData = ByteArray(length)
             var read = 0
             while (read < length) {
@@ -368,6 +374,7 @@ object EmbeddedLyricsExtractor {
                     }
                 }
                 "©lyr" -> {
+                    if (contentSize <= 0 || contentSize > MAX_TAG_BYTES) return null
                     val atomData = ByteArray(contentSize.toInt())
                     stream.read(atomData)
                     remaining -= contentSize
