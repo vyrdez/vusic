@@ -10,6 +10,7 @@ import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.feishin.mobile.core.common.QueueCommit
@@ -118,7 +119,71 @@ class PlayerManager @Inject constructor(
     private val mediaItemCache = java.util.concurrent.ConcurrentHashMap<Long, MediaItem>(); private var shuffleJob: kotlinx.coroutines.Job? = null
 
     @Volatile private var controller: MediaController? = null
+    @Volatile private var localPlayer: Player? = null
     @Volatile private var connectJob: kotlinx.coroutines.Job? = null
+
+    private fun activePlayer(): Player? = localPlayer ?: controller
+
+    private val localPlayerListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            _isPlaying.value = isPlaying
+            if (!isPlaying) scope.launch { persist() }
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            val p = localPlayer ?: return
+            if (_queue.value.isEmpty() && p.mediaItemCount > 0) {
+                syncQueueFromController(p)
+                restored = true
+            }
+            syncCurrentFromPlayer(p, mediaItem, fromTransition = true)
+        }
+
+        override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+            val p = localPlayer ?: return
+            if (_queue.value.isEmpty() && !restored) return
+            if (_queue.value.isEmpty() && p.mediaItemCount > 0) {
+                syncQueueFromController(p)
+            }
+            syncCurrentFromPlayer(p, p.currentMediaItem)
+        }
+
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            val p = localPlayer ?: return
+            if (_queue.value.isEmpty() && !restored) return
+            syncCurrentFromPlayer(p, newPosition.mediaItem ?: p.currentMediaItem)
+        }
+
+        override fun onRepeatModeChanged(repeatMode: Int) {
+            _repeatMode.value = repeatMode
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            val p = localPlayer ?: return
+            if (playbackState != Player.STATE_IDLE) _isPlaying.value = p.isPlaying
+        }
+    }
+
+    fun attachLocalPlayer(exo: Player) {
+        if (localPlayer === exo) return
+        localPlayer?.removeListener(localPlayerListener)
+        localPlayer = exo
+        exo.addListener(localPlayerListener)
+        if (_queue.value.isNotEmpty() || exo.mediaItemCount > 0) {
+            syncCurrentFromPlayer(exo, exo.currentMediaItem)
+        }
+    }
+
+    fun detachLocalPlayer(exo: Player) {
+        if (localPlayer === exo) {
+            exo.removeListener(localPlayerListener)
+            localPlayer = null
+        }
+    }
 
     private val _queue = MutableStateFlow<List<QueueItem>>(emptyList())
     val queue: StateFlow<List<QueueItem>> = _queue.asStateFlow()
@@ -135,7 +200,7 @@ class PlayerManager @Inject constructor(
     private val _position = MutableStateFlow(0L)
     val position: StateFlow<Long> = _position.asStateFlow()
 
-    fun livePositionMs(): Long = controller?.currentPosition?.coerceAtLeast(0) ?: _position.value
+    fun livePositionMs(): Long = activePlayer()?.currentPosition?.coerceAtLeast(0) ?: _position.value
 
     private val _duration = MutableStateFlow(0L)
     val duration: StateFlow<Long> = _duration.asStateFlow()
@@ -174,9 +239,10 @@ class PlayerManager @Inject constructor(
         scope.launch {
             var ticks = 0
             while (true) {
-                val isPlaying = controller?.isPlaying == true
+                val p = activePlayer()
+                val isPlaying = p?.isPlaying == true
                 delay(if (isPlaying) 100 else 500)
-                val c = controller ?: continue
+                val c = activePlayer() ?: continue
                 _position.value = c.currentPosition.coerceAtLeast(0)
                 _duration.value = c.duration.takeIf { it > 0 } ?: 0L
                 // Crossfade ramp + ReplayGain, recomputed on the same tick.
@@ -243,11 +309,13 @@ class PlayerManager @Inject constructor(
             controller = c
             c.addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    if (localPlayer != null) return
                     _isPlaying.value = isPlaying
                     if (!isPlaying) scope.launch { persist() }
                 }
 
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    if (localPlayer != null) return
                     // Playback can start in the service without going through
                     // playAll(): a widget / media-button press on an empty player
                     // goes through MediaSession.Callback.onPlaybackResumption,
@@ -258,29 +326,35 @@ class PlayerManager @Inject constructor(
                         syncQueueFromController(c)
                         restored = true
                     }
-                    // Match on the per-entry queue key first: the same song can be
-                    // queued twice, and song ids would resolve to the wrong entry.
-                    val qid = mediaItem?.let { TrackMediaItems.queueIdOf(it) }
-                    val idx = qid?.let { id -> _queue.value.indexOfFirst { it.queueId == id } }
-                        ?.takeIf { it >= 0 }
-                        ?: _queue.value.indexOfFirst { it.song.id == mediaItem?.mediaId }.takeIf { it >= 0 }
-                        ?: c.currentMediaItemIndex
-                    _currentIndex.value = idx.coerceIn(0, maxOf(0, _queue.value.size - 1))
-                    _current.value = _queue.value.getOrNull(_currentIndex.value)?.song
-                        ?: mediaItem?.let { TrackMediaItems.toTrack(it) }
-                    _current.value?.let { recordRecent(it) }
-                    scope.launch { applyReplayGain(_current.value) }
-                    scope.launch { cachedTracks.touchPlayed(_current.value?.id.orEmpty()) }
-                    maybeAppendRadio()
-                    refreshPrefetchWindow()
-                    scope.launch { persist() }
+                    syncCurrentFromPlayer(c, mediaItem, fromTransition = true)
+                }
+
+                override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                    if (localPlayer != null) return
+                    if (_queue.value.isEmpty() && !restored) return
+                    if (_queue.value.isEmpty() && c.mediaItemCount > 0) {
+                        syncQueueFromController(c)
+                    }
+                    syncCurrentFromPlayer(c, c.currentMediaItem)
+                }
+
+                override fun onPositionDiscontinuity(
+                    oldPosition: Player.PositionInfo,
+                    newPosition: Player.PositionInfo,
+                    reason: Int,
+                ) {
+                    if (localPlayer != null) return
+                    if (_queue.value.isEmpty() && !restored) return
+                    syncCurrentFromPlayer(c, newPosition.mediaItem ?: c.currentMediaItem)
                 }
 
                 override fun onRepeatModeChanged(repeatMode: Int) {
+                    if (localPlayer != null) return
                     _repeatMode.value = repeatMode
                 }
 
                 override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (localPlayer != null) return
                     if (playbackState != Player.STATE_IDLE) _isPlaying.value = c.isPlaying
                 }
 
@@ -291,34 +365,86 @@ class PlayerManager @Inject constructor(
                     }
                 }
             })
-            if (c.mediaItemCount > 0) {
+            val p = activePlayer() ?: c
+            if (p.mediaItemCount > 0) {
                 // The service survived (or another client queued). The session
                 // publishes a bounded window, so the controller's item list can
                 // be shorter than the real queue: prefer our own snapshot and
                 // only adopt the controller's items when there is none.
                 scope.launch {
-                    val hadSnapshot = restoreFromSnapshot(c, seedPlayer = false)
-                    if (!hadSnapshot) syncQueueFromController(c)
-                    // The controller's index is window-relative once the queue is
-                    // longer than the published window, so resolve the real entry
-                    // by its per-queue key instead.
-                    val currentItem = c.currentMediaItem
-                    val qid = currentItem?.let { TrackMediaItems.queueIdOf(it) }
-                    val idx = qid?.let { id -> _queue.value.indexOfFirst { it.queueId == id } }
-                        ?.takeIf { it >= 0 }
-                        ?: _queue.value.indexOfFirst { it.song.id == currentItem?.mediaId }.takeIf { it >= 0 }
-                    _currentIndex.value = (idx ?: c.currentMediaItemIndex)
-                        .coerceIn(0, maxOf(0, _queue.value.size - 1))
-                    _current.value = _queue.value.getOrNull(_currentIndex.value)?.song
-                        ?: currentItem?.let { TrackMediaItems.toTrack(it) }
-                    _isPlaying.value = c.isPlaying
-                    _repeatMode.value = c.repeatMode
+                    val hadSnapshot = restoreFromSnapshot(p, seedPlayer = false)
+                    if (!hadSnapshot) syncQueueFromController(p)
+                    syncCurrentFromPlayer(p, p.currentMediaItem)
+                    _isPlaying.value = p.isPlaying
+                    _repeatMode.value = p.repeatMode
                     restored = true
                     persist()
                 }
             } else {
-                scope.launch { restoreFromSnapshot(c) }
+                scope.launch { restoreFromSnapshot(p) }
             }
+        }
+    }
+
+    /**
+     * Resolves `_current` and `_currentIndex` from the player's current [MediaItem]:
+     * 1. `EXTRA_QUEUE_ID` via [TrackMediaItems.queueIdOf]
+     * 2. `mediaId` (closest to `_currentIndex` for duplicate songs)
+     * 3. Never indexes full `_queue` with window-relative `c.currentMediaItemIndex`
+     *    when `_queue.value.size > c.mediaItemCount`.
+     */
+    private fun syncCurrentFromPlayer(
+        c: Player,
+        mediaItem: MediaItem? = c.currentMediaItem,
+        fromTransition: Boolean = false,
+    ) {
+        val p = localPlayer ?: c
+        val item = mediaItem ?: p.currentMediaItem
+        val q = _queue.value
+        if (q.isEmpty() && item == null) return
+        val prevIdx = _currentIndex.value
+        val prevTrackId = _current.value?.id
+        val prevQueueId = q.getOrNull(prevIdx)?.queueId
+
+        val qid = item?.let { TrackMediaItems.queueIdOf(it) }
+            ?: p.currentMediaItem?.let { TrackMediaItems.queueIdOf(it) }
+        val mediaId = item?.mediaId?.takeIf { it.isNotBlank() }
+            ?: p.currentMediaItem?.mediaId?.takeIf { it.isNotBlank() }
+        val fallbackTrack = item?.let { TrackMediaItems.toTrack(it) }
+            ?: p.currentMediaItem?.let { TrackMediaItems.toTrack(it) }
+
+        val resolved = QueueWindow.resolveCurrent(
+            queue = q,
+            currentIndex = prevIdx,
+            queueId = qid,
+            mediaId = mediaId,
+            controllerMediaItemIndex = p.currentMediaItemIndex,
+            controllerMediaItemCount = p.mediaItemCount,
+            fallbackTrack = fallbackTrack,
+        )
+        _currentIndex.value = resolved.index
+        _current.value = resolved.track
+        _position.value = p.currentPosition.coerceAtLeast(0L)
+        p.duration.takeIf { it > 0L }?.let { _duration.value = it }
+
+        if (com.feishin.mobile.BuildConfig.DEBUG) {
+            VLog.d(
+                "NowPlayingProbe",
+                "UI_CURRENT id=${resolved.track?.id} title=${resolved.track?.title} idx=${resolved.index} qSize=${q.size}",
+            )
+        }
+
+        val newQueueId = q.getOrNull(resolved.index)?.queueId
+        val changed = fromTransition ||
+            resolved.index != prevIdx ||
+            resolved.track?.id != prevTrackId ||
+            newQueueId != prevQueueId
+        if (changed) {
+            resolved.track?.let { recordRecent(it) }
+            scope.launch { applyReplayGain(resolved.track) }
+            scope.launch { cachedTracks.touchPlayed(resolved.track?.id.orEmpty()) }
+            maybeAppendRadio()
+            persistAsync()
         }
     }
 
@@ -327,13 +453,13 @@ class PlayerManager @Inject constructor(
      * bind. A tap during the first seconds after a cold start used to be dropped
      * on the floor (`controller ?: return@launch`).
      */
-    private suspend fun awaitController(): MediaController? {
-        controller?.let { return it }
+    private suspend fun awaitController(): Player? {
+        activePlayer()?.let { return it }
         repeat(24) {
             delay(125)
-            controller?.let { return it }
+            activePlayer()?.let { return it }
         }
-        return controller
+        return activePlayer()
     }
 
     /** Guava ListenableFuture -> coroutine, without pulling in coroutines-guava. */
@@ -350,12 +476,13 @@ class PlayerManager @Inject constructor(
         }
 
     /** Rebuilds the domain queue mirror from the controller's media items. */
-    private fun syncQueueFromController(c: MediaController) {
+    private fun syncQueueFromController(c: Player) {
+        val p = localPlayer ?: c
         val existing = _queue.value.associateBy { it.song.id }
-        val rebuilt = ArrayList<QueueItem>(c.mediaItemCount)
+        val rebuilt = ArrayList<QueueItem>(p.mediaItemCount)
         var maxId = queueSeq - 1
-        for (i in 0 until c.mediaItemCount) {
-            val item = c.getMediaItemAt(i)
+        for (i in 0 until p.mediaItemCount) {
+            val item = p.getMediaItemAt(i)
             val id = item.mediaId
             val known = existing[id]?.song
             val fromItem = TrackMediaItems.toTrack(item)
@@ -389,7 +516,7 @@ class PlayerManager @Inject constructor(
      * The per-entry queue keys and the shuffle snapshot are restored verbatim so a
      * shuffle toggle after restart behaves exactly as before the kill.
      */
-    private suspend fun restoreFromSnapshot(c: MediaController, seedPlayer: Boolean = true): Boolean {
+    private suspend fun restoreFromSnapshot(c: Player, seedPlayer: Boolean = true): Boolean {
         // Give the credentials up to 10s to arrive (first launch, slow disk);
         // if they never do, keep the snapshot for the next launch instead of
         // silently dropping it forever.
@@ -437,16 +564,17 @@ class PlayerManager @Inject constructor(
         } else {
             null
         }
-        _duration.value = c.duration.takeIf { it > 0 } ?: 0L
+        val p = localPlayer ?: c
+        _duration.value = p.duration.takeIf { it > 0 } ?: 0L
         if (seedPlayer) {
             _position.value = snapshot.positionMs
             val items = built.map { it.second }
-            seedQueue(c, items, _currentIndex.value, snapshot.positionMs)
+            seedQueue(p, items, _currentIndex.value, snapshot.positionMs)
             VLog.d(TAG, "restore: ${entries.size} items, index=${_currentIndex.value} pos=${snapshot.positionMs}")
         } else {
             // The service still owns a live queue: only fill the mirror, never
             // replace what is playing.
-            _position.value = c.currentPosition.coerceAtLeast(0L)
+            _position.value = p.currentPosition.coerceAtLeast(0L)
         }
         restored = true
         return true
@@ -458,14 +586,81 @@ class PlayerManager @Inject constructor(
      * multi-thousand-song queue has to be appended in chunks or
      * `setMediaItems` throws [android.os.TransactionTooLargeException].
      */
-    private fun seedQueue(c: MediaController, items: List<MediaItem>, index: Int, positionMs: Long) {
-        val chunk = 100
-        c.setMediaItems(items.take(chunk), 0, 0L)
-        items.drop(chunk).chunked(chunk).forEach { c.addMediaItems(it) }
-        // setMediaItems/seekTo indexes are forwarded to the real (unbounded)
-        // player, so the full-queue index is valid here.
-        c.seekTo(index, positionMs)
+    private fun seedQueue(c: Player, items: List<MediaItem>, index: Int, positionMs: Long) {
+        setMediaItemsChunked(c, items, index, positionMs)
         c.pause()
+    }
+
+    /**
+     * Sets [items] on [c] in chunks of at most [QueueWindow.DEFAULT_MAX_WINDOW]
+     * anchored at [startIndex] so no Binder IPC exceeds 100 items and the active
+     * item at [startIndex] starts at [positionMs] without restarting.
+     */
+    private fun setMediaItemsChunked(
+        c: Player,
+        items: List<MediaItem>,
+        startIndex: Int,
+        positionMs: Long,
+    ) {
+        if (items.isEmpty()) return
+        val start = startIndex.coerceIn(0, items.lastIndex)
+        val local = localPlayer
+        if (local != null) {
+            local.setMediaItems(items, start, positionMs)
+            return
+        }
+        if (items.size <= QueueWindow.DEFAULT_MAX_WINDOW) {
+            c.setMediaItems(items, start, positionMs)
+            return
+        }
+        val plan = QueueWindow.chunkedSetPlan(items.size, start)
+        c.setMediaItems(
+            items.subList(plan.initialRange.first, plan.initialRange.last + 1),
+            0,
+            positionMs,
+        )
+        for (r in plan.suffixRanges) {
+            c.addMediaItems(items.subList(r.first, r.last + 1))
+        }
+        for (r in plan.prefixRangesReversed) {
+            c.addMediaItems(0, items.subList(r.first, r.last + 1))
+        }
+    }
+
+    /**
+     * Seeks [c] to [fullIndex] in `_queue` by translating full-queue coordinates
+     * into bounded-window steps via [QueueWindow.seekSteps] (never double-adding
+     * `windowStart`).
+     */
+    private fun seekToQueueIndex(
+        c: Player,
+        fullIndex: Int,
+        positionMs: Long = 0L,
+        fromFullIndex: Int = _currentIndex.value,
+    ) {
+        val q = _queue.value
+        if (q.isEmpty()) return
+        val target = fullIndex.coerceIn(0, q.lastIndex)
+        val local = localPlayer
+        if (local != null) {
+            local.seekTo(target, positionMs)
+            return
+        }
+        val liveFrom = c.currentMediaItem?.let { item ->
+            TrackMediaItems.queueIdOf(item)?.let { qid ->
+                q.indexOfFirst { it.queueId == qid }.takeIf { it >= 0 }
+            }
+        } ?: fromFullIndex
+        val steps = QueueWindow.seekSteps(
+            targetFullIndex = target,
+            fullCount = q.size,
+            currentFullIndex = liveFrom,
+        )
+        if (steps.isEmpty()) return
+        for (i in 0 until steps.lastIndex) {
+            c.seekTo(steps[i], 0L)
+        }
+        c.seekTo(steps.last(), positionMs)
     }
 
     private suspend fun persist() {
@@ -557,7 +752,7 @@ class PlayerManager @Inject constructor(
 
     /** Applies the ReplayGain setting to the live player (per track). */
     private suspend fun applyReplayGain(track: Track?) {
-        val c = controller ?: return
+        val c = activePlayer() ?: return
         if (track == null) return
         val s = settings.flow.first()
         val mode = s.effectiveReplayGain
@@ -587,7 +782,7 @@ class PlayerManager @Inject constructor(
      * Recomputes player volume from ReplayGain and the crossfade ramp.
      */
     private suspend fun updateVolume(positionMs: Long, durationMs: Long) {
-        val c = controller ?: return
+        val c = activePlayer() ?: return
         val s = settings.flow.first()
         var factor = 1f
         if (s.crossfade && durationMs > 0) {
@@ -633,7 +828,7 @@ class PlayerManager @Inject constructor(
             if (queue.isEmpty()) return@launch
             _queue.value = queue
             val start = startIndex.coerceIn(0, queue.size - 1)
-            c.setMediaItems(mediaItems, start, 0L)
+            setMediaItemsChunked(c, mediaItems, start, 0L)
             c.prepare()
             c.play()
             _currentIndex.value = start
@@ -658,7 +853,7 @@ class PlayerManager @Inject constructor(
      * can't start a second concurrent fetch for the same generation.
      */
     fun startRadio(seed: Track, onLibraryEmpty: () -> Unit = {}) {
-        if (controller == null) return
+        if (activePlayer() == null) return
         playAll(listOf(seed), source = "Radio • ${seed.title}")
         val gen = radioTrigger.newSession()
         _radioActive.value = true
@@ -830,7 +1025,7 @@ class PlayerManager @Inject constructor(
 
     /** Tail-only append: never touches the current item or playback state. */
     private suspend fun appendRadioBatch(batch: List<Track>, gen: Int) {
-        val c = controller ?: return
+        val c = activePlayer() ?: return
         if (gen != radioTrigger.currentGeneration() || !_radioActive.value) return
         if (batch.isEmpty() || _queue.value.isEmpty()) return
         val built = batch.mapNotNull { t ->
@@ -930,7 +1125,7 @@ class PlayerManager @Inject constructor(
     }
 
     fun removeAt(index: Int) {
-        val c = controller ?: return
+        val c = activePlayer() ?: return
         val removedId = _queue.value.getOrNull(index)?.queueId
         val (next, adjusted) = QueueOps.removeAt(_queue.value, index, _currentIndex.value)
         if (next === _queue.value) return
@@ -957,7 +1152,7 @@ class PlayerManager @Inject constructor(
         removeAt(index)
     }
     fun move(from: Int, to: Int) {
-        val c = controller ?: return
+        val c = activePlayer() ?: return
         val (next, adjusted) = QueueOps.move(_queue.value, from, to, _currentIndex.value)
         if (next === _queue.value) return
         _queue.value = next
@@ -983,7 +1178,7 @@ class PlayerManager @Inject constructor(
         val target = QueueCommit.targetIds(
             beforeIds, targetIds,
         ) ?: return
-        val c = controller
+        val c = activePlayer()
         if (c == null) {
             val keepId = currentQueueId()
             val reordered = ShufflePlan.applyOrder(target, before) { it.queueId }
@@ -1048,7 +1243,7 @@ class PlayerManager @Inject constructor(
      * paused. Radio is not resumed (a clear ends the radio session by design).
      */
     fun restoreCleared(snap: ClearedQueue) {
-        val c = controller ?: return
+        val c = activePlayer() ?: return
         if (snap.items.isEmpty()) return
         scope.launch {
             val built = snap.items.mapNotNull { qi ->
@@ -1061,7 +1256,7 @@ class PlayerManager @Inject constructor(
             val index = snap.index.coerceIn(0, items.size - 1)
             // setMediaItems + prepare mirrors a fresh queue; pause keeps the
             // "restored paused" contract (never auto-plays from Undo).
-            c.setMediaItems(items, index, snap.positionMs)
+            setMediaItemsChunked(c, items, index, snap.positionMs)
             c.prepare()
             c.pause()
             _queue.value = built.map { it.first }
@@ -1080,8 +1275,8 @@ class PlayerManager @Inject constructor(
     }
 
     fun clear() {
-        controller?.clearMediaItems()
-        controller?.stop()
+        activePlayer()?.clearMediaItems()
+        activePlayer()?.stop()
         cancelRadio()
         _queue.value = emptyList()
         _currentIndex.value = 0
@@ -1122,26 +1317,29 @@ class PlayerManager @Inject constructor(
     }
 
     fun playAt(index: Int) {
-        val c = controller ?: return
+        val c = activePlayer() ?: return
         if (index in _queue.value.indices) {
             val target = _queue.value[index].song
+            val fromIndex = _currentIndex.value
             scope.launch {
                 if (isOffline() && !isTrackPlayableOffline(target)) {
                     notifyOfflineUnavailable(target.title)
                     return@launch
                 }
-                c.seekTo(index, 0)
+                seekToQueueIndex(c, index, 0L, fromIndex)
                 if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
                 c.play()
                 _currentIndex.value = index
                 _current.value = target
+                _current.value?.let { recordRecent(it) }
+                scope.launch { applyReplayGain(_current.value) }
                 persistAsync()
             }
         }
     }
 
     fun playOrToggle(queueId: Long) {
-        val c = controller ?: return
+        val c = activePlayer() ?: return
         val currentItem = _queue.value.getOrNull(_currentIndex.value)
         if (currentItem != null && currentItem.queueId == queueId) {
             if (c.isPlaying || c.playWhenReady) {
@@ -1161,12 +1359,13 @@ class PlayerManager @Inject constructor(
         val index = _queue.value.indexOfFirst { it.queueId == queueId }
         if (index >= 0) {
             val target = _queue.value[index].song
+            val fromIndex = _currentIndex.value
             scope.launch {
                 if (isOffline() && !isTrackPlayableOffline(target)) {
                     notifyOfflineUnavailable(target.title)
                     return@launch
                 }
-                c.seekTo(index, 0L)
+                seekToQueueIndex(c, index, 0L, fromIndex)
                 if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
                 c.play()
                 _currentIndex.value = index
@@ -1179,7 +1378,7 @@ class PlayerManager @Inject constructor(
     }
 
     fun togglePlayPause() {
-        val c = controller ?: return
+        val c = activePlayer() ?: return
         if (c.isPlaying) {
             c.pause()
         } else {
@@ -1189,7 +1388,7 @@ class PlayerManager @Inject constructor(
     }
 
     fun pause() {
-        controller?.pause()
+        activePlayer()?.pause()
     }
 
     /** Gapless is an ExoPlayer property; applied live so the toggle takes effect. */
@@ -1202,22 +1401,24 @@ class PlayerManager @Inject constructor(
     @Volatile private var gaplessEnabled: Boolean = true
 
     fun resume() {
-        val c = controller ?: return
+        val c = activePlayer() ?: return
         if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
         c.play()
     }
 
     fun skipToNext() {
-        val c = controller ?: return
+        val c = activePlayer() ?: return
         scope.launch {
             if (isOffline()) {
                 val q = _queue.value
                 val cur = _currentIndex.value
                 val nextPlayable = (cur + 1 until q.size).firstOrNull { isTrackPlayableOffline(q[it].song) }
                 if (nextPlayable != null) {
-                    c.seekTo(nextPlayable, 0L)
+                    seekToQueueIndex(c, nextPlayable, 0L, cur)
                     if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
                     c.play()
+                    _currentIndex.value = nextPlayable
+                    _current.value = q.getOrNull(nextPlayable)?.song
                 } else {
                     val nextSong = q.getOrNull(cur + 1)?.song
                     notifyOfflineUnavailable(nextSong?.title)
@@ -1229,16 +1430,18 @@ class PlayerManager @Inject constructor(
     }
 
     fun skipToPrevious() {
-        val c = controller ?: return
+        val c = activePlayer() ?: return
         scope.launch {
             if (isOffline()) {
                 val q = _queue.value
                 val cur = _currentIndex.value
                 val prevPlayable = (cur - 1 downTo 0).firstOrNull { isTrackPlayableOffline(q[it].song) }
                 if (prevPlayable != null) {
-                    c.seekTo(prevPlayable, 0L)
+                    seekToQueueIndex(c, prevPlayable, 0L, cur)
                     if (PlaybackRecovery.shouldPrepareBeforePlay(c.playbackState)) c.prepare()
                     c.play()
+                    _currentIndex.value = prevPlayable
+                    _current.value = q.getOrNull(prevPlayable)?.song
                 } else {
                     val prevSong = q.getOrNull(cur - 1)?.song
                     notifyOfflineUnavailable(prevSong?.title)
@@ -1250,7 +1453,7 @@ class PlayerManager @Inject constructor(
     }
 
     fun seekTo(ms: Long) {
-        val c = controller ?: return
+        val c = activePlayer() ?: return
         runCatching {
             val dur = c.duration.takeIf { it > 0L } ?: _duration.value.takeIf { it > 0L } ?: 0L
             val targetMs = if (dur > 0L) ms.coerceIn(0L, maxOf(0L, dur)) else ms.coerceAtLeast(0L)
@@ -1274,7 +1477,7 @@ class PlayerManager @Inject constructor(
      * re-inserted or re-prepared and playback never restarts.
      */
     fun setShuffle(enabled: Boolean, random: Random = Random.Default) {
-        val c = controller
+        val c = activePlayer()
         if (c == null) {
             _shuffle.value = enabled
             shuffleOrder = if (!enabled) null else shuffleOrder
@@ -1306,7 +1509,8 @@ class PlayerManager @Inject constructor(
      * using [removeMediaItems] and [addMediaItems], so the playing item is never
      * removed or re-prepared and playback continues without cutout.
      */
-    private fun applyOrder(c: MediaController, targetIds: List<Long>, reorderedMediaItems: List<MediaItem> = targetIds.mapNotNull { mediaItemCache[it] }) {
+    private fun applyOrder(c: Player, targetIds: List<Long>, reorderedMediaItems: List<MediaItem> = targetIds.mapNotNull { mediaItemCache[it] }) {
+        val p = localPlayer ?: c
         val before = _queue.value
         if (before.isEmpty()) return
         val keepId = currentQueueId()
@@ -1320,11 +1524,11 @@ class PlayerManager @Inject constructor(
 
         // 1. Remove suffix after playing item
         if (currentIdx + 1 < before.size) {
-            c.removeMediaItems(currentIdx + 1, before.size)
+            p.removeMediaItems(currentIdx + 1, before.size)
         }
         // 2. Remove prefix before playing item (active item is now at controller index 0)
         if (currentIdx > 0) {
-            c.removeMediaItems(0, currentIdx)
+            p.removeMediaItems(0, currentIdx)
         }
         // 3. Insert new prefix before playing item (active item shifts to targetIndex)
         val headMediaItems = if (reorderedMediaItems.size == reordered.size) {
@@ -1333,7 +1537,7 @@ class PlayerManager @Inject constructor(
             plan.head.mapNotNull { qi -> mediaItemCache[qi.queueId] }
         }
         if (headMediaItems.isNotEmpty()) {
-            c.addMediaItems(0, headMediaItems)
+            p.addMediaItems(0, headMediaItems)
         }
         // 4. Insert new suffix after playing item
         val tailMediaItems = if (reorderedMediaItems.size == reordered.size) {
@@ -1342,7 +1546,7 @@ class PlayerManager @Inject constructor(
             plan.tail.mapNotNull { qi -> mediaItemCache[qi.queueId] }
         }
         if (tailMediaItems.isNotEmpty()) {
-            c.addMediaItems(targetIndex + 1, tailMediaItems)
+            p.addMediaItems(targetIndex + 1, tailMediaItems)
         }
         _queue.value = reordered
         _currentIndex.value = targetIndex
@@ -1384,7 +1588,7 @@ class PlayerManager @Inject constructor(
     }
 
     fun cycleRepeat(): Int {
-        val c = controller ?: return Player.REPEAT_MODE_OFF
+        val c = activePlayer() ?: return Player.REPEAT_MODE_OFF
         c.repeatMode = when (c.repeatMode) {
             Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
             Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE

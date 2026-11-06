@@ -296,6 +296,7 @@ class PlayerService : MediaLibraryService() {
         })
 
         player = exo
+        playerManager.attachLocalPlayer(exo)
         val sessionPlayer = BoundedQueuePlayer(exo, maxWindow = 100)
         mediaSession = MediaLibrarySession.Builder(this, sessionPlayer, AutoCallback())
             .setSessionActivity(
@@ -325,6 +326,7 @@ class PlayerService : MediaLibraryService() {
         stopTicker()
         mediaSession?.release()
         mediaSession = null
+        player?.let { playerManager.detachLocalPlayer(it) }
         player?.release()
         player = null
         super.onDestroy()

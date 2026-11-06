@@ -15,24 +15,24 @@ import androidx.media3.common.Timeline
 @androidx.media3.common.util.UnstableApi
 class BoundedQueuePlayer(
     player: Player,
-    private val maxWindow: Int = 100,
+    private val maxWindow: Int = QueueWindow.DEFAULT_MAX_WINDOW,
 ) : ForwardingPlayer(player) {
 
     private fun windowStart(): Int {
         val full = super.getCurrentTimeline()
         if (full.isEmpty || full.windowCount <= maxWindow) return 0
-        val current = super.getCurrentMediaItemIndex()
-        val half = maxWindow / 2
-        return (current - half).coerceIn(0, maxOf(0, full.windowCount - maxWindow))
+        return QueueWindow.windowStart(
+            fullCount = full.windowCount,
+            currentFullIndex = super.getCurrentMediaItemIndex(),
+            maxWindow = maxWindow,
+        )
     }
 
     override fun getCurrentTimeline(): Timeline {
         val full = super.getCurrentTimeline()
         if (full.isEmpty || full.windowCount <= maxWindow) return full
 
-        val current = super.getCurrentMediaItemIndex()
-        val half = maxWindow / 2
-        val start = (current - half).coerceIn(0, maxOf(0, full.windowCount - maxWindow))
+        val start = windowStart()
         val count = minOf(maxWindow, full.windowCount - start)
 
         return object : Timeline() {
@@ -42,12 +42,15 @@ class BoundedQueuePlayer(
             override fun getWindow(windowIndex: Int, window: Window, defaultPositionProjectionUs: Long): Window {
                 val realIndex = (start + windowIndex).coerceIn(0, full.windowCount - 1)
                 full.getWindow(realIndex, window, defaultPositionProjectionUs)
+                window.firstPeriodIndex = windowIndex
+                window.lastPeriodIndex = windowIndex
                 return window
             }
 
             override fun getPeriod(periodIndex: Int, period: Period, setIds: Boolean): Period {
                 val realIndex = (start + periodIndex).coerceIn(0, full.periodCount - 1)
                 full.getPeriod(realIndex, period, setIds)
+                period.windowIndex = periodIndex
                 return period
             }
 
@@ -65,29 +68,159 @@ class BoundedQueuePlayer(
         }
     }
 
+    override fun getCurrentPeriodIndex(): Int = getCurrentMediaItemIndex()
+
     override fun getCurrentMediaItemIndex(): Int {
         val full = super.getCurrentTimeline()
-        if (full.isEmpty || full.windowCount <= maxWindow) return super.getCurrentMediaItemIndex()
         val current = super.getCurrentMediaItemIndex()
-        val half = maxWindow / 2
-        val start = (current - half).coerceIn(0, maxOf(0, full.windowCount - maxWindow))
-        return (current - start).coerceIn(0, maxWindow - 1)
+        if (full.isEmpty || full.windowCount <= maxWindow) return current
+        return QueueWindow.toWindowIndex(
+            fullIndex = current,
+            fullCount = full.windowCount,
+            currentFullIndex = current,
+            maxWindow = maxWindow,
+        )
     }
 
     override fun getMediaItemCount(): Int {
         val full = super.getCurrentTimeline()
         if (full.isEmpty || full.windowCount <= maxWindow) return super.getMediaItemCount()
-        return minOf(maxWindow, full.windowCount)
+        return QueueWindow.windowCount(full.windowCount, maxWindow)
     }
 
     override fun getMediaItemAt(index: Int): MediaItem {
         val full = super.getCurrentTimeline()
         if (full.isEmpty || full.windowCount <= maxWindow) return super.getMediaItemAt(index)
-        val current = super.getCurrentMediaItemIndex()
-        val half = maxWindow / 2
-        val start = (current - half).coerceIn(0, maxOf(0, full.windowCount - maxWindow))
-        val realIndex = (start + index).coerceIn(0, super.getMediaItemCount() - 1)
+        val realIndex = QueueWindow.toFullIndex(
+            windowIndex = index,
+            fullCount = full.windowCount,
+            currentFullIndex = super.getCurrentMediaItemIndex(),
+            maxWindow = maxWindow,
+        ).coerceIn(0, super.getMediaItemCount() - 1)
         return super.getMediaItemAt(realIndex)
+    }
+
+    override fun seekToNext() {
+        val full = super.getCurrentTimeline()
+        if (full.isEmpty || full.windowCount <= maxWindow) {
+            super.seekToNext()
+            return
+        }
+        val next = QueueWindow.nextFullIndex(
+            currentFullIndex = super.getCurrentMediaItemIndex(),
+            fullCount = full.windowCount,
+            repeatMode = super.getRepeatMode(),
+            autoAdvance = false,
+        ) ?: return
+        super.seekTo(next, 0L)
+    }
+
+    override fun seekToNextMediaItem() {
+        val full = super.getCurrentTimeline()
+        if (full.isEmpty || full.windowCount <= maxWindow) {
+            super.seekToNextMediaItem()
+            return
+        }
+        val next = QueueWindow.nextFullIndex(
+            currentFullIndex = super.getCurrentMediaItemIndex(),
+            fullCount = full.windowCount,
+            repeatMode = super.getRepeatMode(),
+            autoAdvance = false,
+        ) ?: return
+        super.seekTo(next, 0L)
+    }
+
+    override fun seekToPrevious() {
+        val full = super.getCurrentTimeline()
+        if (full.isEmpty || full.windowCount <= maxWindow) {
+            super.seekToPrevious()
+            return
+        }
+        val maxSeekToPrev = super.getMaxSeekToPreviousPosition().takeIf { it > 0L } ?: 3_000L
+        if (super.getCurrentPosition() > maxSeekToPrev) {
+            super.seekTo(super.getCurrentMediaItemIndex(), 0L)
+            return
+        }
+        val prev = QueueWindow.previousFullIndex(
+            currentFullIndex = super.getCurrentMediaItemIndex(),
+            fullCount = full.windowCount,
+            repeatMode = super.getRepeatMode(),
+        )
+        if (prev != null) {
+            super.seekTo(prev, 0L)
+        } else {
+            super.seekTo(super.getCurrentMediaItemIndex(), 0L)
+        }
+    }
+
+    override fun seekToPreviousMediaItem() {
+        val full = super.getCurrentTimeline()
+        if (full.isEmpty || full.windowCount <= maxWindow) {
+            super.seekToPreviousMediaItem()
+            return
+        }
+        val prev = QueueWindow.previousFullIndex(
+            currentFullIndex = super.getCurrentMediaItemIndex(),
+            fullCount = full.windowCount,
+            repeatMode = super.getRepeatMode(),
+        ) ?: return
+        super.seekTo(prev, 0L)
+    }
+
+    override fun hasNextMediaItem(): Boolean {
+        val full = super.getCurrentTimeline()
+        if (full.isEmpty || full.windowCount <= maxWindow) return super.hasNextMediaItem()
+        return QueueWindow.nextFullIndex(
+            currentFullIndex = super.getCurrentMediaItemIndex(),
+            fullCount = full.windowCount,
+            repeatMode = super.getRepeatMode(),
+            autoAdvance = false,
+        ) != null
+    }
+
+    override fun hasPreviousMediaItem(): Boolean {
+        val full = super.getCurrentTimeline()
+        if (full.isEmpty || full.windowCount <= maxWindow) return super.hasPreviousMediaItem()
+        return QueueWindow.previousFullIndex(
+            currentFullIndex = super.getCurrentMediaItemIndex(),
+            fullCount = full.windowCount,
+            repeatMode = super.getRepeatMode(),
+        ) != null
+    }
+
+    override fun getNextMediaItemIndex(): Int {
+        val full = super.getCurrentTimeline()
+        if (full.isEmpty || full.windowCount <= maxWindow) return super.getNextMediaItemIndex()
+        val cur = super.getCurrentMediaItemIndex()
+        val nextFull = QueueWindow.nextFullIndex(
+            currentFullIndex = cur,
+            fullCount = full.windowCount,
+            repeatMode = super.getRepeatMode(),
+            autoAdvance = false,
+        ) ?: return androidx.media3.common.C.INDEX_UNSET
+        return QueueWindow.toWindowIndex(
+            fullIndex = nextFull,
+            fullCount = full.windowCount,
+            currentFullIndex = cur,
+            maxWindow = maxWindow,
+        )
+    }
+
+    override fun getPreviousMediaItemIndex(): Int {
+        val full = super.getCurrentTimeline()
+        if (full.isEmpty || full.windowCount <= maxWindow) return super.getPreviousMediaItemIndex()
+        val cur = super.getCurrentMediaItemIndex()
+        val prevFull = QueueWindow.previousFullIndex(
+            currentFullIndex = cur,
+            fullCount = full.windowCount,
+            repeatMode = super.getRepeatMode(),
+        ) ?: return androidx.media3.common.C.INDEX_UNSET
+        return QueueWindow.toWindowIndex(
+            fullIndex = prevFull,
+            fullCount = full.windowCount,
+            currentFullIndex = cur,
+            maxWindow = maxWindow,
+        )
     }
 
     override fun seekTo(mediaItemIndex: Int, positionMs: Long) {
@@ -96,8 +229,12 @@ class BoundedQueuePlayer(
             super.seekTo(mediaItemIndex, positionMs)
             return
         }
-        val start = windowStart()
-        val realIndex = (start + mediaItemIndex).coerceIn(0, maxOf(0, full.windowCount - 1))
+        val realIndex = QueueWindow.toFullIndex(
+            windowIndex = mediaItemIndex,
+            fullCount = full.windowCount,
+            currentFullIndex = super.getCurrentMediaItemIndex(),
+            maxWindow = maxWindow,
+        )
         super.seekTo(realIndex, positionMs)
     }
 
@@ -107,8 +244,12 @@ class BoundedQueuePlayer(
             super.seekToDefaultPosition(mediaItemIndex)
             return
         }
-        val start = windowStart()
-        val realIndex = (start + mediaItemIndex).coerceIn(0, maxOf(0, full.windowCount - 1))
+        val realIndex = QueueWindow.toFullIndex(
+            windowIndex = mediaItemIndex,
+            fullCount = full.windowCount,
+            currentFullIndex = super.getCurrentMediaItemIndex(),
+            maxWindow = maxWindow,
+        )
         super.seekToDefaultPosition(realIndex)
     }
 

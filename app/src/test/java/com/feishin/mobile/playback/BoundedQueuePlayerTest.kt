@@ -52,14 +52,18 @@ class BoundedQueuePlayerTest {
     private class MockPlayerState(
         val count: Int,
         var currentIndex: Int,
+        var repeatMode: Int = Player.REPEAT_MODE_OFF,
+        var currentPositionMs: Long = 0L,
         val seekCalls: MutableList<SeekCall> = mutableListOf(),
     )
 
     private fun createTrackingPlayer(
         count: Int,
         currentIndex: Int,
+        repeatMode: Int = Player.REPEAT_MODE_OFF,
+        currentPositionMs: Long = 0L,
     ): Pair<Player, MockPlayerState> {
-        val state = MockPlayerState(count, currentIndex)
+        val state = MockPlayerState(count, currentIndex, repeatMode, currentPositionMs)
         val timeline = FakeTimeline(count)
         val player = Proxy.newProxyInstance(
             Player::class.java.classLoader,
@@ -68,7 +72,15 @@ class BoundedQueuePlayerTest {
             when (method.name) {
                 "getCurrentTimeline" -> timeline
                 "getCurrentMediaItemIndex" -> state.currentIndex
+                "getCurrentPeriodIndex" -> state.currentIndex
                 "getMediaItemCount" -> count
+                "getRepeatMode" -> state.repeatMode
+                "setRepeatMode" -> {
+                    state.repeatMode = args[0] as Int
+                    null
+                }
+                "getCurrentPosition" -> state.currentPositionMs
+                "getMaxSeekToPreviousPosition" -> 3_000L
                 "getMediaItemAt" -> {
                     val idx = args[0] as Int
                     MediaItem.Builder().setMediaId("song_$idx").build()
@@ -77,16 +89,46 @@ class BoundedQueuePlayerTest {
                     when (args?.size) {
                         1 -> {
                             val pos = args[0] as Long
+                            state.currentPositionMs = pos
                             state.seekCalls.add(SeekCall(state.currentIndex, pos))
                         }
                         2 -> {
                             val idx = args[0] as Int
                             val pos = args[1] as Long
+                            state.currentIndex = idx
+                            state.currentPositionMs = pos
                             state.seekCalls.add(SeekCall(idx, pos))
                         }
                     }
                     null
                 }
+                "seekToDefaultPosition" -> {
+                    val idx = if (args != null && args.isNotEmpty()) args[0] as Int else state.currentIndex
+                    state.currentIndex = idx
+                    state.currentPositionMs = 0L
+                    state.seekCalls.add(SeekCall(idx, 0L))
+                    null
+                }
+                "seekToNext", "seekToNextMediaItem" -> {
+                    val next = QueueWindow.nextFullIndex(state.currentIndex, count, state.repeatMode)
+                    if (next != null) {
+                        state.currentIndex = next
+                        state.currentPositionMs = 0L
+                        state.seekCalls.add(SeekCall(next, 0L))
+                    }
+                    null
+                }
+                "seekToPrevious", "seekToPreviousMediaItem" -> {
+                    val prev = QueueWindow.previousFullIndex(state.currentIndex, count, state.repeatMode)
+                    if (prev != null) {
+                        state.currentIndex = prev
+                        state.currentPositionMs = 0L
+                        state.seekCalls.add(SeekCall(prev, 0L))
+                    }
+                    null
+                }
+                "hasNextMediaItem" -> QueueWindow.nextFullIndex(state.currentIndex, count, state.repeatMode) != null
+                "hasPreviousMediaItem" -> QueueWindow.previousFullIndex(state.currentIndex, count, state.repeatMode) != null
                 "toString" -> "MockPlayer($count, ${state.currentIndex})"
                 "hashCode" -> count.hashCode()
                 "equals" -> false
@@ -221,5 +263,97 @@ class BoundedQueuePlayerTest {
         assertEquals(1, state.seekCalls.size)
         assertEquals(8, state.seekCalls[0].index)
         assertEquals(12_000L, state.seekCalls[0].positionMs)
+    }
+
+    @Test
+    fun largeQueue_seekStepsFromFullIndex_neverDoubleAddsWindowStart() {
+        val (player, state) = createTrackingPlayer(count = 906, currentIndex = 250)
+        val bounded = BoundedQueuePlayer(player, maxWindow = 100)
+
+        // In-window full-queue target 251 -> single window-relative seek 51 -> real index 251
+        val inWindowSteps = QueueWindow.seekSteps(targetFullIndex = 251, fullCount = 906, currentFullIndex = 250)
+        assertEquals(listOf(51), inWindowSteps)
+        for (step in inWindowSteps) bounded.seekTo(step, 0L)
+        assertEquals(251, state.currentIndex)
+
+        // Out-of-window full-queue target 10 from 251 -> lands on real index 10
+        val toHeadSteps = QueueWindow.seekSteps(targetFullIndex = 10, fullCount = 906, currentFullIndex = state.currentIndex)
+        for (step in toHeadSteps) bounded.seekTo(step, 0L)
+        assertEquals(10, state.currentIndex)
+
+        // Out-of-window full-queue target 856 from 10 -> lands on real index 856
+        val toTailSteps = QueueWindow.seekSteps(targetFullIndex = 856, fullCount = 906, currentFullIndex = state.currentIndex)
+        for (step in toTailSteps) bounded.seekTo(step, 0L)
+        assertEquals(856, state.currentIndex)
+    }
+
+    @Test
+    fun largeQueue_timelineWindowAndPeriodIndicesAreWindowRelativeAt865() {
+        val (player, state) = createTrackingPlayer(count = 915, currentIndex = 865)
+        val bounded = BoundedQueuePlayer(player, maxWindow = 100)
+        val tl = bounded.currentTimeline
+
+        // windowStart = 815 (clamped to 915 - 100)
+        assertEquals(100, tl.windowCount)
+        assertEquals(100, tl.periodCount)
+        assertEquals(50, bounded.currentMediaItemIndex)
+        assertEquals(50, bounded.currentPeriodIndex)
+
+        val window = Timeline.Window()
+        val period = Timeline.Period()
+        for (i in 0 until tl.windowCount) {
+            tl.getWindow(i, window)
+            tl.getPeriod(i, period, true)
+            assertEquals("window.firstPeriodIndex at $i", i, window.firstPeriodIndex)
+            assertEquals("window.lastPeriodIndex at $i", i, window.lastPeriodIndex)
+            assertEquals("period.windowIndex at $i", i, period.windowIndex)
+            val uid = tl.getUidOfPeriod(i)
+            assertEquals("getIndexOfPeriod(getUidOfPeriod($i))", i, tl.getIndexOfPeriod(uid))
+            assertEquals("song_${815 + i}", window.mediaItem.mediaId)
+        }
+
+        // Advance across 850..875 and verify period.windowIndex never leaks full index (815..914)
+        state.currentIndex = 850
+        for (idx in 850..875) {
+            state.currentIndex = idx
+            val curTl = bounded.currentTimeline
+            val winIdx = bounded.currentMediaItemIndex
+            curTl.getWindow(winIdx, window)
+            curTl.getPeriod(winIdx, period, true)
+            assertEquals(winIdx, window.firstPeriodIndex)
+            assertEquals(winIdx, period.windowIndex)
+            assertEquals(winIdx, curTl.getIndexOfPeriod(curTl.getUidOfPeriod(winIdx)))
+            assertEquals("song_$idx", window.mediaItem.mediaId)
+        }
+    }
+
+    @Test
+    fun largeQueue_repeatAllWrap_seekToNextAt914LandsOn0_andPreviousAt0LandsOn914() {
+        val (player, state) = createTrackingPlayer(
+            count = 915,
+            currentIndex = 914,
+            repeatMode = Player.REPEAT_MODE_ALL,
+        )
+        val bounded = BoundedQueuePlayer(player, maxWindow = 100)
+
+        // At last item 914 (windowStart = 815, windowIndex = 99), seekToNext / seekToNextMediaItem
+        // must wrap to real index 0, never windowStart (815).
+        assertEquals(true, bounded.hasNextMediaItem())
+        bounded.seekToNextMediaItem()
+        assertEquals(0, state.currentIndex)
+        assertEquals(0, bounded.currentMediaItemIndex)
+        assertEquals("song_0", bounded.getMediaItemAt(0).mediaId)
+
+        // Reset to 914 and test seekToNext() as well
+        state.currentIndex = 914
+        bounded.seekToNext()
+        assertEquals(0, state.currentIndex)
+
+        // At index 0 with REPEAT_MODE_ALL, seekToPreviousMediaItem must wrap to 914
+        assertEquals(true, bounded.hasPreviousMediaItem())
+        bounded.seekToPreviousMediaItem()
+        assertEquals(914, state.currentIndex)
+        assertEquals(99, bounded.currentMediaItemIndex)
+        assertEquals("song_914", bounded.getMediaItemAt(99).mediaId)
     }
 }
