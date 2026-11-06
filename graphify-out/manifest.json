@@ -602,9 +602,9 @@
     "semantic_hash": "fc837bedf9cdd0ec8deea81d81ca3d22"
   },
   "app/build.gradle.kts": {
-    "mtime": 1793672041.1116078,
-    "seen": 1793673973.4005232,
-    "ast_hash": "ff73dff816d8e3d68f1c93dea8a51982",
+    "mtime": 1793962331.44184,
+    "seen": 1793963017.2486167,
+    "ast_hash": "8821854001562745c76aa1d97bc73108",
     "semantic_hash": ""
   },
   "app/src/androidTest/java/com/feishin/mobile/data/db/LyricsCacheMigrationTest.kt": {
@@ -1016,10 +1016,10 @@
     "semantic_hash": "180d963e75d825e6cbb4a268f6ebdc4c"
   },
   "app/src/main/java/com/feishin/mobile/data/db/MusicDatabase.kt": {
-    "mtime": 1793096264.2415345,
-    "seen": 1793152989.3493414,
-    "ast_hash": "8ac165e2c9dd50673bccc58a8438aeb1",
-    "semantic_hash": "8ac165e2c9dd50673bccc58a8438aeb1"
+    "mtime": 1793953078.1519766,
+    "seen": 1793953329.57235,
+    "ast_hash": "cdfaa1e5e30807bc40a93959a477ed25",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/data/download/DownloadNotifications.kt": {
     "mtime": 1791913651.6053045,
@@ -1028,9 +1028,9 @@
     "semantic_hash": "86c815ad59d544371fce47d0bcae067a"
   },
   "app/src/main/java/com/feishin/mobile/data/download/DownloadRepository.kt": {
-    "mtime": 1793169157.430077,
-    "seen": 1793169235.9572995,
-    "ast_hash": "a83c969288d996bc42c1a5881bfcd2e1",
+    "mtime": 1793953176.858676,
+    "seen": 1793953329.5723565,
+    "ast_hash": "58eb8b1696fe6e59914f74d8d4bba64c",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/data/download/DownloadScheduler.kt": {
@@ -1070,10 +1070,10 @@
     "semantic_hash": "a5fd62512a30a72072c05b55a077c6c0"
   },
   "app/src/main/java/com/feishin/mobile/data/lyrics/EmbeddedLyricsExtractor.kt": {
-    "mtime": 1792662985.670477,
-    "seen": 1793152989.3520756,
-    "ast_hash": "05da2759bccaf69f655b013535fc3c37",
-    "semantic_hash": "05da2759bccaf69f655b013535fc3c37"
+    "mtime": 1793953055.9985137,
+    "seen": 1793953329.5723758,
+    "ast_hash": "4cc3e7a15e8762d5480105fecbe7c5eb",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/data/lyrics/FileTagLyricsProvider.kt": {
     "mtime": 1792655846.5618696,
@@ -1136,10 +1136,10 @@
     "semantic_hash": "d72f514ff3f00764ae5112028b0e5267"
   },
   "app/src/main/java/com/feishin/mobile/data/queue/QueueStore.kt": {
-    "mtime": 1792657149.5811245,
-    "seen": 1793152989.3547277,
-    "ast_hash": "6deed44bade4488ef6bb17adf1725707",
-    "semantic_hash": "6deed44bade4488ef6bb17adf1725707"
+    "mtime": 1793950947.1420562,
+    "seen": 1793951245.493696,
+    "ast_hash": "9444e901787b1359277dba87b7580e69",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/data/remote/AuthInterceptor.kt": {
     "mtime": 1791813857.65809,
@@ -1178,21 +1178,21 @@
     "semantic_hash": "bebf43b3ea0d36341c4bb62bce6cddba"
   },
   "app/src/main/java/com/feishin/mobile/data/repo/MusicRepository.kt": {
-    "mtime": 1792675258.9417584,
-    "seen": 1793152989.3564296,
-    "ast_hash": "949eb65343e2a9b00274e4dee1b90077",
-    "semantic_hash": "949eb65343e2a9b00274e4dee1b90077"
+    "mtime": 1793940902.6894605,
+    "seen": 1793945304.860989,
+    "ast_hash": "c33135a388403a0f5a52eb4464e0c7c4",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/data/repo/NavidromeLyricsProvider.kt": {
-    "mtime": 1792663493.0279303,
-    "seen": 1793152989.3566666,
-    "ast_hash": "3b916d2f6bac69549100be54e5d04292",
-    "semantic_hash": "3b916d2f6bac69549100be54e5d04292"
+    "mtime": 1793953149.802236,
+    "seen": 1793953329.572427,
+    "ast_hash": "1e14f7f686b6b008dca558d160d63249",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/data/settings/SettingsStore.kt": {
-    "mtime": 1793409072.775401,
-    "seen": 1793409706.394923,
-    "ast_hash": "f179330f77b92e37dd71abacee8eda8d",
+    "mtime": 1793939933.9144814,
+    "seen": 1793940474.1138036,
+    "ast_hash": "55773cf36ce55c3175bd0807386201a7",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/di/CacheModule.kt": {
@@ -1250,27 +1250,27 @@
     "semantic_hash": "6be012b743a18f43b2bb06037650d757"
   },
   "app/src/main/java/com/feishin/mobile/domain/repo/MusicDataRepository.kt": {
-    "mtime": 1792671510.2580523,
-    "seen": 1793152989.3593588,
-    "ast_hash": "5f0b08799b79381d53f914f949a46e2b",
-    "semantic_hash": "5f0b08799b79381d53f914f949a46e2b"
+    "mtime": 1793940870.8053727,
+    "seen": 1793945304.8610406,
+    "ast_hash": "de064bf056a789e8ec96c46a408264a5",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/playback/BoundedQueuePlayer.kt": {
-    "mtime": 1793672727.4112866,
-    "seen": 1793673973.401109,
-    "ast_hash": "5f48ccc7a29d9101be928b0856e4329c",
+    "mtime": 1793945008.931926,
+    "seen": 1793945304.8610437,
+    "ast_hash": "0f453a4127c8735b48eca7929dd3d5df",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/playback/PlayerManager.kt": {
-    "mtime": 1793672727.4147904,
-    "seen": 1793673973.4011211,
-    "ast_hash": "209daad124b5009def269e62f41d00b2",
+    "mtime": 1793959476.3842022,
+    "seen": 1793959611.893664,
+    "ast_hash": "143b8a0fa7def3d685658d58922279c9",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/playback/PlayerService.kt": {
-    "mtime": 1793249887.6723292,
-    "seen": 1793257240.333649,
-    "ast_hash": "540ca5c3f1ce2e296fef45a947e1d281",
+    "mtime": 1793959804.309355,
+    "seen": 1793962312.2156968,
+    "ast_hash": "2e5c5035f01f7ccc512ca06381d8b1f4",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/playback/PrefetchManager.kt": {
@@ -1298,9 +1298,9 @@
     "semantic_hash": "989151c0fdc15feab0c0a897e420efa5"
   },
   "app/src/main/java/com/feishin/mobile/ui/Nav.kt": {
-    "mtime": 1793673528.3712182,
-    "seen": 1793673973.401154,
-    "ast_hash": "7941c617360febc79052e7efd617d0fe",
+    "mtime": 1793941899.9036918,
+    "seen": 1793945304.8610697,
+    "ast_hash": "859b163bb5bc588218b1f3fc7cb2bea9",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/States.kt": {
@@ -1400,10 +1400,10 @@
     "semantic_hash": "6012f743a0eeda0dea7ef85a2e41de48"
   },
   "app/src/main/java/com/feishin/mobile/ui/detail/ArtistScreen.kt": {
-    "mtime": 1792122854.9056478,
-    "seen": 1793152989.3656027,
-    "ast_hash": "660af0f4d019b531e013b6d18b8382cc",
-    "semantic_hash": "660af0f4d019b531e013b6d18b8382cc"
+    "mtime": 1793941800.5547154,
+    "seen": 1793945304.8611162,
+    "ast_hash": "2a5f9d797dd585d0cb3ded3dd16bf41c",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/detail/DetailScreens.kt": {
     "mtime": 1792328005.3529973,
@@ -1436,10 +1436,10 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/library/DeviceFilesScreen.kt": {
-    "mtime": 1792663331.5772128,
-    "seen": 1793152989.367008,
-    "ast_hash": "8eb4079f4c86bfe13f6934444208e36c",
-    "semantic_hash": "8eb4079f4c86bfe13f6934444208e36c"
+    "mtime": 1793953113.2627015,
+    "seen": 1793953329.5725508,
+    "ast_hash": "c26248fa638bd06d4054b1759d19320c",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/library/DeviceFilesViewModel.kt": {
     "mtime": 1792663227.3790913,
@@ -1466,9 +1466,9 @@
     "semantic_hash": "f5cc1e267c1cdada9b4f5f8f95567643"
   },
   "app/src/main/java/com/feishin/mobile/ui/library/LibraryScreen.kt": {
-    "mtime": 1793257662.0798295,
-    "seen": 1793258510.42163,
-    "ast_hash": "e0fcd7d7b0c4c232aa994a19eb0da889",
+    "mtime": 1793953067.4076874,
+    "seen": 1793953329.5725641,
+    "ast_hash": "f9e4d97c86cb0762422f91f3c0acab3e",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/library/LibraryViewModel.kt": {
@@ -1502,10 +1502,10 @@
     "semantic_hash": "30cdc2fa345a3a0e01d720266d031fe9"
   },
   "app/src/main/java/com/feishin/mobile/ui/navigation/NavRules.kt": {
-    "mtime": 1791885320.4776158,
-    "seen": 1793152989.369662,
-    "ast_hash": "9e6006e21ddcb0e49245b1fd8a576a05",
-    "semantic_hash": "9e6006e21ddcb0e49245b1fd8a576a05"
+    "mtime": 1793941661.1639388,
+    "seen": 1793945304.861163,
+    "ast_hash": "b1080ee2d0ed646d7e0e2e65248f9b15",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/offline/DownloadsScreen.kt": {
     "mtime": 1793095488.1682987,
@@ -1532,21 +1532,21 @@
     "semantic_hash": "3b3bf1e01a102e885f3216fa09369d3f"
   },
   "app/src/main/java/com/feishin/mobile/ui/player/LyricsTabCorrections.kt": {
-    "mtime": 1793168830.6744175,
-    "seen": 1793169085.2622669,
-    "ast_hash": "d9f5380ea694bb212a06ec74a76ca55e",
+    "mtime": 1793939921.4185536,
+    "seen": 1793940474.1139758,
+    "ast_hash": "f54f1a686db3c1b686eead8a0150864d",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/player/LyricsViewModel.kt": {
-    "mtime": 1793005490.555341,
-    "seen": 1793152989.371089,
-    "ast_hash": "7a18867a71cf0bb80f61bcdad07a37d3",
-    "semantic_hash": "7a18867a71cf0bb80f61bcdad07a37d3"
+    "mtime": 1793953193.2627783,
+    "seen": 1793953329.5726001,
+    "ast_hash": "a688664f951662f64a3e2aebe3bf1b70",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/player/NowPlayingScreen.kt": {
-    "mtime": 1793673469.1134825,
-    "seen": 1793673973.4014115,
-    "ast_hash": "9ca8a0597b641e134eb14488eaf17400",
+    "mtime": 1793940089.409447,
+    "seen": 1793940474.1139808,
+    "ast_hash": "d178ad27e586a46e27149feb0e9285d8",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/search/SearchScreen.kt": {
@@ -1574,16 +1574,16 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/settings/SettingsScreen.kt": {
-    "mtime": 1793355640.4216354,
-    "seen": 1793356160.9348269,
-    "ast_hash": "c09ef26bca10252f9534421c8b9e7a82",
+    "mtime": 1793941095.0193367,
+    "seen": 1793945304.8612022,
+    "ast_hash": "a189a01054e32361bccff21bbb3085ac",
     "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/settings/SettingsViewModel.kt": {
-    "mtime": 1793095271.9630618,
-    "seen": 1793152989.3727627,
-    "ast_hash": "c900c201895dee287e90776210dc1261",
-    "semantic_hash": "c900c201895dee287e90776210dc1261"
+    "mtime": 1793941010.0959778,
+    "seen": 1793945304.8612044,
+    "ast_hash": "0c42aa09cda1c150ea667a50dc81349a",
+    "semantic_hash": ""
   },
   "app/src/main/java/com/feishin/mobile/ui/theme/Motion.kt": {
     "mtime": 1793355523.0435183,
@@ -1934,10 +1934,10 @@
     "semantic_hash": "49355e302687553e2a4f4943a5d4c81c"
   },
   "app/src/test/java/com/feishin/mobile/data/favorites/FavoritesStoreTest.kt": {
-    "mtime": 1792553681.1863055,
-    "seen": 1793152989.3878303,
-    "ast_hash": "5d8417857d7eb4c6793e685bd07b1cb9",
-    "semantic_hash": "5d8417857d7eb4c6793e685bd07b1cb9"
+    "mtime": 1793940924.3155344,
+    "seen": 1793945304.861386,
+    "ast_hash": "dabcbef82be7cc6e20064c6d60a34d1c",
+    "semantic_hash": ""
   },
   "app/src/test/java/com/feishin/mobile/data/lyrics/EmbeddedLyricsExtractorTest.kt": {
     "mtime": 1792663925.664333,
@@ -2000,10 +2000,10 @@
     "semantic_hash": "252a0abca0a620ede566d7e83f0dde13"
   },
   "app/src/test/java/com/feishin/mobile/data/queue/QueueStoreTest.kt": {
-    "mtime": 1792658090.0316708,
-    "seen": 1793152989.390456,
-    "ast_hash": "9a7860d0158d17c309b28785b2ac97c6",
-    "semantic_hash": "9a7860d0158d17c309b28785b2ac97c6"
+    "mtime": 1793951211.6227343,
+    "seen": 1793951245.4940975,
+    "ast_hash": "58ced59a51bb2bb3c10dbb2e0a446714",
+    "semantic_hash": ""
   },
   "app/src/test/java/com/feishin/mobile/data/remote/RedactingHttpLoggerTest.kt": {
     "mtime": 1792157754.2751358,
@@ -2024,16 +2024,16 @@
     "semantic_hash": "249b455183fa06fd718b92b5083a7dce"
   },
   "app/src/test/java/com/feishin/mobile/playback/BoundedQueuePlayerTest.kt": {
-    "mtime": 1793673234.771548,
-    "seen": 1793673973.4018595,
-    "ast_hash": "6ec4996f2fd55b843c71316e477dc147",
+    "mtime": 1793945248.0138948,
+    "seen": 1793945304.8614407,
+    "ast_hash": "eecc610770c4a64038c66a1f740cc5b7",
     "semantic_hash": ""
   },
   "app/src/test/java/com/feishin/mobile/playback/QueueShufflePipelineTest.kt": {
-    "mtime": 1793000767.5219533,
-    "seen": 1793152989.391757,
-    "ast_hash": "ca822b9500150f2f599c16f1f5fad495",
-    "semantic_hash": "ca822b9500150f2f599c16f1f5fad495"
+    "mtime": 1793956144.6850853,
+    "seen": 1793958911.5160375,
+    "ast_hash": "1b2c0b792e602938a7699cb62fc34e0f",
+    "semantic_hash": ""
   },
   "app/src/test/java/com/feishin/mobile/playback/QueueTapToggleTest.kt": {
     "mtime": 1793001337.411509,
@@ -2042,10 +2042,10 @@
     "semantic_hash": "4fad57a37d8d5cd3ce635d28df2e0b5a"
   },
   "app/src/test/java/com/feishin/mobile/playback/RadioFetcherTest.kt": {
-    "mtime": 1792553681.188306,
-    "seen": 1793152989.392261,
-    "ast_hash": "067126615bd8406e404486409a466c4a",
-    "semantic_hash": "067126615bd8406e404486409a466c4a"
+    "mtime": 1793940914.0698018,
+    "seen": 1793945304.861454,
+    "ast_hash": "7db1e327ac386883711c46a594b13b1b",
+    "semantic_hash": ""
   },
   "app/src/test/java/com/feishin/mobile/playback/TrackMediaItemsTest.kt": {
     "mtime": 1793169541.9756334,
@@ -2060,10 +2060,10 @@
     "semantic_hash": "91e5da3746e83fbf9da39c1f1e689162"
   },
   "app/src/test/java/com/feishin/mobile/ui/library/ViewModelStateTest.kt": {
-    "mtime": 1793062330.1545897,
-    "seen": 1793152989.3930259,
-    "ast_hash": "786ebd752191d46fbab55596d5a19b14",
-    "semantic_hash": "786ebd752191d46fbab55596d5a19b14"
+    "mtime": 1793940940.7777953,
+    "seen": 1793945304.861465,
+    "ast_hash": "44818246e0899c146f4d62caccf5db74",
+    "semantic_hash": ""
   },
   "app/src/test/java/com/feishin/mobile/ui/login/LoginErrorMapperTest.kt": {
     "mtime": 1792556290.024966,
@@ -2072,10 +2072,10 @@
     "semantic_hash": "031da14213f78721aeea0c0fe4a65c08"
   },
   "app/src/test/java/com/feishin/mobile/ui/navigation/NavRulesTest.kt": {
-    "mtime": 1791956500.686086,
-    "seen": 1793152989.393505,
-    "ast_hash": "9be34e3fb9b4f20fba5119a5f92c458a",
-    "semantic_hash": "9be34e3fb9b4f20fba5119a5f92c458a"
+    "mtime": 1793941696.2229676,
+    "seen": 1793945304.86147,
+    "ast_hash": "77c50f2916e62485d249b2d3b7ca3f18",
+    "semantic_hash": ""
   },
   "app/src/test/java/com/feishin/mobile/ui/player/LyricsAnimationTest.kt": {
     "mtime": 1793096720.147637,
@@ -2114,9 +2114,9 @@
     "semantic_hash": "2cd450d62da5fe972dc8a2e2a5e1d1ac"
   },
   "app/src/test/java/com/feishin/mobile/ui/player/LyricsTabCorrectionsTest.kt": {
-    "mtime": 1793168846.5772567,
-    "seen": 1793169085.2625153,
-    "ast_hash": "b772caccb4288a56421ef1a25451d9d2",
+    "mtime": 1793939921.4185536,
+    "seen": 1793940474.114346,
+    "ast_hash": "8c7116bd9269e0286ee25d1aeccc01ff",
     "semantic_hash": ""
   },
   "app/src/test/java/com/feishin/mobile/ui/player/LyricsTabSyncTest.kt": {
@@ -2960,15 +2960,15 @@
     "semantic_hash": ""
   },
   "AGENTS.md": {
-    "mtime": 1793258491.339883,
-    "seen": 1793258510.4222145,
-    "ast_hash": "f36539ecc9af68f33ebd72770ce4a19e",
-    "semantic_hash": "f36539ecc9af68f33ebd72770ce4a19e"
+    "mtime": 1793758158.2166677,
+    "seen": 1793940474.1150715,
+    "ast_hash": "daed9e750b6b7198eacd89e6fd1757a3",
+    "semantic_hash": ""
   },
   "CHANGELOG.md": {
-    "mtime": 1793673992.1803274,
-    "seen": 1793674007.868618,
-    "ast_hash": "304a3011e88e0274682e19d01fbcb3ae",
+    "mtime": 1793962513.283034,
+    "seen": 1793963017.2497947,
+    "ast_hash": "4250b313b77c81d37b3121ff2952aa73",
     "semantic_hash": ""
   },
   "GEMINI.md": {
@@ -2978,9 +2978,9 @@
     "semantic_hash": "d353b17e3db3e93c6146726864324896"
   },
   "PLAN.md": {
-    "mtime": 1793674007.8878462,
-    "seen": 1793674030.329519,
-    "ast_hash": "0327f2de41264a65a0f901fdd7c6bcba",
+    "mtime": 1793962545.8482695,
+    "seen": 1793963017.2497995,
+    "ast_hash": "2c3f5ede0b287758cd283e95efc72630",
     "semantic_hash": ""
   },
   "README.md": {
@@ -3275,6 +3275,426 @@
     "mtime": 1793615568.5108304,
     "seen": 1793673973.4025917,
     "ast_hash": "f6f7a515cd35f25e0f12018387a4d46a",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-bootstrap/agents/openai.yaml": {
+    "mtime": 1793758085.7913325,
+    "seen": 1793940474.1134548,
+    "ast_hash": "4cb9e3ef7b79a05fb3a65e70d3b5421d",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-bootstrap/references/worker-return.schema.json": {
+    "mtime": 1793758085.7933426,
+    "seen": 1793940474.1134598,
+    "ast_hash": "c873e5a03e4d4babb68d1f37a627b732",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-bootstrap/test_scenarios.yaml": {
+    "mtime": 1793758085.7938435,
+    "seen": 1793940474.1134622,
+    "ast_hash": "8e0fddb78dab4b2c2f41cca715248d3c",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-brainstorm/agents/openai.yaml": {
+    "mtime": 1793758085.795844,
+    "seen": 1793940474.113465,
+    "ast_hash": "f93c84e73a60a398d6ba83aabf08d51b",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-brainstorm/test_scenarios.yaml": {
+    "mtime": 1793758085.7973433,
+    "seen": 1793940474.113468,
+    "ast_hash": "cc55ca5d093075b194aecb49773b200f",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-draft/agents/openai.yaml": {
+    "mtime": 1793758085.7993424,
+    "seen": 1793940474.1134708,
+    "ast_hash": "474712b23d3ed46d7dbcdb42857533a2",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-draft/test_scenarios.yaml": {
+    "mtime": 1793758085.8018482,
+    "seen": 1793940474.113473,
+    "ast_hash": "8b1dc50598628738194040146d37d097",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-drift-report/agents/openai.yaml": {
+    "mtime": 1793758085.8043635,
+    "seen": 1793940474.1134756,
+    "ast_hash": "e80dd571454c18b27cb39c0cee89d3c8",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-drift-report/test_scenarios.yaml": {
+    "mtime": 1793758085.8053644,
+    "seen": 1793940474.1134777,
+    "ast_hash": "2c26dbddab339a19cc0dea9d4ddba5c0",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-resolve/agents/openai.yaml": {
+    "mtime": 1793758085.8078618,
+    "seen": 1793940474.11348,
+    "ast_hash": "b90ba75525dede8b5acd265307a5d93e",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-resolve/test_scenarios.yaml": {
+    "mtime": 1793758085.8088627,
+    "seen": 1793940474.1134825,
+    "ast_hash": "42641b45e1b13579f62d1c69f23b8b11",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-review-loop/agents/openai.yaml": {
+    "mtime": 1793758085.8108623,
+    "seen": 1793940474.1134849,
+    "ast_hash": "25fd0e5659f15a3785e47c927e5b5cba",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-review-loop/test_scenarios.yaml": {
+    "mtime": 1793758085.8123605,
+    "seen": 1793940474.113487,
+    "ast_hash": "31a3038d33262a5c8e40a50bcc182427",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-review/agents/openai.yaml": {
+    "mtime": 1793758085.8148725,
+    "seen": 1793940474.1134894,
+    "ast_hash": "b77eca210ea1a952205716907127fb13",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-review/test_scenarios.yaml": {
+    "mtime": 1793758085.8158722,
+    "seen": 1793940474.1134918,
+    "ast_hash": "23b7655a5c8a44f1d51cd8af67a38651",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/feishin/mobile/playback/QueueWindow.kt": {
+    "mtime": 1793940217.8027554,
+    "seen": 1793940474.11385,
+    "ast_hash": "bec5ef556c65c70b14d3b31826cff438",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/feishin/mobile/ui/player/LyricsDebugProbe.kt": {
+    "mtime": 1793940109.588948,
+    "seen": 1793940474.113967,
+    "ast_hash": "c22d830e39f1e1ee4d93620b4bacb3c3",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/feishin/mobile/playback/QueueWindowTest.kt": {
+    "mtime": 1793945248.0189788,
+    "seen": 1793945304.8614519,
+    "ast_hash": "0841c928e8dcf928c58f37aa5c29a7b5",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/agents/bootstrap_orchestrator.md": {
+    "mtime": 1793758085.679164,
+    "seen": 1793940474.114918,
+    "ast_hash": "809ff97f09c4b2e2e967deb8383d10e7",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/agents/codebase_details.md": {
+    "mtime": 1793758085.679665,
+    "seen": 1793940474.1149225,
+    "ast_hash": "6419ba65effdd00abdf817ef9317c4dd",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/agents/comprehension.md": {
+    "mtime": 1793758085.6801646,
+    "seen": 1793940474.1149268,
+    "ast_hash": "c8b3e46ccc364a4d7a8f4474d7317a36",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/agents/design_critic.md": {
+    "mtime": 1793758085.680664,
+    "seen": 1793940474.114931,
+    "ast_hash": "f174ba26d23853f4036e9c51a0541093",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/agents/implementation_readiness.md": {
+    "mtime": 1793758085.6811638,
+    "seen": 1793940474.1149364,
+    "ast_hash": "1e5dc5e149056a7306c0e52e89c00448",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/agents/structural.md": {
+    "mtime": 1793758085.6816638,
+    "seen": 1793940474.1149414,
+    "ast_hash": "bc7cfaf2850213c17b49ed98df78fda5",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/agents/style.md": {
+    "mtime": 1793758085.6821663,
+    "seen": 1793940474.1149464,
+    "ast_hash": "293bc959a4575ddbce1ac9b841b06bcc",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/agents/synthesizer.md": {
+    "mtime": 1793758085.6826646,
+    "seen": 1793940474.114951,
+    "ast_hash": "6080f1cc0862640316325a70bdbdf19c",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/agents/zoom_out.md": {
+    "mtime": 1793758085.683165,
+    "seen": 1793940474.1149554,
+    "ast_hash": "f87d412827aae5e6effc0a05774a8aeb",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/resources/README.md": {
+    "mtime": 1793758085.7517905,
+    "seen": 1793940474.11496,
+    "ast_hash": "a76401377a08399b1e9dd57c76c369b1",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/resources/document_standards/feature-spec-standard.md": {
+    "mtime": 1793758085.7522929,
+    "seen": 1793940474.1149645,
+    "ast_hash": "e219eb396e89abf9b0a326ad7b382afd",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/resources/document_standards/heilmeier-standard.md": {
+    "mtime": 1793758085.7527916,
+    "seen": 1793940474.1149683,
+    "ast_hash": "e03dc42eeccf2c0538359b3986e91073",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/resources/document_standards/implementation-readiness-standard.md": {
+    "mtime": 1793758085.753293,
+    "seen": 1793940474.1149719,
+    "ast_hash": "9d29bd9ca584add9f053c7964b21b598",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/resources/document_standards/re-implementation-standard.md": {
+    "mtime": 1793758085.7537918,
+    "seen": 1793940474.114977,
+    "ast_hash": "b54bc01dedd4a4844006cee5894fa5a3",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/resources/document_standards/zoom-out-standard.md": {
+    "mtime": 1793758085.7542918,
+    "seen": 1793940474.1149812,
+    "ast_hash": "65624df0bca01e0f75ef1b48f340863f",
+    "semantic_hash": ""
+  },
+  ".opencode/egm/resources/execution_instructions.md": {
+    "mtime": 1793758085.7547915,
+    "seen": 1793940474.114986,
+    "ast_hash": "5093a8ae82200b4bf48098f00aaa043c",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-bootstrap/SKILL.md": {
+    "mtime": 1793758085.7903318,
+    "seen": 1793940474.11499,
+    "ast_hash": "34ad0c7ffcf0bd7e7199112e761f8374",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-bootstrap/TEST.md": {
+    "mtime": 1793758085.7908342,
+    "seen": 1793940474.114995,
+    "ast_hash": "60bf245def8cbd18fb5cede0ccf6dfa8",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-bootstrap/references/templates.md": {
+    "mtime": 1793758085.7928374,
+    "seen": 1793940474.1149988,
+    "ast_hash": "83a2d75c85478c351a65a6e5f74f9e8e",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-brainstorm/SKILL.md": {
+    "mtime": 1793758085.7948444,
+    "seen": 1793940474.1150029,
+    "ast_hash": "3519049a8ee308126613818c3351eb93",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-brainstorm/TEST.md": {
+    "mtime": 1793758085.7953434,
+    "seen": 1793940474.1150067,
+    "ast_hash": "3919ec76d365d250b61f61679fc28589",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-draft/SKILL.md": {
+    "mtime": 1793758085.7983465,
+    "seen": 1793940474.1150105,
+    "ast_hash": "7dec0a773a3fd361cbc2ee41671f35fc",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-draft/TEST.md": {
+    "mtime": 1793758085.7988431,
+    "seen": 1793940474.1150143,
+    "ast_hash": "2abd7add1726ce54f6b7061427ec7d57",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-draft/references/design_doc.md": {
+    "mtime": 1793758085.8013453,
+    "seen": 1793940474.1150389,
+    "ast_hash": "33c4db039b4dafc470b430f74200582d",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-drift-report/SKILL.md": {
+    "mtime": 1793758085.8023453,
+    "seen": 1793940474.115045,
+    "ast_hash": "a1b26109ebcdbf80bce69a0138f8180d",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-drift-report/TEST.md": {
+    "mtime": 1793758085.8033552,
+    "seen": 1793940474.115048,
+    "ast_hash": "2231dadea6899543ed6dd68bedcf0ce3",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-resolve/SKILL.md": {
+    "mtime": 1793758085.8063626,
+    "seen": 1793940474.1150508,
+    "ast_hash": "63ef4c917bb6e5e6e2750cf9d5ae0d40",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-resolve/TEST.md": {
+    "mtime": 1793758085.806862,
+    "seen": 1793940474.115053,
+    "ast_hash": "b0e2597ed2ef28922eb1579039c52246",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-review-loop/SKILL.md": {
+    "mtime": 1793758085.8098617,
+    "seen": 1793940474.1150558,
+    "ast_hash": "c8b8f0422b295c607e145002deb066f1",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-review-loop/TEST.md": {
+    "mtime": 1793758085.8103638,
+    "seen": 1793940474.1150584,
+    "ast_hash": "d01dac420d3ed80e87657c1d09f2f64e",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-review/SKILL.md": {
+    "mtime": 1793758085.8128605,
+    "seen": 1793940474.1150613,
+    "ast_hash": "50f74407ec4ec8d644f2298963eaa69d",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-review/TEST.md": {
+    "mtime": 1793758085.8138654,
+    "seen": 1793940474.115064,
+    "ast_hash": "4de97440c96ab9e5ea98f7426283f026",
+    "semantic_hash": ""
+  },
+  "docs/designs/shuffle-model.md": {
+    "mtime": 1793950926.2813518,
+    "seen": 1793951245.4946134,
+    "ast_hash": "6d6279311c8c58f02a8b813dc783ecae",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-bootstrap/assets/icon.svg": {
+    "mtime": 1793758085.7918322,
+    "seen": 1793940474.1151462,
+    "ast_hash": "2046d2dec5ae5a367a1096a1f2d9e785",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-brainstorm/assets/icon.svg": {
+    "mtime": 1793758085.796843,
+    "seen": 1793940474.1151488,
+    "ast_hash": "8269f14c0c243ff88bcd03ffd9bbb6d6",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-draft/assets/icon.svg": {
+    "mtime": 1793758085.8003428,
+    "seen": 1793940474.1151512,
+    "ast_hash": "d24f15c87d25b780a9b194e4c3376882",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-drift-report/assets/icon.svg": {
+    "mtime": 1793758085.804864,
+    "seen": 1793940474.115154,
+    "ast_hash": "0ba4de20ff3a08475dd11db4fe9b36c6",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-resolve/assets/icon.svg": {
+    "mtime": 1793758085.8083613,
+    "seen": 1793940474.115156,
+    "ast_hash": "14ba854280957b89d986c02a44ae8c68",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-review-loop/assets/icon.svg": {
+    "mtime": 1793758085.8118615,
+    "seen": 1793940474.1151583,
+    "ast_hash": "d48c9e38b89927edf3bbf4088379eff0",
+    "semantic_hash": ""
+  },
+  ".opencode/skills/egm-review/assets/icon.svg": {
+    "mtime": 1793758085.815372,
+    "seen": 1793940474.1151605,
+    "ast_hash": "284eb105398d97429e25b2979d366456",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/feishin/mobile/ui/settings/ScanCoordinator.kt": {
+    "mtime": 1793956002.4875054,
+    "seen": 1793958911.515249,
+    "ast_hash": "f1aa6546c3f05aaab60bb7f9596b594e",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/feishin/mobile/ui/settings/ScanCoordinatorTest.kt": {
+    "mtime": 1793956708.6936924,
+    "seen": 1793958911.5161946,
+    "ast_hash": "9e0efbd825a8f501a5fee52928dbb608",
+    "semantic_hash": ""
+  },
+  "docs/reference/after-10.3/A-probe.txt": {
+    "mtime": 1793950469.2976105,
+    "seen": 1793950554.4137743,
+    "ast_hash": "b22421c2ae1731a07dabefa0dd65e0fc",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/feishin/mobile/core/common/ShuffleModel.kt": {
+    "mtime": 1793945494.6927953,
+    "seen": 1793945546.8899589,
+    "ast_hash": "660c3b188f3fe5e35f9ef7473ae2e785",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/feishin/mobile/core/common/ShuffleModelTest.kt": {
+    "mtime": 1793945424.4576685,
+    "seen": 1793945546.8904338,
+    "ast_hash": "9850196cf317d28a27243413088178d2",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/feishin/mobile/SweepFixesTest.kt": {
+    "mtime": 1793960031.305941,
+    "seen": 1793962312.2158325,
+    "ast_hash": "875347b773b5b708a1347762678f8728",
+    "semantic_hash": ""
+  },
+  "docs/KNOWN_ISSUES.md": {
+    "mtime": 1793959565.3520243,
+    "seen": 1793959611.8944316,
+    "ast_hash": "3c7d927649348ecffcac3d53dfcebafc",
+    "semantic_hash": ""
+  },
+  "docs/reference/after-10.3/lyrics-probe.txt": {
+    "mtime": 1793953244.5889297,
+    "seen": 1793953329.57381,
+    "ast_hash": "630f9d3dd9563b360904164890d016be",
+    "semantic_hash": ""
+  },
+  "docs/reference/after-10.3/albums-transition/verification.txt": {
+    "mtime": 1793954133.7171419,
+    "seen": 1793954193.8091428,
+    "ast_hash": "58d7d1ab4624a6a438667f3b6006ce0b",
+    "semantic_hash": ""
+  },
+  "docs/reference/after-10.3/B-shuffle-verification.txt": {
+    "mtime": 1793958808.830998,
+    "seen": 1793958911.5174181,
+    "ast_hash": "8807ee7cb33a8aa6e767618f350b7167",
+    "semantic_hash": ""
+  },
+  "docs/reference/after-10.3/E-scan-verification.txt": {
+    "mtime": 1793959551.479453,
+    "seen": 1793959611.894471,
+    "ast_hash": "b9f1f1f7d55d994596e371b2f0fa17ea",
+    "semantic_hash": ""
+  },
+  "docs/reference/after-10.3/F2-monkey-logcat.txt": {
+    "mtime": 1793960505.6482463,
+    "seen": 1793962312.2164207,
+    "ast_hash": "0a6d99a68511974d0722c9fee4f2ad38",
     "semantic_hash": ""
   }
 }
