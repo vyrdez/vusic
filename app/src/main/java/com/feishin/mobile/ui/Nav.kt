@@ -192,10 +192,12 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     val currentTrack by main.player.current.collectAsStateWithLifecycle()
     LaunchedEffect(currentTrack) { if (currentTrack == null) nowPlayingSheet.close() }
 
-    // Hoisted lyrics list state and last scrolled index so collapsing and
-    // re-expanding Now Playing within the session retains the exact scroll position.
+    // Hoisted lyrics list state, last scrolled index, and last measured viewport height
+    // so collapsing and re-expanding Now Playing within the session can pre-snap to the
+    // exact 35% anchor on Frame 1 before layout.
     val lyricsListState = rememberLazyListState()
     var lastScrolledLyricsIndex by rememberSaveable(currentTrack?.id) { mutableIntStateOf(-1) }
+    var lastMeasuredLyricsViewportPx by rememberSaveable { mutableIntStateOf(0) }
     var lastLyricsTrackId by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(currentTrack?.id) {
         if (lastLyricsTrackId != currentTrack?.id) {
@@ -597,6 +599,8 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                         lyricsListState = lyricsListState,
                         lastScrolledLyricsIndex = lastScrolledLyricsIndex,
                         onUpdateLastScrolledLyricsIndex = { lastScrolledLyricsIndex = it },
+                        lastMeasuredLyricsViewportPx = lastMeasuredLyricsViewportPx,
+                        onUpdateLastMeasuredLyricsViewportPx = { lastMeasuredLyricsViewportPx = it },
                     )
                 }
             }

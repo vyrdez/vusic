@@ -50,6 +50,17 @@ class SettingsStore internal constructor(
     val lyricsModeState: kotlinx.coroutines.flow.StateFlow<Boolean> = lyricsModeSession
     val nowPlayingLyricsMode: Boolean get() = lyricsModeSession.value
 
+    /**
+     * Latest resolved [Settings] snapshot, updated whenever [flow] is collected
+     * or modified via [edit] / [setNowPlayingLyricsMode]. Allows UI consumers
+     * (such as Now Playing on warm reopen) to read the current settings
+     * synchronously on Frame 1 without waiting for an asynchronous emission.
+     */
+    @Volatile
+    var latestSettings: Settings? = null
+        private set
+
+
     private object K {
         val theme = stringPreferencesKey("theme")
         val wifiBitrate = intPreferencesKey("wifi_bitrate")
@@ -302,7 +313,7 @@ class SettingsStore internal constructor(
                     val key = k.name.removePrefix(PLAYLIST_SORT_PREFIX)
                     (v as? String)?.let { raw -> key to com.feishin.mobile.core.common.PlaylistSort.parse(raw) }
                 }.toMap(),
-        )
+        ).also { latestSettings = it }
     }
 
     companion object {
@@ -386,7 +397,10 @@ class SettingsStore internal constructor(
     suspend fun setLyricsRespectAgentPositioning(v: Boolean) = edit { it[K.lyricsRespectAgentPositioning] = v }
     suspend fun setLyricsShowIntervalIndicator(v: Boolean) = edit { it[K.lyricsShowIntervalIndicator] = v }
     /** Session-scoped: survives navigation and rotation, not process death. */
-    suspend fun setNowPlayingLyricsMode(v: Boolean) { lyricsModeSession.value = v }
+    suspend fun setNowPlayingLyricsMode(v: Boolean) {
+        lyricsModeSession.value = v
+        latestSettings = latestSettings?.copy(nowPlayingLyricsMode = v)
+    }
     suspend fun setLyricsLineGapPercent(v: Int) = edit { it[K.lyricsLineGapPercent] = v.coerceIn(50, 200) }
     suspend fun resetLyricsLineGap() = setLyricsLineGapPercent(100)
     suspend fun setLyricsRomanize(v: Boolean) = edit { it[K.lyricsRomanize] = v }

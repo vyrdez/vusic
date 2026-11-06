@@ -256,6 +256,8 @@ fun NowPlayingScreen(
     lyricsListState: LazyListState = rememberLazyListState(),
     lastScrolledLyricsIndex: Int = -1,
     onUpdateLastScrolledLyricsIndex: ((Int) -> Unit)? = null,
+    lastMeasuredLyricsViewportPx: Int = 0,
+    onUpdateLastMeasuredLyricsViewportPx: ((Int) -> Unit)? = null,
 ) {
     BackHandler(onBack = onClose)
     val focusManager = LocalFocusManager.current
@@ -268,7 +270,9 @@ fun NowPlayingScreen(
     val current = song
     val plainLyricsScrollState = rememberScrollState()
     val lyricsUi by lyricsVm.ui.collectAsStateWithLifecycle()
-    val lyricsSettings by lyricsVm.settings.flow.collectAsStateWithLifecycle(initialValue = null)
+    val lyricsSettings by lyricsVm.settings.flow.collectAsStateWithLifecycle(
+        initialValue = lyricsVm.settings.latestSettings,
+    )
 
     var internalLastScrolledIndex by rememberSaveable(current?.id) { mutableIntStateOf(-1) }
     val effectiveLastScrolledIndex = if (onUpdateLastScrolledLyricsIndex != null) {
@@ -279,7 +283,7 @@ fun NowPlayingScreen(
     val updateLastScrolledIndex: (Int) -> Unit = onUpdateLastScrolledLyricsIndex ?: {
         internalLastScrolledIndex = it
     }
-    var loadedTrackId by rememberSaveable { mutableStateOf<String?>(null) }
+    var loadedTrackId by rememberSaveable { mutableStateOf<String?>(current?.id) }
 
     LaunchedEffect(current?.id) {
         lyricsVm.load(current)
@@ -847,6 +851,8 @@ fun NowPlayingScreen(
                         isLeaving = isLeaving,
                         lastScrolledIndex = effectiveLastScrolledIndex,
                         onUpdateLastScrolledIndex = updateLastScrolledIndex,
+                        lastMeasuredViewportPx = lastMeasuredLyricsViewportPx,
+                        onUpdateLastMeasuredViewportPx = onUpdateLastMeasuredLyricsViewportPx ?: {},
                         modifier = Modifier.fillMaxSize().lyricsEdgeFade(),
                     )
                 }
@@ -1287,6 +1293,8 @@ private fun LyricsPanel(
     isLeaving: Boolean = false,
     lastScrolledIndex: Int = -1,
     onUpdateLastScrolledIndex: (Int) -> Unit = {},
+    lastMeasuredViewportPx: Int = 0,
+    onUpdateLastMeasuredViewportPx: (Int) -> Unit = {},
 ) {
     val ui by lyricsVm.ui.collectAsStateWithLifecycle()
     val s = settings
@@ -1407,6 +1415,8 @@ private fun LyricsPanel(
                 isLeaving = isLeaving,
                 lastScrolledIndex = lastScrolledIndex,
                 onUpdateLastScrolledIndex = onUpdateLastScrolledIndex,
+                lastMeasuredViewportPx = lastMeasuredViewportPx,
+                onUpdateLastMeasuredViewportPx = onUpdateLastMeasuredViewportPx,
                 onSeek = { ms -> if (s?.lyricsTapToSeek != false) player.seekTo(ms) },
             )
         }
@@ -1430,6 +1440,8 @@ private fun SyncedLyricsList(
     isLeaving: Boolean = false,
     lastScrolledIndex: Int = -1,
     onUpdateLastScrolledIndex: (Int) -> Unit = {},
+    lastMeasuredViewportPx: Int = 0,
+    onUpdateLastMeasuredViewportPx: (Int) -> Unit = {},
 ) {
     val alignment = when (settings?.lyricsAlignment) {
         "LEFT" -> TextAlign.Start
@@ -1453,12 +1465,11 @@ private fun SyncedLyricsList(
 
     val density = LocalDensity.current
     val contentPaddingTopPx = with(density) { 32.dp.roundToPx() }
-    val estimatedViewportPx = with(density) {
-        (LocalConfiguration.current.screenHeightDp.dp * 0.65f).roundToPx().coerceAtLeast(1)
-    }
+    val contentPaddingBottomPx = with(density) { 96.dp.roundToPx() }
 
     val pos by player.position.collectAsStateWithLifecycle()
-    val livePos = remember(pos, lyrics, isTabActive) { player.livePositionMs() }
+    val isVisibleAndSettled = isTabActive && !isLeaving
+    val livePos = remember(pos, lyrics, isTabActive, isLeaving) { player.livePositionMs() }
     val effectivePosition = livePos + userOffsetMs
     val activeIndex = remember(lyrics, effectivePosition) { lyrics.lineIndexAt(effectivePosition) }
 
@@ -1476,41 +1487,143 @@ private fun SyncedLyricsList(
         }
     }
 
-    // Synchronous pre-frame-1 snap when entering composition while activeIndex >= 0,
-    // ensuring both tab switches (Song -> Lyrics) and close/reopen anchor activeIndex at ~35%.
-    remember(lyrics, activeIndex >= 0) {
-        if (autoScroll && activeIndex >= 0 && lyrics.lines.isNotEmpty()) {
-            val knownViewport = (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset)
-                .takeIf { it > 0 } ?: estimatedViewportPx
-            val initialOffset = computeLyricsScrollOffset(knownViewport, contentPaddingTopPx, 0.35f)
-            listState.requestScrollToItem(activeIndex, initialOffset)
+    val currentLayoutSignature = remember(settings) {
+        settings?.let {
+            LyricsLayoutSignature(
+                textSize = it.lyricsTextSize,
+                lineGapPercent = it.lyricsLineGapPercent,
+                romanize = it.lyricsRomanize,
+            )
         }
-        true
     }
 
     val needsInitialSnap = autoScroll && activeIndex >= 0 && lyrics.lines.isNotEmpty()
-    var isFirstEntry by remember { mutableStateOf(needsInitialSnap) }
-    var isInitialSnapComplete by remember {
-        val hasMeasuredViewport = (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset) > 0
-        mutableStateOf(!needsInitialSnap || hasMeasuredViewport)
+    var isFirstEntry by remember(lyrics) { mutableStateOf(needsInitialSnap) }
+    var wasVisibleAndSettled by remember { mutableStateOf(isVisibleAndSettled) }
+    var lastSnappedViewportHeight by remember(lyrics) { mutableIntStateOf(0) }
+    var lastSnappedSignature by remember(lyrics) { mutableStateOf<LyricsLayoutSignature?>(null) }
+
+    // Synchronously derive entry/leave transitions during composition so neither
+    // animateFloatAsState nor LaunchedEffect ever sees a 1-frame stale isFirstEntry.
+    if (isVisibleAndSettled && !wasVisibleAndSettled) {
+        wasVisibleAndSettled = true
+        if (autoScroll && lyrics.lines.isNotEmpty()) {
+            isFirstEntry = true
+        }
+        onUpdateLastScrolledIndex(-1)
+    } else if (!isVisibleAndSettled && wasVisibleAndSettled) {
+        wasVisibleAndSettled = false
+        onUpdateLastScrolledIndex(-1)
     }
 
-    LaunchedEffect(isLeaving) {
-        if (!isLeaving && autoScroll && activeIndex >= 0 && lyrics.lines.isNotEmpty()) {
-            isFirstEntry = true
+    val measuredViewportNow = (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset)
+        .takeIf { it > 0 } ?: lastMeasuredViewportPx.coerceAtLeast(0)
+
+    // Synchronous pre-frame-1 snap when a real measured viewport (live or hoisted from last open)
+    // and settings are already known. Never uses a screen-height estimate.
+    val preSnappedThisFrame = remember(lyrics, isVisibleAndSettled, currentLayoutSignature, activeIndex >= 0) {
+        if (isVisibleAndSettled && autoScroll && activeIndex >= 0 && lyrics.lines.isNotEmpty() && settings != null && measuredViewportNow > 0) {
+            val initialOffset = computeLyricsScrollOffset(measuredViewportNow, contentPaddingTopPx, 0.35f)
+            listState.requestScrollToItem(activeIndex, initialOffset)
+            LyricsDebugProbe.logIfEnabled(
+                ev = LyricsDebugProbe.EV_PRE_SNAP,
+                posMs = livePos,
+                userOffMs = userOffsetMs,
+                songOffMs = lyrics.offsetMs,
+                expIdx = activeIndex,
+                renIdx = activeIndex,
+                lastIdx = lastScrolledIndex,
+                listState = listState,
+                vpH = measuredViewportNow,
+                padTop = contentPaddingTopPx,
+                padBot = contentPaddingBottomPx,
+                anchorY = computeLyricsAnchorPx(measuredViewportNow, 0.35f),
+                tabVis = isTabActive,
+                leaving = isLeaving,
+                firstEntry = isFirstEntry,
+                settingsLoaded = true,
+                densityScale = density.density,
+            )
+            true
+        } else {
+            false
         }
     }
 
+    var isInitialSnapComplete by remember(lyrics) {
+        mutableStateOf(!needsInitialSnap || preSnappedThisFrame)
+    }
+    if (preSnappedThisFrame && !isInitialSnapComplete) {
+        isInitialSnapComplete = true
+    }
+
     LaunchedEffect(Unit) {
+        LyricsDebugProbe.logIfEnabled(
+            ev = LyricsDebugProbe.EV_ENTER_COMP,
+            posMs = livePos,
+            userOffMs = userOffsetMs,
+            songOffMs = lyrics.offsetMs,
+            expIdx = activeIndex,
+            renIdx = activeIndex,
+            lastIdx = lastScrolledIndex,
+            listState = listState,
+            vpH = measuredViewportNow,
+            padTop = contentPaddingTopPx,
+            padBot = contentPaddingBottomPx,
+            anchorY = computeLyricsAnchorPx(measuredViewportNow, 0.35f),
+            tabVis = isTabActive,
+            leaving = isLeaving,
+            firstEntry = isFirstEntry,
+            settingsLoaded = settings != null,
+            densityScale = density.density,
+        )
         delay(500L)
         isInitialSnapComplete = true
     }
 
-    LaunchedEffect(activeIndex, isTabActive, isLeaving, userScrolledAway, autoScroll, isFirstEntry) {
+    LaunchedEffect(isLeaving) {
+        if (isLeaving) {
+            LyricsDebugProbe.logIfEnabled(
+                ev = LyricsDebugProbe.EV_LEAVE_START,
+                posMs = livePos,
+                userOffMs = userOffsetMs,
+                songOffMs = lyrics.offsetMs,
+                expIdx = activeIndex,
+                renIdx = activeIndex,
+                lastIdx = lastScrolledIndex,
+                listState = listState,
+                vpH = measuredViewportNow,
+                padTop = contentPaddingTopPx,
+                padBot = contentPaddingBottomPx,
+                anchorY = computeLyricsAnchorPx(measuredViewportNow, 0.35f),
+                tabVis = isTabActive,
+                leaving = true,
+                firstEntry = isFirstEntry,
+                settingsLoaded = settings != null,
+                densityScale = density.density,
+            )
+        }
+    }
+
+    LaunchedEffect(
+        activeIndex,
+        isTabActive,
+        isLeaving,
+        userScrolledAway,
+        autoScroll,
+        isFirstEntry,
+        currentLayoutSignature,
+        measuredViewportNow,
+    ) {
         if (!shouldRunLyricsScroll(isTabActive, isLeaving, userScrolledAway) || activeIndex < 0 || !autoScroll) {
             if (!autoScroll || activeIndex < 0) {
                 isInitialSnapComplete = true
             }
+            return@LaunchedEffect
+        }
+        // Gate initial snap until real settings are loaded so we never consume isFirstEntry
+        // with default font size / 0ms sync offset when real settings are still null.
+        if (settings == null) {
             return@LaunchedEffect
         }
         val viewport = listState.layoutInfo.let { it.viewportEndOffset - it.viewportStartOffset }
@@ -1519,22 +1632,98 @@ private fun SyncedLyricsList(
                 snapshotFlow { listState.layoutInfo.let { it.viewportEndOffset - it.viewportStartOffset } }
                     .filter { it > 0 }
                     .first()
-            } ?: listState.layoutInfo.let { it.viewportEndOffset - it.viewportStartOffset }.takeIf { it > 0 } ?: with(density) { 600.dp.roundToPx() }
+            } ?: listState.layoutInfo.let { it.viewportEndOffset - it.viewportStartOffset }.takeIf { it > 0 } ?: return@LaunchedEffect
         }
-        val targetScrollOffset = computeLyricsScrollOffset(viewportHeight, contentPaddingTopPx, 0.35f)
+        val viewportChanged = lastSnappedViewportHeight != viewportHeight
+        val settingsSignatureChanged = lastSnappedSignature != currentLayoutSignature
+        if (viewportHeight > 0 && viewportHeight != lastMeasuredViewportPx) {
+            onUpdateLastMeasuredViewportPx(viewportHeight)
+        }
+        if (viewportChanged) {
+            LyricsDebugProbe.logIfEnabled(
+                ev = LyricsDebugProbe.EV_VIEWPORT_MEASURED,
+                posMs = livePos,
+                userOffMs = userOffsetMs,
+                songOffMs = lyrics.offsetMs,
+                expIdx = activeIndex,
+                renIdx = activeIndex,
+                lastIdx = lastScrolledIndex,
+                listState = listState,
+                vpH = viewportHeight,
+                padTop = contentPaddingTopPx,
+                padBot = contentPaddingBottomPx,
+                anchorY = computeLyricsAnchorPx(viewportHeight, 0.35f),
+                tabVis = isTabActive,
+                leaving = isLeaving,
+                firstEntry = isFirstEntry,
+                settingsLoaded = true,
+                densityScale = density.density,
+            )
+        }
 
+        val targetScrollOffset = computeLyricsScrollOffset(viewportHeight, contentPaddingTopPx, 0.35f)
         val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
         val forceSnapFromZero = listState.firstVisibleItemIndex == 0 &&
             listState.firstVisibleItemScrollOffset == 0 &&
             activeIndex > 0
-        val action = resolveLyricsScrollStep(isFirstEntry || forceSnapFromZero, activeIndex, lastScrolledIndex, itemInfo != null)
+        val forceSnap = shouldForceLyricsSnap(
+            isFirstEntry = isFirstEntry,
+            forceSnapFromZero = forceSnapFromZero,
+            viewportChanged = viewportChanged,
+            settingsSignatureChanged = settingsSignatureChanged,
+        )
+        val action = resolveLyricsScrollStep(forceSnap, activeIndex, lastScrolledIndex, itemInfo != null)
 
         when (action) {
             ScrollAction.SNAP -> {
+                val wasFirstEntry = isFirstEntry
                 listState.scrollToItem(activeIndex, targetScrollOffset)
                 isFirstEntry = false
                 isInitialSnapComplete = true
+                lastSnappedViewportHeight = viewportHeight
+                lastSnappedSignature = currentLayoutSignature
                 onUpdateLastScrolledIndex(activeIndex)
+                LyricsDebugProbe.logIfEnabled(
+                    ev = LyricsDebugProbe.EV_SCROLL_STEP,
+                    posMs = livePos,
+                    userOffMs = userOffsetMs,
+                    songOffMs = lyrics.offsetMs,
+                    expIdx = activeIndex,
+                    renIdx = activeIndex,
+                    lastIdx = lastScrolledIndex,
+                    listState = listState,
+                    vpH = viewportHeight,
+                    padTop = contentPaddingTopPx,
+                    padBot = contentPaddingBottomPx,
+                    anchorY = computeLyricsAnchorPx(viewportHeight, 0.35f),
+                    tabVis = isTabActive,
+                    leaving = isLeaving,
+                    firstEntry = false,
+                    settingsLoaded = true,
+                    densityScale = density.density,
+                )
+                if (wasFirstEntry || viewportChanged || settingsSignatureChanged) {
+                    LyricsDebugProbe.logIfEnabled(
+                        ev = LyricsDebugProbe.EV_FRAME_SETTLED,
+                        posMs = livePos,
+                        userOffMs = userOffsetMs,
+                        songOffMs = lyrics.offsetMs,
+                        expIdx = activeIndex,
+                        renIdx = activeIndex,
+                        lastIdx = activeIndex,
+                        listState = listState,
+                        vpH = viewportHeight,
+                        padTop = contentPaddingTopPx,
+                        padBot = contentPaddingBottomPx,
+                        anchorY = computeLyricsAnchorPx(viewportHeight, 0.35f),
+                        tabVis = isTabActive,
+                        leaving = isLeaving,
+                        firstEntry = false,
+                        settingsLoaded = true,
+                        densityScale = density.density,
+                        includeAnchorErrDp = true,
+                    )
+                }
             }
             ScrollAction.ANIMATE -> {
                 if (itemInfo != null) {
@@ -1551,7 +1740,28 @@ private fun SyncedLyricsList(
                 }
                 isFirstEntry = false
                 isInitialSnapComplete = true
+                lastSnappedViewportHeight = viewportHeight
+                lastSnappedSignature = currentLayoutSignature
                 onUpdateLastScrolledIndex(activeIndex)
+                LyricsDebugProbe.logIfEnabled(
+                    ev = LyricsDebugProbe.EV_SCROLL_STEP,
+                    posMs = livePos,
+                    userOffMs = userOffsetMs,
+                    songOffMs = lyrics.offsetMs,
+                    expIdx = activeIndex,
+                    renIdx = activeIndex,
+                    lastIdx = lastScrolledIndex,
+                    listState = listState,
+                    vpH = viewportHeight,
+                    padTop = contentPaddingTopPx,
+                    padBot = contentPaddingBottomPx,
+                    anchorY = computeLyricsAnchorPx(viewportHeight, 0.35f),
+                    tabVis = isTabActive,
+                    leaving = isLeaving,
+                    firstEntry = false,
+                    settingsLoaded = true,
+                    densityScale = density.density,
+                )
             }
             null -> {
                 isInitialSnapComplete = true
@@ -1697,7 +1907,7 @@ private fun SyncedLyricsList(
                     userScrolledAway = false
                     coroutineScope.launch {
                         val viewportHeight = listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
-                        val targetOffset = -(viewportHeight * 0.32f).toInt()
+                        val targetOffset = computeLyricsScrollOffset(viewportHeight, contentPaddingTopPx, 0.35f)
                         listState.animateScrollToItem(activeIndex, targetOffset)
                     }
                 },

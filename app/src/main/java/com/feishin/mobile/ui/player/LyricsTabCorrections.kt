@@ -91,3 +91,30 @@ fun computeLyricsScrollDelta(
     val anchorPx = computeLyricsAnchorPx(viewportHeight, anchorFraction)
     return (itemTopOffset - anchorPx).toFloat()
 }
+
+/**
+ * Packed layout-affecting signature for synced lyrics.
+ * A change in text size, line gap, or romanization changes item heights,
+ * requiring a fresh snap to keep the active line anchored at 35%.
+ */
+data class LyricsLayoutSignature(
+    val textSize: String,
+    val lineGapPercent: Int,
+    val romanize: Boolean,
+)
+
+/**
+ * Pure helper deciding whether the lyrics scroll engine must force a SNAP
+ * (instead of animating or skipping when `activeIndex == lastScrolledIndex`).
+ *
+ * Returns true on initial/reopen entry, when the list is stuck at (0, 0) for
+ * a non-zero active line, or whenever the measured viewport height or
+ * layout-affecting settings signature changed since the last snap.
+ */
+fun shouldForceLyricsSnap(
+    isFirstEntry: Boolean,
+    forceSnapFromZero: Boolean,
+    viewportChanged: Boolean,
+    settingsSignatureChanged: Boolean,
+): Boolean = isFirstEntry || forceSnapFromZero || viewportChanged || settingsSignatureChanged
+

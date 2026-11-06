@@ -194,4 +194,105 @@ class LyricsTabCorrectionsTest {
             ),
         )
     }
+
+    @Test
+    fun reopenAfterCollapseOrCancelAlwaysSnaps() {
+        // When transitioning from isLeaving = true -> false (reopen or cancelled collapse),
+        // isFirstEntry becomes true and lastScrolledIndex is reset (or even if activeIndex == lastScrolledIndex),
+        // resolveLyricsScrollStep must return SNAP.
+        val forceSnap = shouldForceLyricsSnap(
+            isFirstEntry = true,
+            forceSnapFromZero = false,
+            viewportChanged = false,
+            settingsSignatureChanged = false,
+        )
+        assertTrue(forceSnap)
+        assertEquals(
+            ScrollAction.SNAP,
+            resolveLyricsScrollStep(
+                isFirstEntryInComposition = forceSnap,
+                activeIndex = 8,
+                lastScrolledIndex = 8,
+                isTargetItemVisible = true,
+            ),
+        )
+        assertEquals(
+            ScrollAction.SNAP,
+            resolveLyricsScrollStep(
+                isFirstEntryInComposition = forceSnap,
+                activeIndex = 8,
+                lastScrolledIndex = -1,
+                isTargetItemVisible = false,
+            ),
+        )
+    }
+
+    @Test
+    fun layoutSignatureChangeForcesSnap() {
+        // No change in steady state -> false
+        assertFalse(
+            shouldForceLyricsSnap(
+                isFirstEntry = false,
+                forceSnapFromZero = false,
+                viewportChanged = false,
+                settingsSignatureChanged = false,
+            ),
+        )
+        // Settings loaded or changed (textSize, lineGap, romanize) -> true
+        assertTrue(
+            shouldForceLyricsSnap(
+                isFirstEntry = false,
+                forceSnapFromZero = false,
+                viewportChanged = false,
+                settingsSignatureChanged = true,
+            ),
+        )
+        // Viewport measured or resized -> true
+        assertTrue(
+            shouldForceLyricsSnap(
+                isFirstEntry = false,
+                forceSnapFromZero = false,
+                viewportChanged = true,
+                settingsSignatureChanged = false,
+            ),
+        )
+        // Stuck at (0, 0) with activeIndex > 0 -> true
+        assertTrue(
+            shouldForceLyricsSnap(
+                isFirstEntry = false,
+                forceSnapFromZero = true,
+                viewportChanged = false,
+                settingsSignatureChanged = false,
+            ),
+        )
+        // When forced, resolveLyricsScrollStep returns SNAP even on same activeIndex
+        val forced = shouldForceLyricsSnap(
+            isFirstEntry = false,
+            forceSnapFromZero = false,
+            viewportChanged = false,
+            settingsSignatureChanged = true,
+        )
+        assertEquals(
+            ScrollAction.SNAP,
+            resolveLyricsScrollStep(
+                isFirstEntryInComposition = forced,
+                activeIndex = 12,
+                lastScrolledIndex = 12,
+                isTargetItemVisible = true,
+            ),
+        )
+    }
+
+    @Test
+    fun syncButtonUsesUnifiedAnchorOffset() {
+        val viewportHeight = 1680
+        val contentPaddingTopPx = 84
+        val expected = computeLyricsScrollOffset(
+            viewportHeight = viewportHeight,
+            contentPaddingTopPx = contentPaddingTopPx,
+            anchorFraction = 0.35f,
+        )
+        // anchorPx = (1680 * 0.35).toInt() = 588; offset = -(588 - 84) = -504
+        assertEquals(-504, expected)
+    }
 }
