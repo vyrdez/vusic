@@ -1652,3 +1652,27 @@ Version 1.3.2 (versionCode 16) — `applicationId com.feishin.mobile` unchanged.
 - **P10.2-D fix downloaded song in-app scrub crash** (`BoundedQueuePlayer.kt`, `PlayerManager.kt`, `NowPlayingScreen.kt`, `BoundedQueuePlayerTest.kt`):
   - Root cause: In Media3, `MediaController.seekTo(pos)` sends `seekTo(getCurrentMediaItemIndex(), pos)` across Binder. `BoundedQueuePlayer` overridden `getCurrentMediaItemIndex()` returned a relative index (0..99), but did NOT override `seekTo(index, pos)`, passing the relative index to ExoPlayer and seeking backwards by `windowStart` items into wrong or un-downloaded tracks in large queues (like 900+ songs in Downloads), causing fatal timeline crashes.
   - Fix: Overrode `seekTo(mediaItemIndex, positionMs)`, `seekToDefaultPosition(mediaItemIndex)`, and `seekTo(positionMs)` in `BoundedQueuePlayer` to map window-relative indices back to real ExoPlayer indices via `windowStart()`. Hardened `SeekBar` and `PlayerManager.seekTo` with `runCatching` and `dur <= 0L` checks.
+
+## Phase 10.3 status: rapid skipping, mini player scrub, offline playback, lyrics sync, scan status & sweep fixes (1.3.3)
+
+Version 1.3.3 (versionCode 17) — `applicationId com.feishin.mobile` unchanged.
+
+- **P10.3-A rapid skip queue stabilization** (`PlayerManager.kt`, `PlayerService.kt`, `QueueOps.kt`):
+  - Root cause: Rapid Next/Previous skips triggered concurrent asynchronous `seekToDefaultPosition` and timeline updates, desynchronizing `_currentIndex` from ExoPlayer's window index and clobbering in-flight queue mutations.
+  - Fix: Added atomic skip sequencing and MediaController window index resolution guard so rapid user skip bursts coalesce and preserve queue integrity.
+- **P10.3-B mini player progress scrub & live seek** (`MiniPlayer.kt`, `PlayerManager.kt`, `PlaybackProgress.kt`):
+  - Root cause: Mini player scrub bar lacked smooth drag tracking and immediate audio position synchronization.
+  - Fix: Connected mini player scrub directly to seek pipeline with live progress feedback, debounced commits, and smooth visual feedback without jumpy progress.
+- **P10.3-C offline playback & queue retention** (`PlayerService.kt`, `DownloadRepository.kt`, `OfflinePlaybackPolicy.kt`):
+  - Root cause: Network transitions during active playback dropped non-cached queue entries and failed to transition smoothly to local downloaded media.
+  - Fix: Added offline track validation in `resolvePlayRequest` and graceful fallback skipping of un-downloaded tracks while preserving queue order.
+- **P10.3-D lyrics sync engine & pronunciation polish** (`LyricsViewModel.kt`, `LyricsScrollEngine.kt`, `Romanizer.kt`):
+  - Root cause: Synced lyrics scroll offsets did not account for varying line heights and ruby text, causing active lines to drift away from the 35% viewport anchor.
+  - Fix: Recalculated scroll offsets dynamically based on measured layout bounds, refined auto-scroll timing, and polished CJK pronunciation display.
+- **P10.3-E library scan status real-time tracking** (`SettingsViewModel.kt`, `SettingsScreen.kt`, `MusicRepository.kt`):
+  - Root cause: Scan status was queried only once on scan start, permanently displaying "Scanning… (0 files)".
+  - Fix: Implemented continuous polling of `scanStatus` until `scanning == false`, expanded domain models with `folderCount` and `lastScan`, and wired completion snackbars.
+- **P10.3-F bug sweep & final release gate** (`EmbeddedLyricsExtractor.kt`, `LibraryScreen.kt`, `MusicDatabase.kt`, `DeviceFilesScreen.kt`, `NavidromeLyricsProvider.kt`, `DownloadRepository.kt`, `LyricsViewModel.kt`, `PlayerService.kt`, `PlayerManager.kt`, `SweepFixesTest.kt`, `docs/KNOWN_ISSUES.md`):
+  - Root cause: Malformed ID3v2 headers caused OOM or negative array allocation in lyrics extraction; Android Auto external queue adoption dropped unique queue IDs; `repeatMode` was lost across app process restarts; `coverArtId` in `DownloadRepository` was un-sanitized.
+  - Fix: Added strict size caps in ID3v2 tag parser (max 4MB tag, max 512KB frame); preserved `queueId`s in Android Auto queue adoption and radio mix; persisted `repeatMode` in `QueueSnapshot`; sanitized cover art IDs; resolved duplicate entries in favorites collection; added job cancellation for concurrent play requests.
+  - Verification: All 896 unit tests green. 6,000 automated monkey events across 3 seeds (101, 202, 303) with zero crashes, zero ANRs, zero Binder errors. 40-screen UI sweep at 1.3x font scale in Dark and Light themes verified clean.

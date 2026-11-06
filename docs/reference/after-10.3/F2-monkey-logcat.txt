@@ -1,0 +1,18 @@
+# Phase 10.3 Section F2 Automated Monkey & Logcat Audit
+Date: 2026-11-06
+Device: emulator-5554 (x86_64, Android 14 / API 34)
+Package: com.feishin.mobile
+
+## Monkey Test Summary
+- Seed 101: 2000 events injected, elapsed 68.3s, 0 crashes, 0 ANRs.
+- Seed 202: 2000 events injected, elapsed 80.3s, 0 crashes, 0 ANRs.
+- Seed 303: 2000 events injected, elapsed 89.4s, 0 crashes, 0 ANRs.
+Total Events: 6000 injected.
+Session Status: Navidrome session active, MainActivity responsive.
+
+## Logcat Diagnostics
+- FATAL EXCEPTION: 0
+- ANR in com.feishin.mobile: 0
+- Binder transaction failed: 0
+- StrictMode: Benign DiskReadViolation entries logged during Coil image loader file cache inspection in debug build.
+- Crash buffer (logcat -b crash -d): Clean (0 entries).

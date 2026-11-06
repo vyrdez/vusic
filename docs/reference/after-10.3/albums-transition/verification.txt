@@ -1,0 +1,27 @@
+Phase 10.3 Section D: Albums Page & Detail Transition Verification
+===================================================================
+
+Environment:
+- Emulator: emulator-5554 (Google sdk_gphone64_x86_64, Android 14 API 34)
+- Display Profile: 1080x2400 @ 60 Hz (single hardware mode supported by emulator)
+- Animation Scales: window_animation_scale = 1.0x, transition_animation_scale = 1.0x, animator_duration_scale = 1.0x
+
+1. Library Albums -> Album Detail Transition (Recording frames 007 - 013):
+- frame_007: Static Library screen with Albums tab selected.
+- frame_008: Transition frame 1. Exiting Library top bar icons slide left. AlbumDetail back arrow (<-) enters synchronously from right edge (x ~ 820px).
+- frame_009: Back arrow slides smoothly to x ~ 370px in lockstep with incoming route content.
+- frame_010: Back arrow slides to x ~ 210px in lockstep with incoming circular loading spinner.
+- frame_011 - 013: Back arrow settles at destination x ~ 75px.
+- Result: Top bar and back arrow enter in exact lockstep from frame 1. No 64dp Scaffold layout jump; top bar remains 0dp outside NavHost and self-contained inside DetailScreen.
+
+2. Artist Page -> Album Detail Transition (Recording frames 207 - 214):
+- frame_207: Static ArtistScreen with collapsed top bar (<- *Luna) and visible unclipped Albums section.
+- frame_210: Transition frame 1. Exiting artist header slides left; incoming AlbumDetail back arrow enters immediately from right.
+- frame_211: Back arrow at x ~ 950px translating left in lockstep with incoming route.
+- frame_212: Back arrow at x ~ 650px traveling alongside incoming album art placeholder and play button.
+- frame_213 - 214: Back arrow settles at x ~ 75px on Unveil album detail page.
+- Result: Back arrow does not pop in late; topBar.hideBar is not held by exiting ArtistScreen; no empty top-left corner at any frame.
+
+3. Artist Page Collapsed Top Bar & Inset Padding (D-artist-albums-header.png):
+- Collapsed header sits cleanly at y = 136 directly beneath status bar (no double status-bar inset padding).
+- "Albums" section header and album grid remain fully visible and completely unclipped below the top songs list.

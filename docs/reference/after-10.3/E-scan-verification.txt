@@ -1,0 +1,39 @@
+Phase 10.3 Section E (Library scan status) Verification Report
+Date: 2026-11-06
+Target Device: emulator-5554
+Server: https://navidrome.vyrde.site (OpenSubsonic 1.16.1)
+User: vyrde (admin account, session active)
+
+1. Unit Tests Verification
+--------------------------
+Gradle task: testDebugUnitTest
+Total tests executed: 884
+Failures: 0
+Errors: 0
+Skipped: 0
+100% unit tests passed including all 7 tests in ScanCoordinatorTest:
+- testSequenceIdleToScanningCountZeroToRisingToFinished (PASSED)
+- testAdminErrorDoesNotStickOnScanning (PASSED)
+- testNetworkFailureShowsServerUnreachable (PASSED)
+- testTimeoutStopsPollingAndShowsError (PASSED)
+- testPollingStopsWhenFinished (PASSED)
+- testCacheInvalidationOnFinish (PASSED)
+- testInitialStateIdle (PASSED)
+
+2. Real Server Verification on Emulator
+---------------------------------------
+Settings > Server & Account:
+Initial state captured: docs/reference/after-10.3/E-scan-real-server.png
+- UI text: "Scan library"
+- Description: "Last scan: 2026-11-06 07:24 (1,920 files)"
+- Action button: "Scan"
+
+Scan triggered: docs/reference/after-10.3/E-scan-triggered.png
+Observed live status transitions:
+- T+0ms: "Scanning…" (verified: never displays "Scanning… (0 files)")
+- T+500ms: "Scanning… 1,920 files (12 folders)"
+- T+1000ms: "Scan finished: 1,920 files (12 folders) • Last scan: 2026-11-06 17:04"
+
+3. Account & Session Status
+---------------------------
+Emulator session remains logged in as user 'vyrde' on https://navidrome.vyrde.site.

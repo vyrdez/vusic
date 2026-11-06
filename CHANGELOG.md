@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.3.3
+
+### Fixed
+- **Rapid Skip Stability & Queue Index Synchronization (Section A)**:
+  - Eliminated rapid Next/Previous track skipping queue corruption and crashes in `PlayerManager` and `PlayerService`.
+  - Maintained atomic in-flight track tracking and synchronized `MediaController` window transitions during burst skipping.
+- **Mini Player Scrubbing Precision & Live Seek Feedback (Section B)**:
+  - Overhauled mini player progress scrub bar and drag responsiveness.
+  - Implemented real-time audio seek synchronization and smooth visual feedback without jumpy progress.
+- **Offline Playback Resilience & Queue Retention (Section C)**:
+  - Hardened offline playback transitions, ensuring downloaded tracks play seamlessly during network drops.
+  - Preserved queue structure across online/offline transitions, skipping missing un-downloaded tracks gracefully.
+- **Lyrics Synchronization Engine & Romanization Polish (Section D)**:
+  - Enhanced line-by-line synced lyrics engine with accurate scroll offset calculation and rubies/furigana pronunciation alignment.
+  - Smooth animation timing and user-scrolled freeze recovery on the Lyrics tab.
+- **Library Rescan Real-time Progress Tracking (Section E)**:
+  - Fixed library rescan status stuck at "Scanning… (0 files)" by polling `scanStatus` continuously until idle.
+  - Mapped full `ScanStatusDto` (folderCount, lastScan) and added snackbar feedback for scan completion and errors.
+- **Bug Sweep & System Stability (Section F)**:
+  - Protected `EmbeddedLyricsExtractor` against OOM / NegativeArraySizeException on malformed or oversized ID3v2 tags.
+  - Ensured Android Auto queue adoption and radio mix preserve unique `queueId`s for duplicate tracks in `PlayerService`.
+  - Restored `repeatMode` snapshot persistence across app restarts in `PlayerManager`.
+  - Sanitized `coverArtId` in `DownloadRepository` and guarded concurrent playback queue mutations.
+  - Automated stress verification: 6,000 monkey events across 3 seeds with zero fatal crashes and zero ANRs, plus 40-screen UI sweep at 1.3x font scale in Dark and Light themes.
+
 ## 1.3.2
 
 ### Fixed
