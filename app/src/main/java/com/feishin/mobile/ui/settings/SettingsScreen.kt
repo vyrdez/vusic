@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,6 +38,7 @@ import androidx.compose.material.icons.filled.SettingsInputAntenna
 import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -268,7 +271,7 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
     val test by vm.test.collectAsStateWithLifecycle()
     val online by vm.network.isOnline.collectAsStateWithLifecycle()
     val info by vm.serverInfo.collectAsStateWithLifecycle()
-    val scan by vm.scanStatus.collectAsStateWithLifecycle()
+    val scanState by vm.scanState.collectAsStateWithLifecycle()
     val counts by vm.libraryCounts.collectAsStateWithLifecycle()
     var showLogout by androidx.compose.runtime.remember { mutableStateOf(false) }
     var keepDownloads by androidx.compose.runtime.remember { mutableStateOf(true) }
@@ -322,15 +325,10 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
         InfoRow("Playlists", counts.playlists.toString())
         InfoRow("Downloaded songs", counts.downloaded.toString())
     }
-    ActionRow(
-        "Scan library",
-        when {
-            scan?.scanning == true -> "Scanning… (${scan?.count ?: 0} files)"
-            !online -> "Unavailable offline"
-            else -> "Ask the server to rescan its folders"
-        },
-        buttonLabel = "Scan",
-        onClick = { vm.startScan() },
+    ScanLibraryRow(
+        state = scanState,
+        online = online,
+        onScan = { vm.startScan() },
     )
 
     SettingsSection("ACCOUNT")
@@ -369,6 +367,94 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
             },
             dismissButton = { TextButton(onClick = { showLogout = false }) { Text("Cancel") } },
         )
+    }
+}
+
+@Composable
+private fun ScanLibraryRow(
+    state: ScanUiState,
+    online: Boolean,
+    onScan: () -> Unit,
+) {
+    val isScanning = state is ScanUiState.Scanning
+    val description = formatScanDescription(state, online)
+    val buttonWidth = com.feishin.mobile.core.common.RowLayout.estimateButtonWidthDp("Scan", hasIcon = false, 1f)
+    Column(Modifier.fillMaxWidth()) {
+        androidx.compose.foundation.layout.BoxWithConstraints(
+            Modifier.fillMaxWidth()
+                .defaultMinSize(minHeight = VusicSpacing.RowMinHeight)
+                .padding(vertical = VusicSpacing.RowVertical),
+        ) {
+            val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+            val rowWidth = maxWidth
+            val textEst = com.feishin.mobile.core.common.RowLayout.estimateTextWidthDp(
+                "Scan library", description, fontScale,
+            )
+            val placement = com.feishin.mobile.core.common.RowLayout.decide(
+                rowWidth.value, textEst, buttonWidth * fontScale, capControl = true,
+            )
+            val textContent = @Composable { modifier: Modifier ->
+                Column(modifier) {
+                    Text(
+                        "Scan library",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(VusicSpacing.TitleToDescription))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (isScanning) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                strokeWidth = 1.5.dp,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        Text(
+                            description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = VusicColors.SecondaryText,
+                            maxLines = 3,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            val buttonContent = @Composable {
+                SettingsActionButton(
+                    label = "Scan",
+                    onClick = onScan,
+                    enabled = online && !isScanning,
+                )
+            }
+            when (placement) {
+                is com.feishin.mobile.core.common.RowLayout.Placement.Beside -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        textContent(Modifier.weight(1f))
+                        Spacer(Modifier.width(VusicSpacing.ControlGap))
+                        androidx.compose.foundation.layout.Box(
+                            Modifier.widthIn(max = rowWidth * com.feishin.mobile.core.common.RowLayout.MAX_CONTROL_SHARE),
+                            contentAlignment = Alignment.CenterEnd,
+                        ) {
+                            buttonContent()
+                        }
+                    }
+                }
+                com.feishin.mobile.core.common.RowLayout.Placement.NextLineEnd -> {
+                    Column {
+                        textContent(Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(com.feishin.mobile.core.common.RowLayout.STACKED_GAP_DP.dp))
+                        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                            buttonContent()
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

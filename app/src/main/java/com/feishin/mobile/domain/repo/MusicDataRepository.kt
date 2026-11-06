@@ -11,10 +11,17 @@ import com.feishin.mobile.domain.model.Playlist
 import com.feishin.mobile.domain.model.PlaylistDetail
 import com.feishin.mobile.domain.model.SearchResults
 import com.feishin.mobile.domain.model.ServerInfo
-import com.feishin.mobile.domain.model.ScanStatus
 import com.feishin.mobile.domain.model.StarredCollection
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.core.network.SyncedLyrics
+
+/** Library scan state for the "Scan library" row. */
+data class ScanStatus(
+    val scanning: Boolean = false,
+    val count: Int = 0,
+    val folderCount: Int? = null,
+    val lastScan: String? = null,
+)
 
 /** UI-facing music data contract. Implementations map wire DTOs to domain models. */
 interface MusicDataRepository {

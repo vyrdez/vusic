@@ -23,7 +23,7 @@ import com.feishin.mobile.data.network.NetworkMonitor
 import com.feishin.mobile.data.settings.LayoutMode
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.data.settings.ThemeMode
-import com.feishin.mobile.domain.model.ScanStatus
+import com.feishin.mobile.domain.repo.ScanStatus
 import com.feishin.mobile.domain.model.ServerInfo
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -86,7 +87,29 @@ class SettingsViewModel @Inject constructor(
     private val imageLoader: coil.ImageLoader,
     private val lyricsRepo: com.feishin.mobile.data.repo.LyricsRepository,
     @ApplicationContext private val context: Context,
+    val scanCoordinator: ScanCoordinator? = null,
+    val libraryRefresh: com.feishin.mobile.data.cache.LibraryRefresh? = null,
+    val messenger: com.feishin.mobile.ui.components.UiMessenger? = null,
 ) : ViewModel() {
+
+    val coordinator: ScanCoordinator = scanCoordinator ?: ScanCoordinator(
+        repo = repo,
+        libraryRefresh = libraryRefresh ?: com.feishin.mobile.data.cache.LibraryRefresh(),
+        messenger = messenger ?: com.feishin.mobile.ui.components.UiMessenger(),
+        externalScope = viewModelScope,
+    )
+
+    val scanState: StateFlow<ScanUiState> = coordinator.state
+
+    init {
+        viewModelScope.launch {
+            coordinator.state.collect { s ->
+                if (s is ScanUiState.Finished) {
+                    refreshLibraryCounts()
+                }
+            }
+        }
+    }
 
     /** Credentials for the Account section (server URL, username). */
     val credentials: StateFlow<com.feishin.mobile.data.auth.Credentials?> = auth.loginState
@@ -253,8 +276,14 @@ class SettingsViewModel @Inject constructor(
     private val _serverInfo = MutableStateFlow<ServerInfo?>(null)
     val serverInfo: StateFlow<ServerInfo?> = _serverInfo.asStateFlow()
 
-    private val _scan = MutableStateFlow<ScanStatus?>(null)
-    val scanStatus: StateFlow<ScanStatus?> = _scan.asStateFlow()
+    val scanStatus: StateFlow<ScanStatus?> = coordinator.state.map { s ->
+        when (s) {
+            is ScanUiState.Scanning -> ScanStatus(scanning = true, count = s.count, folderCount = s.folderCount, lastScan = s.lastScan)
+            is ScanUiState.Finished -> ScanStatus(scanning = false, count = s.count, folderCount = s.folderCount, lastScan = s.lastScan)
+            is ScanUiState.Idle -> ScanStatus(scanning = false, count = s.count, folderCount = s.folderCount, lastScan = s.lastScan)
+            is ScanUiState.Error -> ScanStatus(scanning = false, count = s.count, folderCount = s.folderCount, lastScan = s.lastScan)
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _libraryCounts = MutableStateFlow(LibraryCounts())
     val libraryCounts: StateFlow<LibraryCounts> = _libraryCounts.asStateFlow()
@@ -270,18 +299,11 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun startScan() {
-        viewModelScope.launch {
-            if (repo.startScan() is com.feishin.mobile.core.common.Result.Ok) {
-                _scan.value = ScanStatus(scanning = true, count = _scan.value?.count ?: 0)
-            }
-            refreshScanStatus()
-        }
+        coordinator.startScan()
     }
 
     fun refreshScanStatus() {
-        viewModelScope.launch {
-            _scan.value = (repo.scanStatus() as? com.feishin.mobile.core.common.Result.Ok)?.value
-        }
+        coordinator.refreshStatus()
     }
 
     fun refreshLibraryCounts() {

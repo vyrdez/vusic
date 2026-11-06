@@ -67,7 +67,7 @@ class FakeMusicRepo(
         Result.Ok(com.feishin.mobile.domain.model.ServerInfo("1.16.1", "Test", emptyList()))
     override suspend fun startScan() = Result.Ok(Unit)
     override suspend fun scanStatus() =
-        Result.Ok(com.feishin.mobile.domain.model.ScanStatus(false, 0))
+        Result.Ok(com.feishin.mobile.domain.repo.ScanStatus(false, 0))
     override suspend fun album(id: String): Result<AlbumDetail> = Result.Err("x")
     override suspend fun artist(id: String): Result<ArtistDetail> = Result.Err("x")
     override suspend fun artistInfo(id: String) = info

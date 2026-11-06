@@ -21,7 +21,7 @@ import com.feishin.mobile.domain.model.Playlist
 import com.feishin.mobile.domain.model.PlaylistDetail
 import com.feishin.mobile.domain.model.SearchResults
 import com.feishin.mobile.domain.model.ServerInfo
-import com.feishin.mobile.domain.model.ScanStatus
+import com.feishin.mobile.domain.repo.ScanStatus
 import com.feishin.mobile.domain.model.StarredCollection
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
@@ -257,14 +257,42 @@ class MusicRepository @Inject constructor(
 
     override suspend fun startScan(): Result<Unit> = call {
         val r = api.startScan().response
-        unwrap(r.status, r.error?.message) { }
+        if (com.feishin.mobile.BuildConfig.DEBUG) {
+            com.feishin.mobile.core.common.VLog.d(
+                "ScanStatus",
+                "startScan: status=${r.status} error=${r.error}",
+            )
+        }
+        if (r.status == "ok") {
+            Result.Ok(Unit)
+        } else {
+            val code = r.error?.code
+            val msg = r.error?.message
+            val errText = if (code == 50 || msg?.contains("authorized", ignoreCase = true) == true) {
+                "Only admin accounts can scan the library"
+            } else {
+                SubsonicAuth.userMessage(code, msg, null).ifBlank { "Server error" }
+            }
+            Result.Err(errText)
+        }
     }
 
     override suspend fun scanStatus(): Result<ScanStatus> = call {
         val r = api.getScanStatus().response
+        val s = r.scanStatus
+        if (com.feishin.mobile.BuildConfig.DEBUG) {
+            com.feishin.mobile.core.common.VLog.d(
+                "ScanStatus",
+                "raw: status=${r.status} scanning=${s?.scanning} count=${s?.count} folderCount=${s?.folderCount} lastScan=${s?.lastScan} error=${r.error}",
+            )
+        }
         unwrap(r.status, r.error?.message) {
-            val s = r.scanStatus
-            ScanStatus(scanning = s?.scanning == true, count = s?.count ?: 0)
+            ScanStatus(
+                scanning = s?.scanning == true,
+                count = s?.count ?: 0,
+                folderCount = s?.folderCount,
+                lastScan = s?.lastScan,
+            )
         }
     }
 
