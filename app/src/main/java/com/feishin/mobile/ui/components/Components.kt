@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -41,13 +42,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -70,7 +73,6 @@ import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.Artist
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.ui.theme.VusicColors
-import com.feishin.mobile.ui.theme.VusicControlColors
 import com.feishin.mobile.ui.theme.LocalPlayingColors
 import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.theme.VusicSpacing
@@ -435,6 +437,35 @@ fun ClickableName(
     }
 }
 
+data class FilterChipStyleTokens(
+    val containerColor: Color,
+    val labelColor: Color,
+    val fontWeight: FontWeight,
+    val hasBorder: Boolean = false,
+    val borderAlpha: Float = 0f,
+)
+
+fun resolveFilterChipColors(
+    selected: Boolean,
+    colorScheme: ColorScheme,
+): FilterChipStyleTokens = if (selected) {
+    FilterChipStyleTokens(
+        containerColor = colorScheme.primaryContainer,
+        labelColor = colorScheme.onPrimaryContainer,
+        fontWeight = FontWeight.Medium,
+        hasBorder = false,
+        borderAlpha = 0f,
+    )
+} else {
+    FilterChipStyleTokens(
+        containerColor = colorScheme.surfaceContainerHigh,
+        labelColor = colorScheme.onSurfaceVariant,
+        fontWeight = FontWeight.Normal,
+        hasBorder = false,
+        borderAlpha = 0f,
+    )
+}
+
 @Composable
 fun FilterChipRow(
     options: List<String>,
@@ -442,6 +473,7 @@ fun FilterChipRow(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colorScheme = MaterialTheme.colorScheme
     LazyRow(
         modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
@@ -449,15 +481,30 @@ fun FilterChipRow(
     ) {
         items(options, key = { it }, contentType = { "item" }) { option ->
             val isSel = option == selected
-            AssistChip(
+            val tokens = resolveFilterChipColors(selected = isSel, colorScheme = colorScheme)
+            FilterChip(
+                selected = isSel,
                 onClick = { onSelect(option) },
-                label = { Text(option, maxLines = 1) },
-                colors = AssistChipDefaults.assistChipColors(
-                    // Selected chip uses the accent pair, so it reads in both themes.
-                    containerColor = if (isSel) MaterialTheme.colorScheme.primary else VusicControlColors.ChipOffFill,
-                    labelColor = if (isSel) MaterialTheme.colorScheme.onPrimary else VusicControlColors.ChipOffText,
+                label = {
+                    Text(
+                        text = option,
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = tokens.fontWeight),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                shape = CircleShape,
+                border = null,
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = tokens.containerColor,
+                    labelColor = tokens.labelColor,
+                    selectedContainerColor = tokens.containerColor,
+                    selectedLabelColor = tokens.labelColor,
                 ),
-                border = if (isSel) null else androidx.compose.foundation.BorderStroke(1.dp, VusicControlColors.CheckboxOffOutline),
+                modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .heightIn(min = 36.dp),
             )
         }
     }

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,10 +56,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import com.feishin.mobile.core.common.MiniPlayerGesture
+import com.feishin.mobile.core.ui.PlayingScheme
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.theme.LocalPlayingColors
+import com.feishin.mobile.ui.theme.LocalVusicDark
 import com.feishin.mobile.ui.theme.Motion
-import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.playingColor
 import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.NonCancellable
@@ -117,6 +119,66 @@ val MiniPlayerMargin = 12.dp
 val LocalMiniClearance = androidx.compose.runtime.compositionLocalOf { 0.dp }
 
 /**
+ * Resolved colors and subtle hairline/shadow styling for the floating mini player pill.
+ */
+data class MiniPlayerPillTokens(
+    val containerColor: Color,
+    val borderColor: Color,
+    val borderWidthDp: Float,
+    val borderAlpha: Float,
+    val inkColor: Color,
+    val subInkColor: Color,
+    val ringBarColor: Color,
+    val ringTrackColor: Color,
+    val ambientShadowColor: Color,
+    val spotShadowColor: Color,
+)
+
+fun resolveMiniPlayerBorderAlpha(dark: Boolean): Float = if (dark) 0.10f else 0.06f
+
+fun resolveMiniPlayerPillTokens(
+    dark: Boolean,
+    colorScheme: ColorScheme,
+    playingScheme: PlayingScheme?,
+): MiniPlayerPillTokens {
+    val borderAlpha = resolveMiniPlayerBorderAlpha(dark)
+    val containerColor = if (playingScheme != null) {
+        playingColor(playingScheme.miniContainer)
+    } else {
+        colorScheme.primaryContainer
+    }
+    val rawOutline = if (playingScheme != null) {
+        playingColor(playingScheme.miniOutline)
+    } else {
+        colorScheme.outline
+    }
+    val ink = if (playingScheme != null) {
+        playingColor(playingScheme.primary)
+    } else {
+        colorScheme.onPrimaryContainer
+    }
+    val ringTrack = if (playingScheme != null) {
+        playingColor(playingScheme.track)
+    } else {
+        colorScheme.primary.copy(alpha = 0.22f)
+    }
+    val ambientAlpha = if (dark) 0.36f else 0.12f
+    val spotAlpha = if (dark) 0.48f else 0.18f
+    return MiniPlayerPillTokens(
+        containerColor = containerColor,
+        borderColor = rawOutline.copy(alpha = borderAlpha),
+        borderWidthDp = 0.5f,
+        borderAlpha = borderAlpha,
+        inkColor = ink,
+        subInkColor = ink,
+        ringBarColor = ink,
+        ringTrackColor = ringTrack,
+        ambientShadowColor = colorScheme.scrim.copy(alpha = ambientAlpha),
+        spotShadowColor = colorScheme.scrim.copy(alpha = spotAlpha),
+    )
+}
+
+/**
  * Floating mini player: a rounded card that hovers above the nav bar with the
  * screen's content scrolling visibly behind and around it.
  *
@@ -171,41 +233,18 @@ fun MiniPlayer(
 
     // Artwork tinting (or the theme pair when dynamic color is off / no art).
     val scheme = LocalPlayingColors.current
-    // The card is the DARK, barely-tinted surface (much darker than the row
-    // highlight), so the pill reads as part of the background rather than a
-    // bright block. See DarkToneSpec.
-    val cardBg = if (scheme != null) {
-        playingColor(scheme.miniContainer)
-    } else {
-        MaterialTheme.colorScheme.primaryContainer
-    }
-    // 1dp hairline: keeps the pill a distinct shape against the page background
-    // and the nav bar without brightening the fill.
-    val outline = if (scheme != null) {
-        playingColor(scheme.miniOutline)
-    } else {
-        MaterialTheme.colorScheme.primary
-    }
-    val ink = if (scheme != null) {
-        playingColor(scheme.primary)
-    } else {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    }
-    val subInk = if (scheme != null) {
-        playingColor(scheme.primary)
-    } else {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    }
-    val ringBar = if (scheme != null) {
-        playingColor(scheme.primary)
-    } else {
-        MaterialTheme.colorScheme.primary
-    }
-    val ringTrack = if (scheme != null) {
-        playingColor(scheme.track)
-    } else {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
-    }
+    val isDark = scheme?.dark ?: LocalVusicDark.current
+    val pillTokens = resolveMiniPlayerPillTokens(
+        dark = isDark,
+        colorScheme = MaterialTheme.colorScheme,
+        playingScheme = scheme,
+    )
+    val cardBg = pillTokens.containerColor
+    val outline = pillTokens.borderColor
+    val ink = pillTokens.inkColor
+    val subInk = pillTokens.subInkColor
+    val ringBar = pillTokens.ringBarColor
+    val ringTrack = pillTokens.ringTrackColor
 
     // Ring progress: sampled from the player at ~4Hz and interpolated with a
     // matching 250ms tween, so the ring glides instead of stepping. The Canvas
@@ -344,15 +383,19 @@ fun MiniPlayer(
                 translationX = dragX.value
                 alpha = enter.value * fade.value * verticalAlpha
             }
-            // Soft elevation instead of the old solid black band. Nothing else
+            // Soft elevation instead of a heavy stroke or solid band. Nothing else
             // here has a background: this container is fully transparent, so
             // content shows on every side of the card itself.
-            .shadow(12.dp, shape, clip = false, ambientColor = androidx.compose.ui.graphics.Color(0x60000000), spotColor = androidx.compose.ui.graphics.Color(0x80000000))
+            .shadow(
+                10.dp,
+                shape,
+                clip = false,
+                ambientColor = pillTokens.ambientShadowColor,
+                spotColor = pillTokens.spotShadowColor,
+            )
             .clip(shape)
             .background(cardBg)
-            // 1dp hairline (same clip, drawn inside) so the near-black pill is
-            // still clearly delineated from the page background and nav bar.
-            .border(1.dp, outline, shape)
+            .border(pillTokens.borderWidthDp.dp, outline, shape)
             .clickable(onClick = onOpen)
             .pointerInput(queue.size, currentIndex, repeatMode) {
                 // Axis lock plus a real velocity: detectDragGestures gives the
