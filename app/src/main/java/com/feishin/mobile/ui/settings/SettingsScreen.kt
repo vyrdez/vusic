@@ -154,7 +154,7 @@ private fun SubScreen(title: String, onBack: () -> Unit, content: @Composable ()
             IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onSurface)
             }
-            Text(title, style = MaterialTheme.typography.headlineSmall)
+            Text(title, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
         }
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
@@ -538,9 +538,14 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
                     enabled = currentSizePct > 80,
                     modifier = Modifier
                         .size(36.dp)
-                        .background(com.feishin.mobile.ui.theme.VusicColors.SurfaceHigh, CircleShape),
+                        .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
                 ) {
-                    Icon(Icons.Default.Remove, contentDescription = "Decrease text size", modifier = Modifier.size(18.dp))
+                    Icon(
+                        Icons.Default.Remove,
+                        contentDescription = "Decrease text size",
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(18.dp),
+                    )
                 }
                 Text(
                     text = "$currentSizePct%",
@@ -555,9 +560,14 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
                     enabled = currentSizePct < 220,
                     modifier = Modifier
                         .size(36.dp)
-                        .background(com.feishin.mobile.ui.theme.VusicColors.SurfaceHigh, CircleShape),
+                        .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Increase text size", modifier = Modifier.size(18.dp))
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = "Increase text size",
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(18.dp),
+                    )
                 }
             }
         }
@@ -576,17 +586,27 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
                 IconButton(
                     onClick = { vm.setLyricsLineGapPercent((currentGapPct - 10).coerceIn(50, 200)) },
                     enabled = currentGapPct > 50,
-                    modifier = Modifier.size(36.dp).background(com.feishin.mobile.ui.theme.VusicColors.SurfaceHigh, CircleShape),
+                    modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
                 ) {
-                    Icon(Icons.Default.Remove, contentDescription = "Decrease line gap", modifier = Modifier.size(18.dp))
+                    Icon(
+                        Icons.Default.Remove,
+                        contentDescription = "Decrease line gap",
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(18.dp),
+                    )
                 }
                 Text(text = "$currentGapPct%", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 4.dp))
                 IconButton(
                     onClick = { vm.setLyricsLineGapPercent((currentGapPct + 10).coerceIn(50, 200)) },
                     enabled = currentGapPct < 200,
-                    modifier = Modifier.size(36.dp).background(com.feishin.mobile.ui.theme.VusicColors.SurfaceHigh, CircleShape),
+                    modifier = Modifier.size(36.dp).background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Increase line gap", modifier = Modifier.size(18.dp))
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = "Increase line gap",
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(18.dp),
+                    )
                 }
             }
         }
@@ -1010,9 +1030,14 @@ private fun StorageScreen(
                         enabled = s.maxConcurrentDownloads > 1,
                         modifier = Modifier
                             .size(36.dp)
-                            .background(com.feishin.mobile.ui.theme.VusicColors.SurfaceHigh, CircleShape),
+                            .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
                     ) {
-                        Icon(Icons.Default.Remove, contentDescription = "Decrease simultaneous downloads", modifier = Modifier.size(18.dp))
+                        Icon(
+                            Icons.Default.Remove,
+                            contentDescription = "Decrease simultaneous downloads",
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(18.dp),
+                        )
                     }
                     Text(
                         text = "${s.maxConcurrentDownloads}",
@@ -1024,9 +1049,14 @@ private fun StorageScreen(
                         enabled = s.maxConcurrentDownloads < 5,
                         modifier = Modifier
                             .size(36.dp)
-                            .background(com.feishin.mobile.ui.theme.VusicColors.SurfaceHigh, CircleShape),
+                            .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "Increase simultaneous downloads", modifier = Modifier.size(18.dp))
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "Increase simultaneous downloads",
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(18.dp),
+                        )
                     }
                 }
             }
@@ -1320,6 +1350,7 @@ private fun LyricsSourcesDialog(
                             checked = isEnabled,
                             onCheckedChange = { onToggle(id, it) },
                             enabled = id != "PAXSENIX",
+                            colors = VusicControlDefaults.switchColors(),
                         )
                     }
                 }

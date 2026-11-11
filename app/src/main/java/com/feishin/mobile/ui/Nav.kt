@@ -36,6 +36,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -824,13 +825,18 @@ private fun AppNavigationBar(
                 selected = selected,
                 onClick = { onSelect(target) },
                 icon = { Icon(icon, label) },
-                label = { Text(label) },
+                label = {
+                    Text(
+                        label,
+                        fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                    )
+                },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.onSurface,
-                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                    selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    selectedTextColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     unselectedIconColor = VusicColors.SecondaryText,
                     unselectedTextColor = VusicColors.SecondaryText,
-                    indicatorColor = VusicColors.SurfaceHigh,
+                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
                 ),
             )
         }

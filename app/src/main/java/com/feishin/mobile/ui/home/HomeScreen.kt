@@ -300,9 +300,14 @@ private fun HomeTopBar(username: String, onSettings: () -> Unit) {
         Modifier.fillMaxWidth().padding(16.dp, 12.dp, 16.dp, 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Default.MusicNote, "Vusic", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(26.dp))
+        Icon(Icons.Default.MusicNote, "Vusic", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp))
         Spacer(Modifier.width(6.dp))
-        Text("Vusic", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold), modifier = Modifier.weight(1f))
+        Text(
+            "Vusic",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f),
+        )
         Box(
             Modifier.size(40.dp).clip(androidx.compose.foundation.shape.CircleShape)
                 .background(MaterialTheme.colorScheme.primary).clickable(onClick = onSettings),
@@ -310,7 +315,7 @@ private fun HomeTopBar(username: String, onSettings: () -> Unit) {
         ) {
             Text(
                 username.take(1).uppercase().ifBlank { "?" },
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onPrimary,
             )
         }

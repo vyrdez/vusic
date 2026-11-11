@@ -160,8 +160,7 @@ fun SubSectionHeader(
     Text(
         title,
         style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurface,
+        color = MaterialTheme.colorScheme.primary,
         modifier = modifier.padding(
             start = VusicSpacing.ScreenHorizontal,
             top = VusicSpacing.SubHeaderTop,
@@ -208,7 +207,13 @@ fun SectionHeader(
             if (label != null) {
                 Text(label, style = MaterialTheme.typography.labelMedium, color = VusicColors.SecondaryText, maxLines = 1)
             }
-            Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         if (onPlayAll != null) {
             Text(

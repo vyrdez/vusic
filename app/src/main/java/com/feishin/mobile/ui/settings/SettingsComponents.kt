@@ -80,7 +80,7 @@ fun SettingsSection(title: String) {
     Text(
         title.uppercase(),
         style = MaterialTheme.typography.labelMedium,
-        color = VusicColors.SecondaryText,
+        color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(
             start = 4.dp,
             top = VusicSpacing.SectionTop,
@@ -148,7 +148,7 @@ private fun RowText(
         }
         if (warning != null) {
             Spacer(Modifier.height(VusicSpacing.TitleToDescription))
-            Text(warning, style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFB74D), maxLines = 3)
+            Text(warning, style = MaterialTheme.typography.bodySmall, color = VusicColors.Warning, maxLines = 3)
         }
     }
 }
@@ -355,7 +355,7 @@ fun <T> VusicDropdownSelector(
                         MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
                     }
                     val popupBg = if (dark) {
-                        Color(0xFF1E1E1E)
+                        MaterialTheme.colorScheme.surfaceContainerHigh
                     } else {
                         MaterialTheme.colorScheme.surfaceContainer
                     }
@@ -419,7 +419,7 @@ fun <T> VusicDropdownSelector(
                                         text = labelProvider(option),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = textColor,
-                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
@@ -504,7 +504,7 @@ fun SliderRow(
                 Spacer(Modifier.width(VusicSpacing.ControlGap))
                 Text(
                     valueLabel,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                 )
@@ -533,7 +533,7 @@ fun SliderRow(
             }
             if (warning != null) {
                 Spacer(Modifier.height(8.dp))
-                Text(warning, style = MaterialTheme.typography.bodySmall, color = Color(0xFFFFB74D), maxLines = 3)
+                Text(warning, style = MaterialTheme.typography.bodySmall, color = VusicColors.Warning, maxLines = 3)
             }
             Spacer(Modifier.height(VusicSpacing.RowVertical))
         }
@@ -638,7 +638,7 @@ fun UsageCard(
             freeBytes = freeBytes,
         )
     }
-    val colors = listOf(Color(0xFF8AB4F8), Color(0xFF7DD8A8), Color(0xFFFFC66E))
+    val colors = VusicColors.UsageColors
     // Free space reuses the secondary-text token at low alpha: it must read as
     // "empty" against both the bar track and the card, and SurfaceHigh (the
     // card background) is invisible for that job. Revisited in the color pass.
@@ -764,7 +764,20 @@ fun SettingsHomeCard(
             .padding(VusicSpacing.CardPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.secondaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                icon,
+                null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(22.dp),
+            )
+        }
         Spacer(Modifier.size(16.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)

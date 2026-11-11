@@ -244,7 +244,12 @@ private fun RecentSearches(
         Modifier.fillMaxWidth().padding(16.dp, 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Recent searches", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        Text(
+            "Recent searches",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f),
+        )
         TextButton(onClick = onClearAll) { Text("Clear all") }
     }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current)) {

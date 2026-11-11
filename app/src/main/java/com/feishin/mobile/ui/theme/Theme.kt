@@ -2,6 +2,7 @@ package com.feishin.mobile.ui.theme
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -9,9 +10,30 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.feishin.mobile.core.ui.PlayingScheme
 import com.feishin.mobile.core.ui.VusicDynamicScheme
+
+private val BaseTypography = Typography()
+
+/**
+ * Central typography scale matching Metrolist weights:
+ * - Screen titles (`headlineSmall`) and section headers (`titleLarge`, `titleMedium`,
+ *   `labelLarge`, `labelMedium`) use [FontWeight.Medium] (500).
+ * - Body text and list item titles (`bodyLarge`, `bodyMedium`, `bodySmall`) stay at
+ *   [FontWeight.Normal] (400).
+ */
+val VusicTypography: Typography = BaseTypography.copy(
+    headlineSmall = BaseTypography.headlineSmall.copy(fontWeight = FontWeight.Medium),
+    titleLarge = BaseTypography.titleLarge.copy(fontWeight = FontWeight.Medium),
+    titleMedium = BaseTypography.titleMedium.copy(fontWeight = FontWeight.Medium),
+    labelLarge = BaseTypography.labelLarge.copy(fontWeight = FontWeight.Medium),
+    labelMedium = BaseTypography.labelMedium.copy(fontWeight = FontWeight.Medium),
+    bodyLarge = BaseTypography.bodyLarge.copy(fontWeight = FontWeight.Normal),
+    bodyMedium = BaseTypography.bodyMedium.copy(fontWeight = FontWeight.Normal),
+    bodySmall = BaseTypography.bodySmall.copy(fontWeight = FontWeight.Normal),
+)
 
 /** True while the dark scheme is active. Lets control colors pick a variant. */
 val LocalVusicDark = staticCompositionLocalOf { true }
@@ -101,6 +123,9 @@ object VusicColors {
     val SecondaryText: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
     val Accent: Color @Composable get() = MaterialTheme.colorScheme.primary
     val OnAccent: Color @Composable get() = MaterialTheme.colorScheme.onPrimary
+    val Header: Color @Composable get() = MaterialTheme.colorScheme.primary
+    val Warning: Color @Composable get() = if (LocalVusicDark.current) Color(0xFFFFB74D) else Color(0xFFB26A00)
+    val UsageColors: List<Color> = listOf(Color(0xFF8AB4F8), Color(0xFF7DD8A8), Color(0xFFFFC66E))
 
     /** Dark-only literal, kept for the dark scheme declaration below. */
     internal val DarkBackground = Color(0xFF0F0F0F)
@@ -240,6 +265,8 @@ private val Dark = darkColorScheme(
     onPrimaryContainer = Color(0xFFEAF0F7),
     secondary = VusicColors.DarkSecondaryText,
     onSecondary = Color.White,
+    secondaryContainer = Color(0xFF3A3F46),
+    onSecondaryContainer = Color(0xFFEAF0F7),
     background = VusicColors.DarkBackground,
     onBackground = Color.White,
     surface = VusicColors.DarkSurface,
@@ -377,7 +404,11 @@ fun FeishinTheme(
         LocalVusicColors provides vusicTokens,
         LocalPlayingColors provides resolvedPlayingScheme,
     ) {
-        MaterialTheme(colorScheme = colorScheme, content = content)
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = VusicTypography,
+            content = content,
+        )
     }
 }
 

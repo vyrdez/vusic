@@ -422,8 +422,8 @@ object PlayingColors {
             hue = hue,
             startTone = basePrimaryTone,
             chroma = primaryChroma,
-            backgrounds = listOf(background, surface, surfaceContainer, primaryContainer, miniContainer, surfaceTop, surfaceBottom),
-            minRatio = 3.0,
+            backgrounds = listOf(background, surface, surfaceContainer, surfaceContainerHigh, primaryContainer, secondaryContainer, miniContainer, surfaceTop, surfaceBottom),
+            minRatio = 4.5,
             preferLighter = true,
         )
 
@@ -449,7 +449,7 @@ object PlayingColors {
             hue = hue,
             startTone = 92f,
             chroma = c(10f),
-            backgrounds = listOf(secondaryContainer),
+            backgrounds = listOf(secondaryContainer, surface, background, surfaceContainerHigh),
             minRatio = 4.5,
             preferLighter = true,
         )
@@ -654,8 +654,8 @@ object PlayingColors {
             hue = hue,
             startTone = basePrimaryTone,
             chroma = primaryChroma,
-            backgrounds = listOf(background, surface, surfaceContainer, primaryContainer, miniContainer, surfaceTop, surfaceBottom),
-            minRatio = 3.0,
+            backgrounds = listOf(background, surface, surfaceContainer, surfaceContainerHigh, primaryContainer, secondaryContainer, miniContainer, surfaceTop, surfaceBottom),
+            minRatio = 4.5,
             preferLighter = false,
         )
 
@@ -681,7 +681,7 @@ object PlayingColors {
             hue = hue,
             startTone = 14f,
             chroma = c(10f),
-            backgrounds = listOf(secondaryContainer),
+            backgrounds = listOf(secondaryContainer, surface, background, surfaceContainerHigh),
             minRatio = 4.5,
             preferLighter = false,
         )
