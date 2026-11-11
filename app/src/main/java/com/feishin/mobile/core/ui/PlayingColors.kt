@@ -18,7 +18,7 @@ package com.feishin.mobile.core.ui
  * enforced primary-vs-container ratio carries over to it.
  *
  * [miniContainer] is the mini player's fill, which is deliberately much darker
- * than [container] (the row highlight) in Dark mode and a pale card (`T=94`)
+ * than [container] (the row highlight) in Dark mode and a pale card (`T=92.5`)
  * in Light mode — see [DarkToneSpec]. [miniOutline] is the 1dp hairline that
  * keeps the pill distinct from the page background.
  */
@@ -138,8 +138,8 @@ object PlayingColors {
     /** Chroma at which the smooth neutral scaling factor alpha reaches 1.0. */
     const val FULL_CHROMA_PIVOT = 18.0
 
-    /** Default light-mode surface tint strength (0f = pure neutral surfaces, 1f = full cap). */
-    const val DefaultLightTintStrength = 0f
+    /** Default light-mode surface tint strength (0f = pure neutral surfaces, 1f = full subtle song tint). */
+    const val DefaultLightTintStrength = 1.0f
 
     private const val WHITE = 0xFFFFFFFFL
     private const val BLACK = 0xFF000000L
@@ -615,20 +615,20 @@ object PlayingColors {
         fun c(cap: Float): Float = roleChroma(seedChroma, alpha, cap)
         fun surfaceChroma(cap: Float): Float = roleChroma(seedChroma, alpha * tint, cap)
 
-        // Clamped lightness invariant: light surfaces stay at T=91..98 even for a pure black seed.
-        val surface = Contrast.fromToneChroma(hue, 98f, surfaceChroma(6f))
-        val surfaceContainerLowest = surface
-        val background = Contrast.fromToneChroma(hue, 96f, surfaceChroma(8f))
-        val surfaceContainerLow = Contrast.fromToneChroma(hue, 95f, surfaceChroma(8f))
-        val surfaceContainer = Contrast.fromToneChroma(hue, 94f, surfaceChroma(10f))
-        val surfaceContainerHigh = Contrast.fromToneChroma(hue, 91f, surfaceChroma(14f))
+        // Clamped lightness invariant: light surfaces stay at T=90..99 even for a pure black seed.
+        val surfaceContainerLowest = Contrast.fromToneChroma(hue, 99f, surfaceChroma(2.5f))
+        val surface = Contrast.fromToneChroma(hue, 97.5f, surfaceChroma(3.5f))
+        val background = Contrast.fromToneChroma(hue, 97.0f, surfaceChroma(4.5f))
+        val surfaceContainerLow = Contrast.fromToneChroma(hue, 94.5f, surfaceChroma(5.0f))
+        val surfaceContainer = Contrast.fromToneChroma(hue, 92.5f, surfaceChroma(6.0f))
+        val surfaceContainerHigh = Contrast.fromToneChroma(hue, 90.0f, surfaceChroma(7.0f))
         val surfaceVariant = surfaceContainerHigh
 
         // Containers: soft tint of seed
         val primaryContainer = Contrast.fromToneChroma(hue, 88f, c(24f))
         val secondaryContainer = Contrast.fromToneChroma(hue, 89f, c(18f))
 
-        // MiniPlayer in Light mode: pale card (T=94) and legible outline
+        // MiniPlayer in Light mode: pale card (T=92.5) and legible outline
         val miniContainer = surfaceContainer
         val miniOutline = enforceContrastAcross(
             hue = hue,
@@ -654,7 +654,7 @@ object PlayingColors {
             hue = hue,
             startTone = basePrimaryTone,
             chroma = primaryChroma,
-            backgrounds = listOf(background, surface, surfaceContainer, surfaceContainerHigh, primaryContainer, secondaryContainer, miniContainer, surfaceTop, surfaceBottom),
+            backgrounds = listOf(background, surface, surfaceContainerLow, surfaceContainer, surfaceContainerHigh, primaryContainer, secondaryContainer, miniContainer, surfaceTop, surfaceBottom),
             minRatio = 4.5,
             preferLighter = false,
         )
@@ -681,7 +681,7 @@ object PlayingColors {
             hue = hue,
             startTone = 14f,
             chroma = c(10f),
-            backgrounds = listOf(secondaryContainer, surface, background, surfaceContainerHigh),
+            backgrounds = listOf(secondaryContainer, surface, background, surfaceContainerLow, surfaceContainerHigh),
             minRatio = 4.5,
             preferLighter = false,
         )
@@ -712,7 +712,7 @@ object PlayingColors {
             preferLighter = true,
         )
 
-        val surfaceBgs = listOf(background, surface, surfaceContainer, surfaceContainerHigh)
+        val surfaceBgs = listOf(background, surface, surfaceContainerLow, surfaceContainer, surfaceContainerHigh)
         val onSurface = enforceContrastAcross(
             hue = hue,
             startTone = 10f,

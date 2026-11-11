@@ -387,20 +387,23 @@ fun VusicDynamicScheme.toVusicColorTokens(): VusicColorTokens = VusicColorTokens
 fun FeishinTheme(
     dark: Boolean,
     dynamicScheme: VusicDynamicScheme? = null,
-    playingScheme: PlayingScheme? = dynamicScheme?.toPlayingScheme(),
+    playingScheme: PlayingScheme? = null,
     content: @Composable () -> Unit,
 ) {
     val activeDynamic = dynamicScheme?.takeIf { it.dark == dark }
-    val colorScheme = remember(dark, activeDynamic) {
-        activeDynamic?.toMaterialColorScheme() ?: if (dark) Dark else Light
+    val displayDynamic = animatedDynamicScheme(activeDynamic, dark = dark)
+    val colorScheme = remember(dark, displayDynamic) {
+        displayDynamic?.toMaterialColorScheme() ?: if (dark) Dark else Light
     }
-    val vusicTokens = remember(dark, activeDynamic) {
-        activeDynamic?.toVusicColorTokens() ?: if (dark) DefaultDarkVusicTokens else DefaultLightVusicTokens
+    val vusicTokens = remember(dark, displayDynamic) {
+        displayDynamic?.toVusicColorTokens() ?: if (dark) DefaultDarkVusicTokens else DefaultLightVusicTokens
     }
-    val resolvedPlayingScheme = playingScheme ?: LocalPlayingColors.current
+    val resolvedPlayingScheme = playingScheme
+        ?: remember(displayDynamic) { displayDynamic?.toPlayingScheme() }
+        ?: LocalPlayingColors.current
     CompositionLocalProvider(
         LocalVusicDark provides dark,
-        LocalDynamicScheme provides activeDynamic,
+        LocalDynamicScheme provides displayDynamic,
         LocalVusicColors provides vusicTokens,
         LocalPlayingColors provides resolvedPlayingScheme,
     ) {

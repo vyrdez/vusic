@@ -242,14 +242,10 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
         dark = schemeDark,
         hasTrack = currentTrack != null,
     )
-    val playingScheme = com.feishin.mobile.ui.theme.animatedPlayingScheme(
-        remember(dynamicScheme) { dynamicScheme?.toPlayingScheme() },
-    )
 
     com.feishin.mobile.ui.theme.FeishinTheme(
         dark = schemeDark,
         dynamicScheme = dynamicScheme,
-        playingScheme = playingScheme,
     ) {
     CompositionLocalProvider(
         LocalTopBarController provides topBar,
@@ -818,7 +814,7 @@ private fun AppNavigationBar(
             },
         )
     }
-    NavigationBar(modifier = modifier, containerColor = VusicColors.Background) {
+    NavigationBar(modifier = modifier, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
         items.forEach { (target, label, icon) ->
             val selected = NavRules.selectedLabel(currentRoute) == label
             NavigationBarItem(
