@@ -1650,3 +1650,29 @@ Version 1.3.3 (versionCode 17) — `applicationId com.feishin.mobile` unchanged.
   - Root cause: Malformed ID3v2 headers caused OOM or negative array allocation in lyrics extraction; Android Auto external queue adoption dropped unique queue IDs; `repeatMode` was lost across app process restarts; `coverArtId` in `DownloadRepository` was un-sanitized.
   - Fix: Added strict size caps in ID3v2 tag parser (max 4MB tag, max 512KB frame); preserved `queueId`s in Android Auto queue adoption and radio mix; persisted `repeatMode` in `QueueSnapshot`; sanitized cover art IDs; resolved duplicate entries in favorites collection; added job cancellation for concurrent play requests.
   - Verification: All 896 unit tests green. 6,000 automated monkey events across 3 seeds (101, 202, 303) with zero crashes, zero ANRs, zero Binder errors. 40-screen UI sweep at 1.3x font scale in Dark and Light themes verified clean.
+
+## Phase 11 status: dynamic theme v2, material 3 color scheme, typography contrast, filled tonal chips & background styles (1.4.0)
+
+Version 1.4.0 (versionCode 18) — `applicationId com.feishin.mobile` unchanged.
+
+- **P11-A fast palette pipeline**:
+  - Offloaded AndroidX `Palette` generation to `Dispatchers.Default` on downscaled artwork (<=128px) with thread-safe LRU caching (`PaletteCache`).
+  - Instant track transitions and zero UI freeze during album/track changes; eliminated janky display-rate selector and stale window refresh hacks.
+- **P11-B Material 3 dynamic color scheme V2**:
+  - Implemented full Material 3 color generation (`MaterialDynamicScheme`) with WCAG AA compliance across dark and light themes.
+  - Bulletproof handling for difficult artwork edge cases (pure white, low-saturation pastel, monochrome, extreme contrast, multi-color).
+- **P11-C app-wide dynamic theme propagation**:
+  - Propagated dynamic theme palette seamlessly across all screens: Home, Library (all tabs), Search, Settings (main and sub-screens), and Playlist pages.
+  - Harmonized tinted card containers, icons, chips, and progress bars without unreadable contrast.
+- **P11-D high-contrast typography & token polish**:
+  - Enforced >= 4.5:1 text contrast and >= 3:1 graphical component contrast across all dynamic schemes in dark and light modes.
+  - Refined subtle outline and container tokens for optimal readability under extreme color tints.
+- **P11-E mini player and chips polish**:
+  - Modernized filter chips across Home, Library, and Search with filled tonal containers (no outlines) and subtle primary-tinted selection.
+  - Mini player refined with 0.5dp hairline border, 10dp scrim elevation shadow, and responsive padding scaling gracefully up to 1.3x font scale.
+- **P11-F background styles**:
+  - Added configurable background styles (`Default`, `Gradient`, `Blur`) for Mini-player, Player (Now Playing Song & Lyrics), and Queue sheet.
+  - Fast off-thread downscaled box blur cache (`ArtworkBlurCache`) with dynamic luminance-aware WCAG scrimming (`BlurScrim`).
+  - Added Settings > Appearance & Layout dropdown selectors (`VusicDropdownSelector`) under new `PLAYER` section.
+  - Verification: 936/936 unit tests passed, including `BlurScrimTest` (8/8) and `BackgroundStyleSettingsTest` (4/4). Full emulator sweep across 60 style combinations and 34 app-wide screens in dark and light themes. Blur gfxinfo workloads benchmarked in `docs/reference/after-11/perf.txt`.
+

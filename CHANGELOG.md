@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.4.0
+
+### Added
+- **Configurable Background Styles (Section F)**:
+  - Added configurable background styles (`Default`, `Gradient`, `Blur`) for Mini-player, Now Playing player, and Queue sheet.
+  - Implemented high-performance off-main-thread artwork blur cache (`ArtworkBlurCache`) with downscaled separable 3-pass box blur for legacy APIs and hardware-accelerated blur for modern Android.
+  - Integrated dynamic luminance-aware scrimming (`BlurScrim`) guaranteeing >= 4.5:1 WCAG AA text contrast across dark and light themes for all artwork.
+  - Added "PLAYER" section to Settings > Appearance & Layout with dropdown selectors (`VusicDropdownSelector`).
+
+### Changed
+- **Material 3 Dynamic Theme V2 & Contrast Engine (Sections B & D)**:
+  - Overhauled dynamic theme engine with full Material 3 color scheme generation (`MaterialDynamicScheme`) guaranteeing WCAG AA compliance across dark and light themes.
+  - Bulletproof handling for challenging artwork (pure white, pastel, monochrome, vivid colors).
+  - Enforced strict >= 4.5:1 text and >= 3:1 component contrast across all dynamic color palettes.
+- **App-Wide Dynamic Theme Propagation (Section C)**:
+  - Seamlessly applied dynamic theme color accents across Home, Library tabs (Playlists, Downloads, Albums, Artists, Songs, Favorites), Search, Settings, and Playlist pages.
+- **Filled Tonal Chips & Mini Player Polish (Section E)**:
+  - Replaced outlined filter chips with clean filled tonal chips across Home, Library, and Search.
+  - Added subtle 0.5dp hairline border and 10dp scrim shadow to floating mini player capsule with responsive 1.3x font scaling.
+- **Fast Palette Pipeline & Jank Elimination (Section A)**:
+  - Offloaded AndroidX `Palette` extraction to background worker with thread-safe LRU caching.
+  - Eliminated UI freezes and dropped frames during track changes; removed deprecated refresh rate display hacks.
+
 ## 1.3.3
 
 ### Fixed

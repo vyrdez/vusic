@@ -46,7 +46,7 @@ replayed with their original timestamps when you reconnect.
 It also ships an Android Auto service (Home, Library, Favorites, Downloads
 tabs, voice search, transport + shuffle/repeat/seek), a compact and large home
 screen widget with transport controls that survive the app process being killed,
-an artwork-tinted Now Playing and queue ("Dynamic Theme"), and System/Dark/Light themes with live
+an app-wide artwork-tinted Material 3 Dynamic Theme V2, configurable background styles (Default, Gradient, Blur) for the mini player, player and queue, and System/Dark/Light themes with live
 switching.
 
 ### Lyrics & Privacy
