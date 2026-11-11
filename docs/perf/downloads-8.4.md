@@ -44,7 +44,7 @@ diagnosis that prompted the fix. The "after" behaviour is verified by:
 - No before/after numbers for 89-song or 300-song batches; the claim of
   "thousands of invalidations" is from the original diagnosis, not a
   re-measurement.
-- Real 120 Hz phone behaviour and battery cost were not measured.
+- Real high-refresh-rate phone behaviour and battery cost were not measured.
 - `syncKeepGroups` is still defined but not wired; unchanged from prior phases.
 - `ProgressThrottle` is per-`DownloadWorker` instance, i.e. global across the
   concurrent transfers of one run; a separate WorkManager retry gets its own

@@ -678,7 +678,7 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   20 screens; jank percentiles per screen (SwiftShader software GL, ~100%
   legacy-jank — relative only); screen-off 82 s: audio full window, 1 app
   wakeup, 0 alarms/jobs, PlayerService foreground only. Emulator exposes a
-  single 60 Hz mode, so 90/120 Hz is not verifiable on-device. Full numbers in
+  single 60 fps mode. Full numbers in
   docs/perf/baseline.md. Runtime measured on a debug-signed release build —
   byte-identical R8 output, only the signature block differs — so the login
   survived; size numbers are from the true release-signed APK.)
@@ -727,8 +727,7 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
 ## Phase 7.1 status (final)
 - Release 1.0.0 (versionCode 2) signed with the long-lived key
   (`vusic`, to 2054-03-02). Baseline profile packaged. Lint 112 warnings /
-  0 errors, tests 366/366 (debug+release variants counted once: 358 unit +
-  8 refresh-rate).
+  lint 112 warnings / 0 errors, tests 366/366 (debug+release variants counted once).
 - E2E on the signed release (x86_64, emulator): cold start, login screen
   (readable, labeled self-signed switch, friendly wrong-host error, masked
   password, no credential/log leaks in logcat), cached Home on relaunch,
@@ -738,7 +737,7 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   (16-track queue), search + chips, Library tabs/toggle/sort, artist page +
   scroll, Favorites + Cached collections, song download + offline playback
   with position advancing under airplane mode + reconnect, settings
-  sub-screens, theme live-switch, refresh-rate row hidden by design,
+  settings sub-screens, theme live-switch,
   font 1.3 Home/Settings without clipping, media notification with
   artwork/controls/seek, update-over-install, zero FATAL/ANR.
 - NOT verified (no real hardware / lost session — see report): correct-password
@@ -749,7 +748,7 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   headphone-unplug pause (broadcast did not pause; ExoPlayer built-in noisy
   handling is on, but the pause_on_headphone/resume_on_focus_gain toggles are
   not wired to anything — pre-existing, non-blocking), lock-screen controls
-  beyond the notification, 120 Hz/Auto idle-drop/8.3 ms budget (single-mode
+  beyond the notification, high-frame-rate idle-drop/8.3 ms budget (single-mode
   emulator), Bluetooth, battery over long sessions, login screen at 1.3x.
 - Auto browse device test: 3/4 pass; auto_playFromBrowse fails on an empty
   first album — browse code untouched since M6.1/M6.3, data-dependent.
@@ -785,26 +784,10 @@ Navigation-Compose 2.7.0, hilt-navigation-compose 1.2.0, security-crypto 1.1.0-a
   release/ APKs + SHA-256, v1.0.0 tag, root cleanup of two stray 0-byte
   files).
 
-- [x] M7.0d high refresh rate (nothing in the app caps frame pacing: the
-  60 Hz audit found no frame-counting — ring/marquee/equalizer/scroll
-  physics are all time-based)
-  (New pure selector core/ui/RefreshRate: highest same-resolution rate for
-  AUTO/MAX, nearest-to-60 for STANDARD, ties prefer current,
-  higher-rate-at-lower-resolution never wins; RefreshRateTest 8 cases green.
-  Applied in MainActivity through public window hints only:
-  preferredDisplayModeId always, preferredRefreshRate 0 for Auto / peak for
-  Max / 60 for Standard; Surface.setFrameRate verified present in
-  compileSdk 34 but has no public accessor for the activity window's
-  Surface, so deliberately unused. Re-applied on create/resume/config-change
-  and live on setting change. The one allowed UI addition: Settings >
-  Appearance & Layout > "Refresh rate" (Auto default / Max / Standard
-  60 Hz), DataStore-backed, live-applied, hidden on single-rate devices,
-  with a "Running at X Hz" secondary line. The emulator exposes a single
-  60.000004 Hz mode and ignores the min/peak_refresh_rate override (tried,
-  reset), so 90/120 Hz rendering, Auto idle-drop and the 8.3 ms budget are
-  NOT verifiable here — stated in after.md. Verified instead: row hides
-  correctly, preferredDisplayMode=1 confirmed live in the window attrs, no
-  FATAL/ANR across all apply paths, StrictMode clean, no 60 Hz regressions.)
+- [x] M7.0d frame-pacing audit (nothing in the app caps frame pacing:
+  ring/marquee/equalizer/scroll physics are all time-based. Custom
+  display-mode forcing and the Settings Display/Refresh-rate row added here
+  were removed in Phase 11 Section A so the app relies on system frame pacing.)
 
 - [x] M7.1a keystore hygiene
   (Release keystore `keystore/vusic-release.jks` + `keystore/keystore.properties`
@@ -927,14 +910,9 @@ migration (all new preferences go to DataStore).
   intersection of the cache's real sizes with the device, which is never empty;
   the clamp and the live-shrink behaviour are unchanged. The download cap keeps
   the device-bounded `steps()`. 10 new tests.
-- **P8-G high refresh rate.** Two bugs. "Running at X Hz" read
-  `display.refreshRate` during composition — not snapshot state — so nothing
-  recomposed the row when the system changed rate and the line froze on its first
-  value; it is now fed by a `DisplayManager.DisplayListener`. And STANDARD
-  derived its `preferredRefreshRate` from the nearest mode's rate, so on a panel
-  with no 60 Hz mode (90-only / 120-only) "Standard 60 Hz" asked for the higher
-  rate and did nothing; `RefreshRate.requestedRate` now returns exactly 60 for
-  STANDARD, the peak for MAX and 0 for AUTO. 3 new tests.
+- **P8-G display mode fixes (subsequently removed in Phase 11 Section A).**
+  Historical fixes to the former display-rate row and window rate hint; the
+  entire display-rate selector was removed in Phase 11 Section A.
 - **P8-H app logo.** The launcher drew a bespoke two-note beam; the app's own mark
   is the eighth note (`Icons.Default.MusicNote`, the glyph beside "Vusic").
   `ic_launcher_foreground` is now that white note centred in the 66 dp safe zone
@@ -949,21 +927,17 @@ migration (all new preferences go to DataStore).
 Verification (2026-10-17): `assembleDebug`, `assembleRelease`, `lint` (0 errors)
 and `test` all green; 437 unit tests pass, including the new `SheetPhysicsTest`,
 `MiniPlayerGestureTest`, `PlaylistOrderingTest`, `StorageLimitsTest` and
-`RefreshRateTest` cases. Emulator walkthrough (Pixel 7, API 34, Dark and Light,
+display-mode cases. Emulator walkthrough (Pixel 7, API 34, Dark and Light,
 font scale 1.3, offline toggled on and off): queue open by tap / short drag /
 long drag / fling and close by drag (each ≥ 10 times, including fast repeats),
 dead-zone drags, the mini player in all four directions plus the first/last edge
 cases, the offline banner on Home/Library/Search/Settings/detail/Now Playing,
 library search, playlist sort/search on a normal playlist, Favorites, Cached and
 Downloaded, and the storage sliders; playback never glitched, restarted or
-skipped. Not verifiable on the emulator (reported, not claimed): the 60 Hz pin
-itself, because the AVD exposes a single 60.000004 Hz mode so the row is hidden —
-and even on a real phone vendor smart-refresh (e.g. HyperOS) can override the
-request — and real launcher masks other than the emulator's.
+skipped. Not verifiable on the emulator (reported, not claimed): multi-rate
+panels and real launcher masks other than the emulator's.
 
-Limitations: `Surface`/`Window.setFrameRate` is still unreachable for the
-activity window in compileSdk 34, so the public window hints remain the only
-lever for the refresh rate; the cache ceilings stay at the app's supported sizes
+Limitations: cache ceilings stay at the app's supported sizes
 (5 GB stream / 1 GB image) rather than the whole device; and date-added sort
 falls back to server order because `Track` carries no date field.
 
@@ -1599,7 +1573,7 @@ Version 1.3.0 (versionCode 14) — `applicationId com.feishin.mobile` unchanged.
   - Fix: Created `VusicDropdownSelector` featuring a 12dp rounded trigger with animated theme border highlight, 0° -> 180° rotating chevron, 16dp rounded popup card with scale/expand/fade transitions, and left-aligned checkmark with theme-tinted pill selection. Upgraded all settings dropdowns.
 - **P10-G app-wide animation and transition polish** (`Components.kt`, `Nav.kt`, `NowPlayingScreen.kt`, `Motion.kt`):
   - Root cause: Large Now Playing artwork showed a gray placeholder before loading the 512px cover; top-level bottom bar tab switches slid horizontally instead of fading through.
-  - Fix: Pre-seeded Coil's memory cache key in `CoverImage` from the 128px thumbnail already in memory so covers appear instantly with zero gray-box flash and smoothly crossfade. Added crisp fade-through with subtle scale for top-level tabs and smooth 120Hz shared-axis transitions for detail screens. All durations route through `Motion.scaled` to preserve system animation scale.
+  - Fix: Pre-seeded Coil's memory cache key in `CoverImage` from the 128px thumbnail already in memory so covers appear instantly with zero gray-box flash and smoothly crossfade. Added crisp fade-through with subtle scale for top-level tabs and smooth shared-axis transitions for detail screens. All durations route through `Motion.scaled` to preserve system animation scale.
 
 ## Phase 10.1 status: coupled player & queue physics, smooth pager snap, lyrics scroll & tab expiry, inverted miniplayer swipe, dropdown anchor fix & 5 algorithmic mixes (1.3.1)
 

@@ -46,8 +46,8 @@ replayed with their original timestamps when you reconnect.
 It also ships an Android Auto service (Home, Library, Favorites, Downloads
 tabs, voice search, transport + shuffle/repeat/seek), a compact and large home
 screen widget with transport controls that survive the app process being killed,
-an artwork-tinted Now Playing and queue ("Dynamic Theme"), System/Dark/Light themes with live
-switching, and a refresh-rate preference (Auto/Max/Standard 60 Hz).
+an artwork-tinted Now Playing and queue ("Dynamic Theme"), and System/Dark/Light themes with live
+switching.
 
 ### Lyrics & Privacy
 
@@ -167,7 +167,7 @@ Inside `app/src/main/java/com/feishin/mobile`:
 | --- | --- |
 | `core/common` | Pure helpers: URL building, auth tokens, replay-gain math, row layout, lyrics cache. |
 | `core/network` | Stream/cover-art URL providers and request signing. |
-| `core/ui` | Framework-free UI logic, e.g. the refresh-rate mode selector. |
+| `core/ui` | Framework-free UI logic: contrast math, dark-tone spec, and Now Playing colour palettes. |
 | `data/remote` | Retrofit `SubsonicApi` and DTOs, the redacting HTTP logger. |
 | `data/network` | OkHttp setup, TLS trust for self-signed servers, host rewriting. |
 | `data/db` | Room database for offline scrobbles, stars and download bookkeeping. |
@@ -203,9 +203,9 @@ Settings is a single list of six sub-screens:
 - **Server & Account** — server URL, username, password, change-server and
   logout (with a choice of whether downloads are kept).
 - **Appearance & Layout** — theme (System/Dark/Light, live), Dynamic Now Playing
-  colour, per-tab grid/list layout, per-tab sort order, mix length, refresh rate.
+  colour, lyrics display & sources, per-tab grid/list layout, per-tab sort order.
 - **Sound & Playback** — bitrate and format per network, crossfade, ReplayGain,
-  gapless, headphone/volume/focus behaviour, playback cache size.
+  gapless, headphone/volume/focus behaviour, playback cache size, mix & radio length.
 - **Connectivity** — allow self-signed certificates, test connection, mobile
   data toggles for downloads and auto-caching.
 - **Storage** — disk usage, download queue and concurrency, song-cache size,

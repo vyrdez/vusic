@@ -118,12 +118,6 @@ ceiling, not necessarily the app. Relative comparison only.
 
 ## Display modes (for §D)
 
-- Exactly one mode: `id=1, 1080x2400, fps=60.000004`,
-  `alternativeRefreshRates=[]`. `mDefaultPeakRefreshRate=0`,
-  `mDefaultRefreshRate=60`.
-- Conclusion: **90/120 Hz is not verifiable on this emulator** — there is no
-  higher mode to request and no adaptive range. §D relies on the
-  mode-selection unit tests plus the frame-time budget on 60 Hz
-  (D.6-verified: `RefreshRateTest`, 8 cases). The `min/peak_refresh_rate`
-  settings override was attempted and is NOT honored (still a single
-  60.000004 Hz mode), so it was reset.
+- Emulator exposes a single 1080x2400 mode (`fps=60.000004`). Custom
+  refresh-rate selection was subsequently removed in Phase 11 Section A so
+  the app relies on the system display rate.

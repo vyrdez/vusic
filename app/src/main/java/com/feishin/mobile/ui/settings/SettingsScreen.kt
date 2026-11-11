@@ -49,7 +49,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlin.math.roundToInt
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -197,7 +196,7 @@ private fun SettingsHome(
             SettingsHomeCard(
                 icon = Icons.Default.Palette,
                 title = "Appearance & Layout",
-                summary = s?.let { "${it.theme.name.lowercase().replaceFirstChar(Char::uppercase)} · ${it.defaultLayout.name.lowercase()} layout" } ?: "…",
+                summary = s?.let { "${it.theme.name.lowercase().replaceFirstChar(Char::uppercase)} · ${it.defaultLayout.name.lowercase()} layout · lyrics" } ?: "…",
                 onClick = { onOpen(SettingsRoute.APPEARANCE) },
             )
             SettingsHomeCard(
@@ -206,7 +205,8 @@ private fun SettingsHome(
                 summary = s?.let {
                     val q = if (it.wifiBitrate == 0) "Original" else "${it.wifiBitrate} kbps"
                     "$q · ${it.replayGainMode.name.lowercase()} gain" +
-                        if (it.crossfade) " · crossfade ${it.crossfadeSeconds}s" else ""
+                        (if (it.crossfade) " · crossfade ${it.crossfadeSeconds}s" else "") +
+                        " · ${it.radioBatchSize}-song mixes"
                 } ?: "…",
                 onClick = { onOpen(SettingsRoute.SOUND) },
             )
@@ -477,10 +477,6 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
         )
         SwitchRow("Dynamic Theme", s.dynamicNpColor, vm::setDynamicNpColor)
     }
-    SettingsSection("DISPLAY")
-    SettingsCard {
-        RefreshRateRow(vm, s.refreshRateMode)
-    }
     SettingsSection("LYRICS")
     SettingsCard {
         SwitchRow(
@@ -697,84 +693,6 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
             )
         }
     }
-    SettingsSection("GENERATED LISTS")
-    SettingsCard {
-        ChoiceRow(
-            "Mix & radio length",
-            "${s.radioBatchSize} songs",
-            SettingsStore.RADIO_BATCH_OPTIONS.map { "$it songs" },
-            onSelect = { vm.setRadioBatchSize(it.split(" ").first().toIntOrNull() ?: 20) },
-            description = "Songs per generated mix and radio batch.",
-        )
-    }
-}
-
-/**
- * High-refresh-rate request (the one user-visible addition of the
- * optimization phase). Hidden on devices that expose a single rate: there
- * would be nothing to choose between. The secondary text shows the rate the
- * display is actually running at right now.
- */
-@Composable
-private fun RefreshRateRow(
-    vm: SettingsViewModel,
-    current: com.feishin.mobile.core.ui.RefreshRateMode,
-) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val manager = remember(context) {
-        context.getSystemService(android.hardware.display.DisplayManager::class.java)
-    }
-    val display = remember(manager) {
-        manager?.getDisplay(android.view.Display.DEFAULT_DISPLAY)
-    } ?: return
-    val modes = remember(display) {
-        display.supportedModes.map {
-            com.feishin.mobile.core.ui.DisplayModeInfo(
-                it.modeId, it.physicalWidth, it.physicalHeight, it.refreshRate,
-            )
-        }
-    }
-    if (!com.feishin.mobile.core.ui.RefreshRate.shouldShowSetting(modes)) return
-
-    // The rate the display is ACTUALLY running at.
-    //
-    // This used to be read straight from `display.refreshRate` during
-    // composition. That value is not snapshot state, so nothing recomposed the
-    // row when the system changed rate: the line froze on whatever it said the
-    // first time the screen was opened and never told the user whether their
-    // pick had taken effect. The display's own change callback is turned into
-    // state here, so the line tracks reality — including an LTPO idle drop or a
-    // vendor override that ignores the request.
-    var runningHz by remember(display) {
-        androidx.compose.runtime.mutableFloatStateOf(display.refreshRate)
-    }
-    androidx.compose.runtime.DisposableEffect(manager, display) {
-        val listener = object : android.hardware.display.DisplayManager.DisplayListener {
-            override fun onDisplayAdded(displayId: Int) = Unit
-            override fun onDisplayRemoved(displayId: Int) = Unit
-            override fun onDisplayChanged(displayId: Int) {
-                if (displayId == android.view.Display.DEFAULT_DISPLAY) {
-                    runningHz = display.refreshRate
-                }
-            }
-        }
-        manager?.registerDisplayListener(
-            listener, android.os.Handler(android.os.Looper.getMainLooper()),
-        )
-        onDispose { manager?.unregisterDisplayListener(listener) }
-    }
-
-    val options = com.feishin.mobile.core.ui.RefreshRateMode.entries.toList()
-    ChoiceRow(
-        "Refresh rate",
-        com.feishin.mobile.core.ui.RefreshRate.label(current),
-        options.map { com.feishin.mobile.core.ui.RefreshRate.label(it) },
-        onSelect = { picked ->
-            options.firstOrNull { com.feishin.mobile.core.ui.RefreshRate.label(it) == picked }
-                ?.let { vm.setRefreshRateMode(it) }
-        },
-        description = "Running at ${runningHz.roundToInt()} Hz",
-    )
 }
 
 // ---------- Sound & Playback ----------
@@ -897,6 +815,16 @@ private fun SoundScreen(vm: SettingsViewModel) {
             confirmBody = "Streaming, download, ReplayGain, transition and cache settings return to defaults.",
             buttonLabel = "Reset",
             onClick = { vm.resetPlaybackDefaults() },
+        )
+    }
+    SettingsSection("GENERATED LISTS")
+    SettingsCard {
+        ChoiceRow(
+            "Mix & radio length",
+            "${s.radioBatchSize} songs",
+            SettingsStore.RADIO_BATCH_OPTIONS.map { "$it songs" },
+            onSelect = { vm.setRadioBatchSize(it.split(" ").first().toIntOrNull() ?: 20) },
+            description = "Songs per generated mix and radio batch.",
         )
     }
 }
