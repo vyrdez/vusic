@@ -1,16 +1,89 @@
 package com.feishin.mobile.ui.theme
 
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.feishin.mobile.core.ui.PlayingScheme
+import com.feishin.mobile.core.ui.VusicDynamicScheme
 
 /** True while the dark scheme is active. Lets control colors pick a variant. */
 val LocalVusicDark = staticCompositionLocalOf { true }
+
+/**
+ * Active root [VusicDynamicScheme] when Dynamic Theme is enabled and a track
+ * (or debug cover override) is active; `null` when using the static theme.
+ */
+val LocalDynamicScheme = staticCompositionLocalOf<VusicDynamicScheme?> { null }
+
+/**
+ * Complete Vusic design & control color tokens for the current composition tree.
+ */
+data class VusicColorTokens(
+    val background: Color,
+    val surface: Color,
+    val surfaceHigh: Color,
+    val secondaryText: Color,
+    val accent: Color,
+    val onAccent: Color,
+    val switchOffTrack: Color,
+    val switchOffOutline: Color,
+    val switchOffThumb: Color,
+    val disabledTrack: Color,
+    val disabledOutline: Color,
+    val disabledThumb: Color,
+    val sliderInactiveTrack: Color,
+    val chipOffFill: Color,
+    val chipOffText: Color,
+)
+
+private val DefaultDarkVusicTokens = VusicColorTokens(
+    background = Color(0xFF0F0F0F),
+    surface = Color(0xFF1E1E1E),
+    surfaceHigh = Color(0xFF2A2A2A),
+    secondaryText = Color(0xFF9AA0A6),
+    accent = Color.White,
+    onAccent = Color.Black,
+    switchOffTrack = Color(0xFF3A3A3A),
+    switchOffOutline = Color(0xFF8A8A8A),
+    switchOffThumb = Color(0xFFB8B8B8),
+    disabledTrack = Color(0xFF232323),
+    disabledOutline = Color(0xFF4A4A4A),
+    disabledThumb = Color(0xFF5A5A5A),
+    sliderInactiveTrack = Color(0xFF6E6E6E),
+    chipOffFill = Color(0xFF2A2A2A),
+    chipOffText = Color(0xFFEDEDED),
+)
+
+private val DefaultLightVusicTokens = VusicColorTokens(
+    background = Color(0xFFF7F9FB),
+    surface = Color(0xFFFFFFFF),
+    surfaceHigh = Color(0xFFE4E8EE),
+    secondaryText = Color(0xFF3F4A52),
+    accent = Color(0xFF0B6BA8),
+    onAccent = Color.White,
+    switchOffTrack = Color(0xFFD3D6DA),
+    switchOffOutline = Color(0xFF5F6368),
+    switchOffThumb = Color(0xFF5F6368),
+    disabledTrack = Color(0xFFE8EAED),
+    disabledOutline = Color(0xFFBDC1C6),
+    disabledThumb = Color(0xFFBDC1C6),
+    sliderInactiveTrack = Color(0xFF8A9096),
+    chipOffFill = Color(0xFFE7EDF3),
+    chipOffText = Color(0xFF10141A),
+)
+
+/**
+ * CompositionLocal providing the active [VusicColorTokens] (dynamic when
+ * artwork theming is active, static Dark/Light otherwise).
+ */
+val LocalVusicColors = staticCompositionLocalOf { DefaultDarkVusicTokens }
 
 /**
  * Vusic design tokens.
@@ -39,7 +112,7 @@ object VusicColors {
 /**
  * Control colors in one place, so every switch / checkbox / radio / slider /
  * chip draws its boundaries identically and visibly (>= 3:1 against its card)
- * in BOTH themes.
+ * in BOTH themes (and adapts to the active dynamic scheme when present).
  */
 object VusicControlColors {
     // ---- dark (unchanged) ----
@@ -65,18 +138,39 @@ object VusicControlColors {
     private val LightChipOffText = Color(0xFF10141A)
 
     private val dark: Boolean @Composable get() = LocalVusicDark.current
+    private val dynamic: VusicDynamicScheme? @Composable get() = LocalDynamicScheme.current
 
-    val SwitchOffTrack: Color @Composable get() = if (dark) DarkSwitchOffTrack else LightSwitchOffTrack
-    val SwitchOffOutline: Color @Composable get() = if (dark) DarkSwitchOffOutline else LightSwitchOffOutline
-    val SwitchOffThumb: Color @Composable get() = if (dark) DarkSwitchOffThumb else LightSwitchOffThumb
-    val DisabledTrack: Color @Composable get() = if (dark) DarkDisabledTrack else LightDisabledTrack
-    val DisabledOutline: Color @Composable get() = if (dark) DarkDisabledOutline else LightDisabledOutline
-    val DisabledThumb: Color @Composable get() = if (dark) DarkDisabledThumb else LightDisabledThumb
-    val SliderInactiveTrack: Color @Composable get() = if (dark) DarkSliderInactive else LightSliderInactive
-    val ChipOffFill: Color @Composable get() = if (dark) DarkChipOffFill else LightChipOffFill
-    val ChipOffText: Color @Composable get() = if (dark) DarkChipOffText else LightChipOffText
-    val CheckboxOffOutline: Color @Composable get() = if (dark) DarkSwitchOffOutline else LightSwitchOffOutline
-    val RadioOffOutline: Color @Composable get() = if (dark) DarkSwitchOffOutline else LightSwitchOffOutline
+    val SwitchOffTrack: Color
+        @Composable get() = dynamic?.let { playingColor(it.switchOffTrack) }
+            ?: if (dark) DarkSwitchOffTrack else LightSwitchOffTrack
+    val SwitchOffOutline: Color
+        @Composable get() = dynamic?.let { playingColor(it.switchOffOutline) }
+            ?: if (dark) DarkSwitchOffOutline else LightSwitchOffOutline
+    val SwitchOffThumb: Color
+        @Composable get() = dynamic?.let { playingColor(it.switchOffThumb) }
+            ?: if (dark) DarkSwitchOffThumb else LightSwitchOffThumb
+    val DisabledTrack: Color
+        @Composable get() = dynamic?.let { playingColor(it.disabledTrack) }
+            ?: if (dark) DarkDisabledTrack else LightDisabledTrack
+    val DisabledOutline: Color
+        @Composable get() = dynamic?.let { playingColor(it.disabledOutline) }
+            ?: if (dark) DarkDisabledOutline else LightDisabledOutline
+    val DisabledThumb: Color
+        @Composable get() = dynamic?.let { playingColor(it.disabledThumb) }
+            ?: if (dark) DarkDisabledThumb else LightDisabledThumb
+    val SliderInactiveTrack: Color
+        @Composable get() = dynamic?.let { playingColor(it.sliderInactiveTrack) }
+            ?: if (dark) DarkSliderInactive else LightSliderInactive
+    val ChipOffFill: Color
+        @Composable get() = dynamic?.let { playingColor(it.chipOffFill) }
+            ?: if (dark) DarkChipOffFill else LightChipOffFill
+    val ChipOffText: Color
+        @Composable get() = dynamic?.let { playingColor(it.chipOffText) }
+            ?: if (dark) DarkChipOffText else LightChipOffText
+    val CheckboxOffOutline: Color
+        @Composable get() = SwitchOffOutline
+    val RadioOffOutline: Color
+        @Composable get() = SwitchOffOutline
 
     /** On: the accent (white in dark, deep blue in light) with a contrasting thumb. */
     val SwitchOnTrack: Color @Composable get() = MaterialTheme.colorScheme.primary
@@ -190,11 +284,100 @@ private val Light = lightColorScheme(
     onError = Color.White,
 )
 
+/** Converts a [VusicDynamicScheme] into a Material 3 [ColorScheme]. */
+fun VusicDynamicScheme.toMaterialColorScheme(): ColorScheme = if (dark) {
+    darkColorScheme(
+        primary = playingColor(primary),
+        onPrimary = playingColor(onPrimary),
+        primaryContainer = playingColor(primaryContainer),
+        onPrimaryContainer = playingColor(onPrimaryContainer),
+        secondary = playingColor(secondary),
+        onSecondary = playingColor(onSecondary),
+        secondaryContainer = playingColor(secondaryContainer),
+        onSecondaryContainer = playingColor(onSecondaryContainer),
+        background = playingColor(background),
+        onBackground = playingColor(onBackground),
+        surface = playingColor(surface),
+        onSurface = playingColor(onSurface),
+        surfaceVariant = playingColor(surfaceVariant),
+        onSurfaceVariant = playingColor(onSurfaceVariant),
+        surfaceContainerLowest = playingColor(surfaceContainerLowest),
+        surfaceContainerLow = playingColor(surfaceContainerLow),
+        surfaceContainer = playingColor(surfaceContainer),
+        surfaceContainerHigh = playingColor(surfaceContainerHigh),
+        outline = playingColor(outline),
+        outlineVariant = playingColor(outlineVariant),
+        error = playingColor(error),
+        onError = playingColor(onError),
+    )
+} else {
+    lightColorScheme(
+        primary = playingColor(primary),
+        onPrimary = playingColor(onPrimary),
+        primaryContainer = playingColor(primaryContainer),
+        onPrimaryContainer = playingColor(onPrimaryContainer),
+        secondary = playingColor(secondary),
+        onSecondary = playingColor(onSecondary),
+        secondaryContainer = playingColor(secondaryContainer),
+        onSecondaryContainer = playingColor(onSecondaryContainer),
+        background = playingColor(background),
+        onBackground = playingColor(onBackground),
+        surface = playingColor(surface),
+        onSurface = playingColor(onSurface),
+        surfaceVariant = playingColor(surfaceVariant),
+        onSurfaceVariant = playingColor(onSurfaceVariant),
+        surfaceContainerLowest = playingColor(surfaceContainerLowest),
+        surfaceContainerLow = playingColor(surfaceContainerLow),
+        surfaceContainer = playingColor(surfaceContainer),
+        surfaceContainerHigh = playingColor(surfaceContainerHigh),
+        outline = playingColor(outline),
+        outlineVariant = playingColor(outlineVariant),
+        error = playingColor(error),
+        onError = playingColor(onError),
+    )
+}
+
+/** Converts a [VusicDynamicScheme] into [VusicColorTokens]. */
+fun VusicDynamicScheme.toVusicColorTokens(): VusicColorTokens = VusicColorTokens(
+    background = playingColor(background),
+    surface = playingColor(surface),
+    surfaceHigh = playingColor(surfaceContainerHigh),
+    secondaryText = playingColor(onSurfaceVariant),
+    accent = playingColor(primary),
+    onAccent = playingColor(onPrimary),
+    switchOffTrack = playingColor(switchOffTrack),
+    switchOffOutline = playingColor(switchOffOutline),
+    switchOffThumb = playingColor(switchOffThumb),
+    disabledTrack = playingColor(disabledTrack),
+    disabledOutline = playingColor(disabledOutline),
+    disabledThumb = playingColor(disabledThumb),
+    sliderInactiveTrack = playingColor(sliderInactiveTrack),
+    chipOffFill = playingColor(chipOffFill),
+    chipOffText = playingColor(chipOffText),
+)
+
 @Composable
-fun FeishinTheme(dark: Boolean, content: @Composable () -> Unit) {
-    val scheme = if (dark) Dark else Light
-    CompositionLocalProvider(LocalVusicDark provides dark) {
-        MaterialTheme(colorScheme = scheme, content = content)
+fun FeishinTheme(
+    dark: Boolean,
+    dynamicScheme: VusicDynamicScheme? = null,
+    playingScheme: PlayingScheme? = dynamicScheme?.toPlayingScheme(),
+    content: @Composable () -> Unit,
+) {
+    val activeDynamic = dynamicScheme?.takeIf { it.dark == dark }
+    val colorScheme = remember(dark, activeDynamic) {
+        activeDynamic?.toMaterialColorScheme() ?: if (dark) Dark else Light
+    }
+    val vusicTokens = remember(dark, activeDynamic) {
+        activeDynamic?.toVusicColorTokens() ?: if (dark) DefaultDarkVusicTokens else DefaultLightVusicTokens
+    }
+    val resolvedPlayingScheme = playingScheme ?: LocalPlayingColors.current
+    CompositionLocalProvider(
+        LocalVusicDark provides dark,
+        LocalDynamicScheme provides activeDynamic,
+        LocalVusicColors provides vusicTokens,
+        LocalPlayingColors provides resolvedPlayingScheme,
+    ) {
+        MaterialTheme(colorScheme = colorScheme, content = content)
     }
 }
 

@@ -169,6 +169,12 @@ object NowPlayingColors {
     }
 
     /**
+     * Builds the Now Playing palette directly from a root [VusicDynamicScheme].
+     */
+    fun fromDynamic(scheme: VusicDynamicScheme): NowPlayingPalette =
+        fromScheme(scheme.toPlayingScheme())
+
+    /**
      * The palette for the artwork-derived scheme. Built from [PlayingScheme],
      * which already enforces its own contrast pairs; the checks here are the
      * ones the scheme cannot make on its own, namely that the *surface* inks

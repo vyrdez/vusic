@@ -2,8 +2,9 @@ package com.feishin.mobile.core.ui
 
 /**
  * One artwork-derived tonal set. Every text/background pair in here is
- * verified to its stated ratio at construction (see [schemeFor`), so
- * composables can use these colors without re-checking:
+ * verified to its stated ratio at construction (see [PlayingColors.schemeFor]
+ * and [PlayingColors.buildMaterialScheme]), so composables can use these
+ * colors without re-checking:
  *
  * - [onContainer] vs [container]: >= 4.5 (titles)
  * - [secondary] vs [container]: >= 4.5 (artist lines, durations)
@@ -17,8 +18,9 @@ package com.feishin.mobile.core.ui
  * enforced primary-vs-container ratio carries over to it.
  *
  * [miniContainer] is the mini player's fill, which is deliberately much darker
- * than [container] (the row highlight) — see [DarkToneSpec]. [miniOutline] is
- * the 1dp hairline that keeps the pill distinct from the page background.
+ * than [container] (the row highlight) in Dark mode and a pale card (`T=94`)
+ * in Light mode — see [DarkToneSpec]. [miniOutline] is the 1dp hairline that
+ * keeps the pill distinct from the page background.
  */
 data class PlayingScheme(
     /** Null when this is the theme fallback rather than artwork. */
@@ -34,35 +36,115 @@ data class PlayingScheme(
     val surfaceText: Long,
     val surfaceSecondary: Long,
     val dark: Boolean,
-    /** Mini player fill: darker than [container] in Dark, same in Light. */
+    /** Mini player fill: darker than [container] in Dark, pale card in Light. */
     val miniContainer: Long = container,
     /** Mini player hairline, so the pill reads as a shape on the background. */
     val miniOutline: Long = primary,
-)
+) {
+    companion object {
+        /** Adapts a root [VusicDynamicScheme] into a [PlayingScheme] for MiniPlayer, TrackRow, and NowPlaying. */
+        fun fromDynamic(scheme: VusicDynamicScheme): PlayingScheme = PlayingScheme(
+            seedArgb = scheme.seedArgb,
+            container = scheme.primaryContainer,
+            onContainer = scheme.onPrimaryContainer,
+            secondary = scheme.rowHighlightSecondary,
+            primary = scheme.primary,
+            onPrimary = scheme.onPrimary,
+            track = scheme.ringTrack,
+            surfaceTop = scheme.surfaceTop,
+            surfaceBottom = scheme.surfaceBottom,
+            surfaceText = scheme.surfaceText,
+            surfaceSecondary = scheme.surfaceSecondary,
+            dark = scheme.dark,
+            miniContainer = scheme.miniContainer,
+            miniOutline = scheme.miniOutline,
+        )
+    }
+}
 
 /**
- * Builds a [PlayingScheme] from an artwork seed color.
+ * Pure-JVM full Material 3 + Vusic control & player color scheme derived from
+ * an artwork seed color (or static Dark/Light defaults).
  *
- * No material-kolor / material-color-utilities dependency is used on purpose:
- * neither is in the version catalog, and the whole engine is ~120 lines of
- * HSL plus WCAG enforcement — small enough to own, test and tune, with zero
- * version-compatibility risk. The contrast loops below are what guarantee the
- * hard readability requirement, not the hue source.
+ * All values are packed `0xFFRRGGBBL` Longs with zero `android.*` / Compose
+ * dependencies so the entire scheme and contrast guards are unit-testable on
+ * the JVM.
+ */
+data class VusicDynamicScheme(
+    val seedArgb: Long?,
+    val dark: Boolean,
+    // Material 3 core roles
+    val primary: Long,
+    val onPrimary: Long,
+    val primaryContainer: Long,
+    val onPrimaryContainer: Long,
+    val secondary: Long,
+    val onSecondary: Long,
+    val secondaryContainer: Long,
+    val onSecondaryContainer: Long,
+    val background: Long,
+    val onBackground: Long,
+    val surface: Long,
+    val onSurface: Long,
+    val surfaceVariant: Long,
+    val onSurfaceVariant: Long,
+    val surfaceContainerLowest: Long,
+    val surfaceContainerLow: Long,
+    val surfaceContainer: Long,
+    val surfaceContainerHigh: Long,
+    val outline: Long,
+    val outlineVariant: Long,
+    val error: Long,
+    val onError: Long,
+    // Vusic control tokens
+    val switchOffTrack: Long,
+    val switchOffOutline: Long,
+    val switchOffThumb: Long,
+    val disabledTrack: Long,
+    val disabledOutline: Long,
+    val disabledThumb: Long,
+    val sliderInactiveTrack: Long,
+    val chipOffFill: Long,
+    val chipOffText: Long,
+    // Player & gradient roles
+    val miniContainer: Long,
+    val miniOutline: Long,
+    val ringTrack: Long,
+    val surfaceTop: Long,
+    val surfaceBottom: Long,
+    val surfaceText: Long,
+    val surfaceSecondary: Long,
+    val rowHighlightSecondary: Long,
+) {
+    fun toPlayingScheme(): PlayingScheme = PlayingScheme.fromDynamic(this)
+}
+
+/**
+ * Builds [VusicDynamicScheme] and [PlayingScheme] from an artwork seed color.
  *
- * @param seedArgb cover seed (vibrant preferred, else dominant); null or gray
- *        (saturation < [GRAY_SATURATION]) falls back to [fallbackSeedArgb]
- *        when that is usable, else to the theme pair.
- * @param fallbackSeedArgb the app theme's primary: a gray cover still gets a
- *        tinted scheme from the accent instead of going fully neutral.
- * @param fallbackContainer / [fallbackOnContainer] the app theme's
- *        primaryContainer / onPrimaryContainer, used when no seed is usable
- *        (and the "Dynamic Now Playing color" setting is on but there is no
- *        art, or the accent itself is gray).
+ * In Dynamic Theme v2, neutral seeds (white, near-white, gray, black) are
+ * first-class citizens: [buildMaterialScheme] and [schemeForSeed] map neutral
+ * seeds (C*ab < 4) to true neutral gray/white/charcoal schemes (C*ab = 0)
+ * instead of falling back to a blue or slate theme accent.
  */
 object PlayingColors {
 
-    /** Below this saturation a seed is "gray" and unusable. */
+    /** Below this HSL saturation, legacy [schemeFor] treated a seed as gray. */
     const val GRAY_SATURATION = 0.12f
+
+    /** Below this CIELAB chroma C*ab, a seed is treated as pure neutral (target chroma = 0). */
+    const val NEUTRAL_CHROMA_FLOOR = 4.0
+
+    /** Chroma at which the smooth neutral scaling factor alpha reaches 1.0. */
+    const val FULL_CHROMA_PIVOT = 18.0
+
+    /** Default light-mode surface tint strength (0f = pure neutral surfaces, 1f = full cap). */
+    const val DefaultLightTintStrength = 0f
+
+    private const val WHITE = 0xFFFFFFFFL
+    private const val BLACK = 0xFF000000L
+    private const val NEAR_BLACK = 0xFF141414L
+    private const val ERROR_RED = 0xFFB3261EL
 
     /**
      * Ring track: the container tinted 18% toward the primary. If that lands
@@ -79,12 +161,682 @@ object PlayingColors {
             track = Contrast.blend(primary, container, share)
             guard++
         }
+        if (Contrast.ratio(primary, track) < 3.05) {
+            track = if (Contrast.ratio(primary, container) >= 3.05) {
+                container
+            } else {
+                Contrast.pickBest(BLACK, WHITE, primary)
+            }
+        }
         return track
     }
 
-    private const val WHITE = 0xFFFFFFFFL
-    private const val BLACK = 0xFF000000L
-    private const val NEAR_BLACK = 0xFF141414L
+    /**
+     * Adjusts a foreground role at ([hue], [startTone], [chroma]) in 1.5-tone
+     * steps until it achieves at least [minRatio] against EVERY background in
+     * [backgrounds]. If even extreme tones fail across the set, selects between
+     * pure black and pure white by maximizing the minimum ratio across all
+     * [backgrounds].
+     */
+    fun enforceContrastAcross(
+        hue: Double,
+        startTone: Float,
+        chroma: Float,
+        backgrounds: List<Long>,
+        minRatio: Double,
+        preferLighter: Boolean? = null,
+    ): Long {
+        if (backgrounds.isEmpty()) {
+            return Contrast.fromToneChroma(hue, startTone, chroma)
+        }
+        val initial = Contrast.fromToneChroma(hue, startTone, chroma)
+        if (backgrounds.all { Contrast.ratio(initial, it) >= minRatio }) {
+            return initial
+        }
+        val maxBgLum = backgrounds.maxOf { Contrast.luminance(it) }
+        val moveLighter = preferLighter ?: (maxBgLum <= NowPlayingColors.LIGHT_SURFACE_LUMINANCE)
+        val step = if (moveLighter) 1.5f else -1.5f
+        var tone = startTone
+        repeat(68) {
+            val cand = Contrast.fromToneChroma(hue, tone, chroma)
+            if (backgrounds.all { Contrast.ratio(cand, it) >= minRatio }) {
+                return cand
+            }
+            tone = (tone + step).coerceIn(0f, 100f)
+        }
+        // Try neutral (chroma = 0) along the same direction before black/white extreme.
+        tone = startTone
+        repeat(68) {
+            val cand = Contrast.fromToneChroma(hue, tone, 0f)
+            if (backgrounds.all { Contrast.ratio(cand, it) >= minRatio }) {
+                return cand
+            }
+            tone = (tone + step).coerceIn(0f, 100f)
+        }
+        return Contrast.pickBestAcross(BLACK, WHITE, backgrounds)
+    }
+
+    /**
+     * Static default [VusicDynamicScheme] matching `Theme.kt`'s `Dark` and `Light`
+     * palettes when dynamic colors are disabled or nothing is playing.
+     */
+    fun staticMaterialScheme(dark: Boolean): VusicDynamicScheme = if (dark) {
+        val primary = WHITE
+        val primaryContainer = 0xFF3A3F46L
+        val onPrimaryContainer = 0xFFEAF0F7L
+        val background = 0xFF0F0F0FL
+        val surface = 0xFF1E1E1EL
+        val surfaceHigh = 0xFF2A2A2AL
+        val secondaryText = 0xFF9AA0A6L
+        val surfaceTop = Contrast.fromHsl(0f, 0f, 0.10f)
+        val surfaceBottom = Contrast.fromHsl(0f, 0f, 0.06f)
+        VusicDynamicScheme(
+            seedArgb = null,
+            dark = true,
+            primary = primary,
+            onPrimary = BLACK,
+            primaryContainer = primaryContainer,
+            onPrimaryContainer = onPrimaryContainer,
+            secondary = secondaryText,
+            onSecondary = WHITE,
+            secondaryContainer = primaryContainer,
+            onSecondaryContainer = onPrimaryContainer,
+            background = background,
+            onBackground = WHITE,
+            surface = surface,
+            onSurface = WHITE,
+            surfaceVariant = surfaceHigh,
+            onSurfaceVariant = secondaryText,
+            surfaceContainerLowest = BLACK,
+            surfaceContainerLow = background,
+            surfaceContainer = surface,
+            surfaceContainerHigh = surfaceHigh,
+            outline = 0xFF3A3A3AL,
+            outlineVariant = 0xFF2A2A2AL,
+            error = ERROR_RED,
+            onError = WHITE,
+            switchOffTrack = 0xFF3A3A3AL,
+            switchOffOutline = 0xFF8A8A8AL,
+            switchOffThumb = 0xFFB8B8B8L,
+            disabledTrack = 0xFF232323L,
+            disabledOutline = 0xFF4A4A4AL,
+            disabledThumb = 0xFF5A5A5AL,
+            sliderInactiveTrack = 0xFF6E6E6EL,
+            chipOffFill = 0xFF2A2A2AL,
+            chipOffText = 0xFFEDEDEDL,
+            miniContainer = primaryContainer,
+            miniOutline = primary,
+            ringTrack = ringTrack(primaryContainer, primary),
+            surfaceTop = surfaceTop,
+            surfaceBottom = surfaceBottom,
+            surfaceText = WHITE,
+            surfaceSecondary = enforceContrastAcross(0.0, 78f, 0f, listOf(surfaceTop, surfaceBottom), 4.5, true),
+            rowHighlightSecondary = onPrimaryContainer,
+        )
+    } else {
+        val primary = 0xFF0B6BA8L
+        val primaryContainer = 0xFFCFE8FFL
+        val onPrimaryContainer = 0xFF001D33L
+        val background = 0xFFF7F9FBL
+        val surface = WHITE
+        val surfaceVariant = 0xFFE7EDF3L
+        val onSurface = 0xFF0B0F14L
+        val onSurfaceVariant = 0xFF3F4A52L
+        val surfaceContainerLow = 0xFFF2F5F9L
+        val surfaceContainer = 0xFFECEFF4L
+        val surfaceContainerHigh = 0xFFE4E8EEL
+        val surfaceTop = Contrast.fromHsl(0f, 0f, 0.96f)
+        val surfaceBottom = Contrast.fromHsl(0f, 0f, 0.91f)
+        VusicDynamicScheme(
+            seedArgb = null,
+            dark = false,
+            primary = primary,
+            onPrimary = WHITE,
+            primaryContainer = primaryContainer,
+            onPrimaryContainer = onPrimaryContainer,
+            secondary = 0xFF48626FL,
+            onSecondary = WHITE,
+            secondaryContainer = primaryContainer,
+            onSecondaryContainer = onPrimaryContainer,
+            background = background,
+            onBackground = onSurface,
+            surface = surface,
+            onSurface = onSurface,
+            surfaceVariant = surfaceVariant,
+            onSurfaceVariant = onSurfaceVariant,
+            surfaceContainerLowest = surface,
+            surfaceContainerLow = surfaceContainerLow,
+            surfaceContainer = surfaceContainer,
+            surfaceContainerHigh = surfaceContainerHigh,
+            outline = 0xFF6E7A85L,
+            outlineVariant = 0xFFC3CCD5L,
+            error = ERROR_RED,
+            onError = WHITE,
+            switchOffTrack = 0xFFD3D6DAL,
+            switchOffOutline = 0xFF5F6368L,
+            switchOffThumb = 0xFF5F6368L,
+            disabledTrack = 0xFFE8EAEDL,
+            disabledOutline = 0xFFBDC1C6L,
+            disabledThumb = 0xFFBDC1C6L,
+            sliderInactiveTrack = 0xFF8A9096L,
+            chipOffFill = 0xFFE7EDF3L,
+            chipOffText = 0xFF10141AL,
+            miniContainer = surfaceContainer,
+            miniOutline = 0xFF5F6368L,
+            ringTrack = ringTrack(surfaceContainer, primary),
+            surfaceTop = surfaceTop,
+            surfaceBottom = surfaceBottom,
+            surfaceText = NEAR_BLACK,
+            surfaceSecondary = enforceContrastAcross(0.0, 34f, 0f, listOf(surfaceTop, surfaceBottom), 4.5, false),
+            rowHighlightSecondary = onPrimaryContainer,
+        )
+    }
+
+    /**
+     * Generates a complete [VusicDynamicScheme] for [dark] (Dark or Light mode)
+     * from [seedArgb] (including neutral white, gray, and black covers).
+     *
+     * @param seedArgb packed `0xFFRRGGBBL` seed color (or `null` for static theme).
+     * @param dark `true` for Dark theme, `false` for Light theme.
+     * @param lightTintStrength hook in `[0f, 1f]` scaling light surface chroma caps
+     *        (defaults to [DefaultLightTintStrength] so Section D can tune light surface tint).
+     */
+    fun buildMaterialScheme(
+        seedArgb: Long?,
+        dark: Boolean,
+        lightTintStrength: Float = DefaultLightTintStrength,
+    ): VusicDynamicScheme {
+        if (seedArgb == null) return staticMaterialScheme(dark)
+        val normalizedSeed = seedArgb or 0xFF000000L
+        return if (dark) {
+            buildDarkMaterialScheme(normalizedSeed)
+        } else {
+            buildLightMaterialScheme(normalizedSeed, lightTintStrength.coerceIn(0f, 1f))
+        }
+    }
+
+    /**
+     * Dynamic Theme v2 builder returning a [PlayingScheme] for any [seedArgb]
+     * (including neutral white/gray/black seeds, which stay neutral rather than
+     * falling back to a blue or slate accent).
+     */
+    fun schemeForSeed(
+        seedArgb: Long?,
+        dark: Boolean,
+        lightTintStrength: Float = DefaultLightTintStrength,
+    ): PlayingScheme = buildMaterialScheme(seedArgb, dark, lightTintStrength).toPlayingScheme()
+
+    /**
+     * Builds a [VusicDynamicScheme] directly from raw cover pixels (`IntArray`).
+     * Returns `null` if the cover has no opaque pixels.
+     */
+    fun schemeFromPixels(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        dark: Boolean,
+        lightTintStrength: Float = DefaultLightTintStrength,
+    ): VusicDynamicScheme? {
+        val seed = ArtworkColorExtractor.extractSourceColor(pixels, width, height) ?: return null
+        return buildMaterialScheme(seed, dark, lightTintStrength)
+    }
+
+    private fun roleChroma(seedChroma: Double, alpha: Double, cap: Float): Float {
+        if (seedChroma < NEUTRAL_CHROMA_FLOOR) return 0f
+        return minOf(cap.toDouble() * alpha, seedChroma).toFloat()
+    }
+
+    private fun buildDarkMaterialScheme(seed: Long): VusicDynamicScheme {
+        val hue = Contrast.labHue(seed)
+        val seedChroma = Contrast.chromaOf(seed)
+        val isNeutral = seedChroma < NEUTRAL_CHROMA_FLOOR
+        val alpha = if (isNeutral) 0.0 else (seedChroma / FULL_CHROMA_PIVOT).coerceIn(0.0, 1.0)
+
+        fun c(cap: Float): Float = roleChroma(seedChroma, alpha, cap)
+
+        // Surfaces: tone 6-14 (never lightened even when seed is pure white)
+        val surfaceContainerLowest = Contrast.fromToneChroma(hue, 4f, c(4f))
+        val background = Contrast.fromToneChroma(hue, 6f, c(6f))
+        val surfaceContainerLow = background
+        val surface = Contrast.fromToneChroma(hue, 11f, c(10f))
+        val surfaceContainer = surface
+        val surfaceContainerHigh = Contrast.fromToneChroma(hue, 16f, c(14f))
+        val surfaceVariant = surfaceContainerHigh
+
+        // Containers a few tones above surface
+        val primaryContainer = Contrast.fromToneChroma(hue, DarkToneSpec.HIGHLIGHT_TONE, c(DarkToneSpec.HIGHLIGHT_CHROMA))
+        val secondaryContainer = Contrast.fromToneChroma(hue, 20f, c(16f))
+
+        // MiniPlayer base & outline
+        val miniContainer = Contrast.fromToneChroma(hue, DarkToneSpec.MINI_TONE, c(DarkToneSpec.MINI_CHROMA))
+        val miniOutline = Contrast.fromToneChroma(hue, DarkToneSpec.MINI_OUTLINE_TONE, c(DarkToneSpec.MINI_OUTLINE_CHROMA))
+
+        // Full-screen Now Playing / Queue gradients
+        val surfaceTop = Contrast.fromToneChroma(hue, DarkToneSpec.SURFACE_TOP_TONE, c(DarkToneSpec.SURFACE_CHROMA))
+        val surfaceBottom = Contrast.fromToneChroma(hue, DarkToneSpec.SURFACE_BOTTOM_TONE, c(DarkToneSpec.SURFACE_CHROMA))
+
+        // Primary / Accent: tone ~75-85 (82 for neutral white/gray/black, 78 for chromatic)
+        val basePrimaryTone = if (isNeutral) 82f else 78f
+        val primaryChroma = c(DarkToneSpec.ACCENT_CHROMA)
+        val primary = enforceContrastAcross(
+            hue = hue,
+            startTone = basePrimaryTone,
+            chroma = primaryChroma,
+            backgrounds = listOf(background, surface, surfaceContainer, primaryContainer, miniContainer, surfaceTop, surfaceBottom),
+            minRatio = 3.0,
+            preferLighter = true,
+        )
+
+        val onPrimary = enforceContrastAcross(
+            hue = hue,
+            startTone = 12f,
+            chroma = c(10f),
+            backgrounds = listOf(primary),
+            minRatio = 4.5,
+            preferLighter = false,
+        )
+
+        val onPrimaryContainer = enforceContrastAcross(
+            hue = hue,
+            startTone = DarkToneSpec.ON_HIGHLIGHT_TONE,
+            chroma = c(DarkToneSpec.ON_HIGHLIGHT_CHROMA),
+            backgrounds = listOf(primaryContainer),
+            minRatio = 4.5,
+            preferLighter = true,
+        )
+
+        val onSecondaryContainer = enforceContrastAcross(
+            hue = hue,
+            startTone = 92f,
+            chroma = c(10f),
+            backgrounds = listOf(secondaryContainer),
+            minRatio = 4.5,
+            preferLighter = true,
+        )
+
+        val rowHighlightSecondary = enforceContrastAcross(
+            hue = hue,
+            startTone = DarkToneSpec.SECONDARY_TONE,
+            chroma = c(DarkToneSpec.SECONDARY_CHROMA),
+            backgrounds = listOf(primaryContainer),
+            minRatio = 4.5,
+            preferLighter = true,
+        )
+
+        val secondary = enforceContrastAcross(
+            hue = hue,
+            startTone = 78f,
+            chroma = c(14f),
+            backgrounds = listOf(background, surface, primaryContainer),
+            minRatio = 4.5,
+            preferLighter = true,
+        )
+        val onSecondary = enforceContrastAcross(
+            hue = hue,
+            startTone = 12f,
+            chroma = c(8f),
+            backgrounds = listOf(secondary),
+            minRatio = 4.5,
+            preferLighter = false,
+        )
+
+        val surfaceBgs = listOf(background, surface, surfaceContainerHigh)
+        val onSurface = enforceContrastAcross(
+            hue = hue,
+            startTone = 96f,
+            chroma = c(4f),
+            backgrounds = surfaceBgs,
+            minRatio = 4.5,
+            preferLighter = true,
+        )
+        val onBackground = onSurface
+        val onSurfaceVariant = enforceContrastAcross(
+            hue = hue,
+            startTone = 76f,
+            chroma = c(8f),
+            backgrounds = surfaceBgs,
+            minRatio = 4.5,
+            preferLighter = true,
+        )
+
+        val outline = Contrast.fromToneChroma(hue, 38f, c(10f))
+        val outlineVariant = Contrast.fromToneChroma(hue, 24f, c(8f))
+
+        // Controls
+        val chipOffFill = surfaceContainerHigh
+        val chipOffText = enforceContrastAcross(
+            hue = hue,
+            startTone = 93f,
+            chroma = c(4f),
+            backgrounds = listOf(chipOffFill),
+            minRatio = 4.5,
+            preferLighter = true,
+        )
+        val switchOffTrack = Contrast.fromToneChroma(hue, 24f, c(8f))
+        val switchOffOutline = enforceContrastAcross(
+            hue = hue,
+            startTone = 58f,
+            chroma = c(8f),
+            backgrounds = listOf(surface, background, chipOffFill),
+            minRatio = 3.0,
+            preferLighter = true,
+        )
+        val switchOffThumb = enforceContrastAcross(
+            hue = hue,
+            startTone = 76f,
+            chroma = c(6f),
+            backgrounds = listOf(switchOffTrack),
+            minRatio = 3.0,
+            preferLighter = true,
+        )
+        val sliderInactiveTrack = enforceContrastAcross(
+            hue = hue,
+            startTone = 46f,
+            chroma = c(8f),
+            backgrounds = listOf(surface, background),
+            minRatio = 2.0,
+            preferLighter = true,
+        )
+
+        // Now Playing gradient inks
+        val gradBgs = listOf(surfaceTop, surfaceBottom)
+        val surfaceText = enforceContrastAcross(
+            hue = hue,
+            startTone = DarkToneSpec.SURFACE_TEXT_TONE,
+            chroma = c(DarkToneSpec.SURFACE_TEXT_CHROMA),
+            backgrounds = gradBgs,
+            minRatio = 4.5,
+            preferLighter = true,
+        )
+        val surfaceSecondary = enforceContrastAcross(
+            hue = hue,
+            startTone = DarkToneSpec.SURFACE_SECONDARY_TONE,
+            chroma = c(DarkToneSpec.SURFACE_SECONDARY_CHROMA),
+            backgrounds = gradBgs,
+            minRatio = 4.5,
+            preferLighter = true,
+        )
+
+        // Ring track: derived downstream from miniContainer & primary, verified >= 3.05:1
+        val track = ringTrack(miniContainer, primary)
+
+        return VusicDynamicScheme(
+            seedArgb = seed,
+            dark = true,
+            primary = primary,
+            onPrimary = onPrimary,
+            primaryContainer = primaryContainer,
+            onPrimaryContainer = onPrimaryContainer,
+            secondary = secondary,
+            onSecondary = onSecondary,
+            secondaryContainer = secondaryContainer,
+            onSecondaryContainer = onSecondaryContainer,
+            background = background,
+            onBackground = onBackground,
+            surface = surface,
+            onSurface = onSurface,
+            surfaceVariant = surfaceVariant,
+            onSurfaceVariant = onSurfaceVariant,
+            surfaceContainerLowest = surfaceContainerLowest,
+            surfaceContainerLow = surfaceContainerLow,
+            surfaceContainer = surfaceContainer,
+            surfaceContainerHigh = surfaceContainerHigh,
+            outline = outline,
+            outlineVariant = outlineVariant,
+            error = ERROR_RED,
+            onError = WHITE,
+            switchOffTrack = switchOffTrack,
+            switchOffOutline = switchOffOutline,
+            switchOffThumb = switchOffThumb,
+            disabledTrack = 0xFF232323L,
+            disabledOutline = 0xFF4A4A4AL,
+            disabledThumb = 0xFF5A5A5AL,
+            sliderInactiveTrack = sliderInactiveTrack,
+            chipOffFill = chipOffFill,
+            chipOffText = chipOffText,
+            miniContainer = miniContainer,
+            miniOutline = miniOutline,
+            ringTrack = track,
+            surfaceTop = surfaceTop,
+            surfaceBottom = surfaceBottom,
+            surfaceText = surfaceText,
+            surfaceSecondary = surfaceSecondary,
+            rowHighlightSecondary = rowHighlightSecondary,
+        )
+    }
+
+    private fun buildLightMaterialScheme(seed: Long, lightTintStrength: Float): VusicDynamicScheme {
+        val hue = Contrast.labHue(seed)
+        val seedChroma = Contrast.chromaOf(seed)
+        val isNeutral = seedChroma < NEUTRAL_CHROMA_FLOOR
+        val alpha = if (isNeutral) 0.0 else (seedChroma / FULL_CHROMA_PIVOT).coerceIn(0.0, 1.0)
+        val tint = lightTintStrength.toDouble().coerceIn(0.0, 1.0)
+
+        fun c(cap: Float): Float = roleChroma(seedChroma, alpha, cap)
+        fun surfaceChroma(cap: Float): Float = roleChroma(seedChroma, alpha * tint, cap)
+
+        // Clamped lightness invariant: light surfaces stay at T=91..98 even for a pure black seed.
+        val surface = Contrast.fromToneChroma(hue, 98f, surfaceChroma(6f))
+        val surfaceContainerLowest = surface
+        val background = Contrast.fromToneChroma(hue, 96f, surfaceChroma(8f))
+        val surfaceContainerLow = Contrast.fromToneChroma(hue, 95f, surfaceChroma(8f))
+        val surfaceContainer = Contrast.fromToneChroma(hue, 94f, surfaceChroma(10f))
+        val surfaceContainerHigh = Contrast.fromToneChroma(hue, 91f, surfaceChroma(14f))
+        val surfaceVariant = surfaceContainerHigh
+
+        // Containers: soft tint of seed
+        val primaryContainer = Contrast.fromToneChroma(hue, 88f, c(24f))
+        val secondaryContainer = Contrast.fromToneChroma(hue, 89f, c(18f))
+
+        // MiniPlayer in Light mode: pale card (T=94) and legible outline
+        val miniContainer = surfaceContainer
+        val miniOutline = enforceContrastAcross(
+            hue = hue,
+            startTone = 55f,
+            chroma = surfaceChroma(8f),
+            backgrounds = listOf(background, surface, miniContainer),
+            minRatio = 3.0,
+            preferLighter = false,
+        )
+
+        // Light gradient stops for Now Playing / Queue
+        val surfaceTop = Contrast.fromToneChroma(hue, 96f, c(10f))
+        val surfaceBottom = Contrast.fromToneChroma(hue, 92f, c(14f))
+
+        // Primary / Accent: tone ~35-45 (charcoal T=38 for neutral sources, never blue)
+        val basePrimaryTone = if (isNeutral) 38f else 40f
+        val primaryChroma = if (isNeutral) {
+            0f
+        } else {
+            minOf(42.0 * alpha, maxOf(seedChroma, 28.0 * alpha)).toFloat()
+        }
+        val primary = enforceContrastAcross(
+            hue = hue,
+            startTone = basePrimaryTone,
+            chroma = primaryChroma,
+            backgrounds = listOf(background, surface, surfaceContainer, primaryContainer, miniContainer, surfaceTop, surfaceBottom),
+            minRatio = 3.0,
+            preferLighter = false,
+        )
+
+        val onPrimary = enforceContrastAcross(
+            hue = hue,
+            startTone = 99f,
+            chroma = 0f,
+            backgrounds = listOf(primary),
+            minRatio = 4.5,
+            preferLighter = true,
+        )
+
+        val onPrimaryContainer = enforceContrastAcross(
+            hue = hue,
+            startTone = 14f,
+            chroma = c(12f),
+            backgrounds = listOf(primaryContainer),
+            minRatio = 4.5,
+            preferLighter = false,
+        )
+
+        val onSecondaryContainer = enforceContrastAcross(
+            hue = hue,
+            startTone = 14f,
+            chroma = c(10f),
+            backgrounds = listOf(secondaryContainer),
+            minRatio = 4.5,
+            preferLighter = false,
+        )
+
+        val rowHighlightSecondary = enforceContrastAcross(
+            hue = hue,
+            startTone = 28f,
+            chroma = c(12f),
+            backgrounds = listOf(primaryContainer),
+            minRatio = 4.5,
+            preferLighter = false,
+        )
+
+        val secondary = enforceContrastAcross(
+            hue = hue,
+            startTone = 38f,
+            chroma = c(14f),
+            backgrounds = listOf(background, surface, primaryContainer),
+            minRatio = 4.5,
+            preferLighter = false,
+        )
+        val onSecondary = enforceContrastAcross(
+            hue = hue,
+            startTone = 99f,
+            chroma = 0f,
+            backgrounds = listOf(secondary),
+            minRatio = 4.5,
+            preferLighter = true,
+        )
+
+        val surfaceBgs = listOf(background, surface, surfaceContainer, surfaceContainerHigh)
+        val onSurface = enforceContrastAcross(
+            hue = hue,
+            startTone = 10f,
+            chroma = c(4f),
+            backgrounds = surfaceBgs,
+            minRatio = 4.5,
+            preferLighter = false,
+        )
+        val onBackground = onSurface
+        val onSurfaceVariant = enforceContrastAcross(
+            hue = hue,
+            startTone = 34f,
+            chroma = c(10f),
+            backgrounds = surfaceBgs,
+            minRatio = 4.5,
+            preferLighter = false,
+        )
+
+        val outline = Contrast.fromToneChroma(hue, 50f, c(10f))
+        val outlineVariant = Contrast.fromToneChroma(hue, 80f, c(8f))
+
+        // Controls
+        val chipOffFill = surfaceContainerHigh
+        val chipOffText = enforceContrastAcross(
+            hue = hue,
+            startTone = 12f,
+            chroma = c(4f),
+            backgrounds = listOf(chipOffFill),
+            minRatio = 4.5,
+            preferLighter = false,
+        )
+        val switchOffTrack = Contrast.fromToneChroma(hue, 86f, surfaceChroma(6f))
+        val switchOffOutline = enforceContrastAcross(
+            hue = hue,
+            startTone = 42f,
+            chroma = c(8f),
+            backgrounds = listOf(surface, background, chipOffFill),
+            minRatio = 3.0,
+            preferLighter = false,
+        )
+        val switchOffThumb = enforceContrastAcross(
+            hue = hue,
+            startTone = 38f,
+            chroma = c(6f),
+            backgrounds = listOf(switchOffTrack),
+            minRatio = 3.0,
+            preferLighter = false,
+        )
+        val sliderInactiveTrack = enforceContrastAcross(
+            hue = hue,
+            startTone = 58f,
+            chroma = c(8f),
+            backgrounds = listOf(surface, background),
+            minRatio = 2.0,
+            preferLighter = false,
+        )
+
+        // Now Playing gradient inks
+        val gradBgs = listOf(surfaceTop, surfaceBottom)
+        val surfaceText = enforceContrastAcross(
+            hue = hue,
+            startTone = 10f,
+            chroma = c(4f),
+            backgrounds = gradBgs,
+            minRatio = 4.5,
+            preferLighter = false,
+        )
+        val surfaceSecondary = enforceContrastAcross(
+            hue = hue,
+            startTone = 32f,
+            chroma = c(8f),
+            backgrounds = gradBgs,
+            minRatio = 4.5,
+            preferLighter = false,
+        )
+
+        val track = ringTrack(miniContainer, primary)
+
+        return VusicDynamicScheme(
+            seedArgb = seed,
+            dark = false,
+            primary = primary,
+            onPrimary = onPrimary,
+            primaryContainer = primaryContainer,
+            onPrimaryContainer = onPrimaryContainer,
+            secondary = secondary,
+            onSecondary = onSecondary,
+            secondaryContainer = secondaryContainer,
+            onSecondaryContainer = onSecondaryContainer,
+            background = background,
+            onBackground = onBackground,
+            surface = surface,
+            onSurface = onSurface,
+            surfaceVariant = surfaceVariant,
+            onSurfaceVariant = onSurfaceVariant,
+            surfaceContainerLowest = surfaceContainerLowest,
+            surfaceContainerLow = surfaceContainerLow,
+            surfaceContainer = surfaceContainer,
+            surfaceContainerHigh = surfaceContainerHigh,
+            outline = outline,
+            outlineVariant = outlineVariant,
+            error = ERROR_RED,
+            onError = WHITE,
+            switchOffTrack = switchOffTrack,
+            switchOffOutline = switchOffOutline,
+            switchOffThumb = switchOffThumb,
+            disabledTrack = 0xFFE8EAEDL,
+            disabledOutline = 0xFFBDC1C6L,
+            disabledThumb = 0xFFBDC1C6L,
+            sliderInactiveTrack = sliderInactiveTrack,
+            chipOffFill = chipOffFill,
+            chipOffText = chipOffText,
+            miniContainer = miniContainer,
+            miniOutline = miniOutline,
+            ringTrack = track,
+            surfaceTop = surfaceTop,
+            surfaceBottom = surfaceBottom,
+            surfaceText = surfaceText,
+            surfaceSecondary = surfaceSecondary,
+            rowHighlightSecondary = rowHighlightSecondary,
+        )
+    }
+
+    // ---- Legacy compatibility entry point (`schemeFor`) ---------------------
 
     fun schemeFor(
         seedArgb: Long?,
@@ -106,24 +858,16 @@ object PlayingColors {
         return if (dark) darkScheme(seed, hsl.h, hsl.s) else lightScheme(seed, hsl.h, hsl.s)
     }
 
-    // ---- fallback (theme pair, still verified) ------------------------------
-
     private fun fallbackScheme(container: Long, onContainer: Long, dark: Boolean): PlayingScheme {
-        // One of black/white always clears 4.5, so exactly one of the two
-        // branches below is live; the theme pair is preferred when it passes.
         val fixedOn = if (Contrast.ratio(onContainer, container) >= 4.5) {
             onContainer
         } else {
             Contrast.pickBest(BLACK, WHITE, container)
         }
-        // onContainer at 4.5+ always clears 3.0, so primary is safe as-is.
         val fixedPrimary = fixedOn
         val top = if (dark) Contrast.fromHsl(0f, 0f, 0.10f) else Contrast.fromHsl(0f, 0f, 0.96f)
         val bottom = if (dark) Contrast.fromHsl(0f, 0f, 0.06f) else Contrast.fromHsl(0f, 0f, 0.91f)
         val surfaceText = if (dark) WHITE else NEAR_BLACK
-        // No usable hue (gray or missing art): the whole scheme is the app
-        // theme, untouched — exactly what the "Dynamic Now Playing color"
-        // setting off produces, so both neutral paths look identical.
         return PlayingScheme(
             seedArgb = null,
             container = container,
@@ -140,19 +884,9 @@ object PlayingColors {
         )
     }
 
-    // ---- dark theme ----------------------------------------------------------
-    //
-    // Every tone/chroma comes from DarkToneSpec so the dark look is tunable in
-    // one place. Nothing here uses the seed's own lightness: the seed only
-    // supplies the HUE, and the tone/chroma caps decide how dark and how
-    // saturated each surface is. That is what keeps a vivid cover from painting
-    // a neon highlight.
-
-    /** Tone/chroma with the seed's hue, chroma never above [cap]. */
     private fun toned(hue: Double, tone: Float, cap: Float, seedChroma: Double): Long =
         Contrast.fromToneChroma(hue, tone, minOf(cap.toDouble(), seedChroma).toFloat())
 
-    /** Lightens (or darkens) in 2-tone steps until [minRatio] vs [bg] passes. */
     private fun enforce(
         hue: Double,
         startTone: Float,
@@ -167,7 +901,6 @@ object PlayingColors {
             if (Contrast.ratio(c, bg) >= minRatio) return c
             tone = if (lighter) (tone + 2f).coerceAtMost(100f) else (tone - 2f).coerceAtLeast(0f)
         }
-        // Nothing at this tone/chroma works: black or white always does.
         return Contrast.pickBest(BLACK, WHITE, bg)
     }
 
@@ -175,9 +908,7 @@ object PlayingColors {
         val hue = Contrast.labHue(seed)
         val seedChroma = Contrast.chromaOf(seed)
 
-        // Highlight row: a deep, softly tinted surface (tone 22, chroma <= 22).
         val container = toned(hue, DarkToneSpec.HIGHLIGHT_TONE, DarkToneSpec.HIGHLIGHT_CHROMA, seedChroma)
-        // Text on it: light and near-neutral, contrast enforced not assumed.
         val onContainer = enforce(
             hue, DarkToneSpec.ON_HIGHLIGHT_TONE, DarkToneSpec.ON_HIGHLIGHT_CHROMA,
             container, 4.5, lighter = true,
@@ -186,23 +917,16 @@ object PlayingColors {
             hue, DarkToneSpec.SECONDARY_TONE, DarkToneSpec.SECONDARY_CHROMA,
             container, 4.5, lighter = true,
         )
-        // Accent (ring, mini icons/title, queue toggles, Save pill): tone ~75
-        // with a capped chroma, so it reads without glowing.
         val primary = enforce(
             hue, DarkToneSpec.ACCENT_TONE, DarkToneSpec.ACCENT_CHROMA,
             container, 3.0, lighter = true,
         )
-        // Ring track: a faint groove; the ring must clear 3:1 on it.
         val track = enforce(
             hue, DarkToneSpec.RING_TRACK_TONE, DarkToneSpec.RING_TRACK_CHROMA,
             primary, 3.0, lighter = false,
         )
-        // Mini player: nearly black with a hint of the hue, plus a hairline so
-        // it stays a distinct shape against the page background and nav bar.
         val miniContainer = toned(hue, DarkToneSpec.MINI_TONE, DarkToneSpec.MINI_CHROMA, seedChroma)
         val miniOutline = toned(hue, DarkToneSpec.MINI_OUTLINE_TONE, DarkToneSpec.MINI_OUTLINE_CHROMA, seedChroma)
-        // Full-screen gradients: darker than the highlight, top slightly lighter
-        // than the bottom, same muted chroma.
         val top = toned(hue, DarkToneSpec.SURFACE_TOP_TONE, DarkToneSpec.SURFACE_CHROMA, seedChroma)
         val bottom = toned(hue, DarkToneSpec.SURFACE_BOTTOM_TONE, DarkToneSpec.SURFACE_CHROMA, seedChroma)
         val surfaceText = enforce(
@@ -232,67 +956,8 @@ object PlayingColors {
         )
     }
 
-    // ---- light theme ----------------------------------------------------------
-
     private fun lightScheme(seed: Long, h: Float, s: Float): PlayingScheme {
-        val sat = s.coerceAtMost(0.55f)
-        // Container: pale seed tint. Adjusted below if the text fails.
-        var container = Contrast.fromHsl(h, sat, 0.88f)
-        // On-container: deep seed tone first, near-black as the backstop.
-        var onContainer = Contrast.fromHsl(h, 0.35f, 0.10f)
-        var guard = 0
-        while (Contrast.ratio(onContainer, container) < 4.5 && guard < 16) {
-            if (Contrast.ratio(NEAR_BLACK, container) >= 4.5) {
-                onContainer = NEAR_BLACK
-                break
-            }
-            // Even near-black fails: the container is too dark, lighten it.
-            container = Contrast.withLightness(container, Contrast.toHsl(container).l + 0.02f)
-            guard++
-        }
-        if (Contrast.ratio(onContainer, container) < 4.5) onContainer = NEAR_BLACK
-        val secondary = Contrast.blend(container, onContainer, 0.30f)
-            .let { if (Contrast.ratio(it, container) >= 4.5) it else onContainer }
-        // Primary: deep seed tone, darkened until it clears 3:1.
-        var primary = Contrast.fromHsl(h, sat.coerceAtLeast(0.50f), 0.35f)
-        guard = 0
-        while (Contrast.ratio(primary, container) < 3.0 && guard < 16) {
-            primary = Contrast.withLightness(primary, Contrast.toHsl(primary).l - 0.03f)
-            guard++
-        }
-        if (Contrast.ratio(primary, container) < 3.0) primary = onContainer
-        val track = ringTrack(container, primary)
-        // Gradient surfaces: light seed tones, lightened until near-black text
-        // clears 4.5 on both ends.
-        var top = Contrast.fromHsl(h, sat, 0.93f)
-        guard = 0
-        while (Contrast.ratio(NEAR_BLACK, top) < 4.5 && guard < 16) {
-            top = Contrast.withLightness(top, Contrast.toHsl(top).l + 0.01f)
-            guard++
-        }
-        var bottom = Contrast.fromHsl(h, sat, 0.86f)
-        guard = 0
-        while (Contrast.ratio(NEAR_BLACK, bottom) < 4.5 && guard < 16) {
-            bottom = Contrast.withLightness(bottom, Contrast.toHsl(bottom).l + 0.01f)
-            guard++
-        }
-        val surfaceSecondary = Contrast.blend(top, NEAR_BLACK, 0.30f)
-            .let {
-                if (Contrast.ratio(it, top) >= 4.5 && Contrast.ratio(it, bottom) >= 4.5) it else NEAR_BLACK
-            }
-        return PlayingScheme(
-            seedArgb = seed,
-            container = container,
-            onContainer = onContainer,
-            secondary = secondary,
-            primary = primary,
-            onPrimary = Contrast.pickBest(BLACK, WHITE, primary),
-            track = ringTrack(container, primary),
-            surfaceTop = top,
-            surfaceBottom = bottom,
-            surfaceText = NEAR_BLACK,
-            surfaceSecondary = surfaceSecondary,
-            dark = false,
-        )
+        val dynamic = buildLightMaterialScheme(seed, DefaultLightTintStrength)
+        return PlayingScheme.fromDynamic(dynamic)
     }
 }

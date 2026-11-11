@@ -226,30 +226,32 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
         }
     }
 
-    // Artwork color scheme for the current track, shared by current-row
-    // highlights, the mini player, the queue and Now Playing. Null when the
-    // setting is off or nothing plays: consumers fall back to the theme pair.
+    // Artwork color scheme for the current track, driving root MaterialTheme,
+    // VusicColors, VusicControlColors, and LocalPlayingColors from one source.
+    // When dynamicNpColor is OFF or nothing is playing (and no debug cover
+    // override is set), FeishinTheme uses the static Dark/Light theme.
     val schemeSettings by main.settings.flow.collectAsStateWithLifecycle(initialValue = null)
     val schemeDark = com.feishin.mobile.ui.theme.resolveDark(
         schemeSettings?.theme,
         androidx.compose.foundation.isSystemInDarkTheme(),
     )
-    val schemeFallbackSeed = MaterialTheme.colorScheme.primary.toArgb().toLong().and(0xFFFFFFFFL)
-    val schemeFallbackContainer = MaterialTheme.colorScheme.primaryContainer.toArgb().toLong().and(0xFFFFFFFFL)
-    val schemeFallbackOn = MaterialTheme.colorScheme.onPrimaryContainer.toArgb().toLong().and(0xFFFFFFFFL)
-    val schemeRaw = com.feishin.mobile.ui.theme.rememberPlayingScheme(
+    val dynamicScheme = com.feishin.mobile.ui.theme.rememberDynamicScheme(
         coverUrl = currentTrack?.coverArt?.let { main.player.coverArtUrl(it, 128) },
         enabled = schemeSettings?.dynamicNpColor != false,
         dark = schemeDark,
-        fallbackSeedArgb = schemeFallbackSeed,
-        fallbackContainerArgb = schemeFallbackContainer,
-        fallbackOnContainerArgb = schemeFallbackOn,
+        hasTrack = currentTrack != null,
     )
-    val playingScheme = com.feishin.mobile.ui.theme.animatedPlayingScheme(schemeRaw)
+    val playingScheme = com.feishin.mobile.ui.theme.animatedPlayingScheme(
+        remember(dynamicScheme) { dynamicScheme?.toPlayingScheme() },
+    )
 
+    com.feishin.mobile.ui.theme.FeishinTheme(
+        dark = schemeDark,
+        dynamicScheme = dynamicScheme,
+        playingScheme = playingScheme,
+    ) {
     CompositionLocalProvider(
         LocalTopBarController provides topBar,
-        com.feishin.mobile.ui.theme.LocalPlayingColors provides playingScheme,
     ) {
         val outerDensity = LocalDensity.current
         val configuration = LocalConfiguration.current
@@ -671,6 +673,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 )
             }
         }
+    }
     }
 }
 

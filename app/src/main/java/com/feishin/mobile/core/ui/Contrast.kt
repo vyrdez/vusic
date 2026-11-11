@@ -115,6 +115,28 @@ object Contrast {
     fun pickBest(a: Long, b: Long, bg: Long): Long =
         if (ratio(a, bg) >= ratio(b, bg)) a else b
 
+    /**
+     * Selects between [a] and [b] by maximizing the minimum contrast ratio
+     * across all [backgrounds].
+     */
+    fun pickBestAcross(a: Long, b: Long, backgrounds: List<Long>): Long {
+        if (backgrounds.isEmpty()) return a
+        val minA = backgrounds.minOf { ratio(a, it) }
+        val minB = backgrounds.minOf { ratio(b, it) }
+        return if (minA >= minB) a else b
+    }
+
+    /** CIELAB Euclidean distance Delta E*ab between two Lab triples. */
+    internal fun deltaE(
+        l1: Double, a1: Double, b1: Double,
+        l2: Double, a2: Double, b2: Double,
+    ): Double {
+        val dl = l1 - l2
+        val da = a1 - a2
+        val db = b1 - b2
+        return kotlin.math.sqrt(dl * dl + da * da + db * db)
+    }
+
     // ---- CIELAB: tone (L*) and chroma (C*ab) --------------------------------
     //
     // The dark toning spec is written in Material/HCT terms, where a color is
@@ -145,7 +167,7 @@ object Contrast {
         return if (t3 > LAB_EPS) t3 else (116.0 * t - 16.0) / LAB_KAPPA
     }
 
-    private fun toLab(argb: Long): Triple<Double, Double, Double> {
+    internal fun toLab(argb: Long): Triple<Double, Double, Double> {
         val r = srgbToLinear(red(argb) / 255.0)
         val g = srgbToLinear(green(argb) / 255.0)
         val b = srgbToLinear(blue(argb) / 255.0)
