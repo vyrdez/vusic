@@ -1,6 +1,7 @@
 package com.feishin.mobile.ui.components
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -48,15 +50,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import com.feishin.mobile.core.common.MiniPlayerGesture
+import com.feishin.mobile.core.ui.BlurScrim
+import com.feishin.mobile.core.ui.Contrast
+import com.feishin.mobile.core.ui.NowPlayingColors
+import com.feishin.mobile.core.ui.PlayingColors
 import com.feishin.mobile.core.ui.PlayingScheme
+import com.feishin.mobile.data.settings.BackgroundStyle
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.theme.LocalPlayingColors
 import com.feishin.mobile.ui.theme.LocalVusicDark
@@ -179,6 +188,133 @@ fun resolveMiniPlayerPillTokens(
 }
 
 /**
+ * Resolved background stops, scrim, and foreground ink/ring colors for
+ * [MiniPlayer] across [BackgroundStyle.DEFAULT], [BackgroundStyle.GRADIENT],
+ * and [BackgroundStyle.BLUR].
+ */
+data class MiniPlayerStyleColors(
+    val style: BackgroundStyle,
+    val topColor: Color,
+    val bottomColor: Color,
+    val scrimColor: Color,
+    val inkColor: Color,
+    val subtleInkColor: Color,
+    val ringBarColor: Color,
+    val ringTrackColor: Color,
+)
+
+private fun Color.toPackedArgb(): Long = toArgb().toLong() and 0xFFFFFFFFL
+
+fun resolveMiniPlayerStyleColors(
+    style: BackgroundStyle,
+    scheme: PlayingScheme?,
+    colorScheme: ColorScheme,
+    isDark: Boolean,
+): MiniPlayerStyleColors {
+    val tokens = resolveMiniPlayerPillTokens(
+        dark = isDark,
+        colorScheme = colorScheme,
+        playingScheme = scheme,
+    )
+    val cardBg = tokens.containerColor
+    val cardBgArgb = cardBg.toPackedArgb()
+    val baseInkArgb = tokens.inkColor.toPackedArgb()
+
+    return when (style) {
+        BackgroundStyle.DEFAULT -> MiniPlayerStyleColors(
+            style = style,
+            topColor = cardBg,
+            bottomColor = cardBg,
+            scrimColor = cardBg,
+            inkColor = tokens.inkColor,
+            subtleInkColor = tokens.subInkColor,
+            ringBarColor = tokens.ringBarColor,
+            ringTrackColor = tokens.ringTrackColor,
+        )
+
+        BackgroundStyle.GRADIENT -> {
+            val rawTop = when {
+                scheme != null -> playingColor(scheme.container)
+                else -> colorScheme.surfaceContainerHigh
+            }
+            val rawTopArgb = rawTop.toPackedArgb()
+            // Keep >= 4.5:1 text/icon contrast against both top and bottom stops.
+            val safeTopArgb = if (Contrast.ratio(baseInkArgb, rawTopArgb) >= 4.5) {
+                rawTopArgb
+            } else {
+                val altTopArgb = scheme?.surfaceTop
+                if (altTopArgb != null && Contrast.ratio(baseInkArgb, altTopArgb) >= 4.5) {
+                    altTopArgb
+                } else {
+                    var resolved = cardBgArgb
+                    var t = 0.85f
+                    while (t > 0.05f) {
+                        val blended = Contrast.blend(rawTopArgb, cardBgArgb, t)
+                        if (Contrast.ratio(baseInkArgb, blended) >= 4.5) {
+                            resolved = blended
+                            break
+                        }
+                        t -= 0.15f
+                    }
+                    resolved
+                }
+            }
+            val gradBgs = listOf(safeTopArgb, cardBgArgb)
+            val fallbackInk = NowPlayingColors.contentFor(cardBgArgb)
+            val safeInkArgb = NowPlayingColors.ensureReadable(
+                baseInkArgb,
+                gradBgs,
+                NowPlayingColors.TEXT_MIN_RATIO,
+                fallbackInk,
+            )
+            val safeInk = playingColor(safeInkArgb)
+            val safeTrack = if (safeInkArgb == baseInkArgb) {
+                tokens.ringTrackColor
+            } else {
+                playingColor(PlayingColors.ringTrack(cardBgArgb, safeInkArgb))
+            }
+            MiniPlayerStyleColors(
+                style = style,
+                topColor = playingColor(safeTopArgb),
+                bottomColor = cardBg,
+                scrimColor = cardBg,
+                inkColor = safeInk,
+                subtleInkColor = safeInk,
+                ringBarColor = safeInk,
+                ringTrackColor = safeTrack,
+            )
+        }
+
+        BackgroundStyle.BLUR -> {
+            val worstArtArgb = if (isDark) 0xFFFFFFFFL else 0xFF000000L
+            val worstAlpha = BlurScrim.scrimAlpha(if (isDark) 1f else 0f, isDark)
+            val worstBlurBgArgb = Contrast.blend(cardBgArgb, worstArtArgb, worstAlpha)
+            val blurBgs = listOf(cardBgArgb, worstBlurBgArgb)
+            val candidateInkArgb = scheme?.surfaceText ?: colorScheme.onSurface.toPackedArgb()
+            val fallbackInk = NowPlayingColors.contentFor(cardBgArgb)
+            val safeInkArgb = NowPlayingColors.ensureReadable(
+                candidateInkArgb,
+                blurBgs,
+                NowPlayingColors.TEXT_MIN_RATIO,
+                fallbackInk,
+            )
+            val safeInk = playingColor(safeInkArgb)
+            val safeTrack = playingColor(PlayingColors.ringTrack(cardBgArgb, safeInkArgb))
+            MiniPlayerStyleColors(
+                style = style,
+                topColor = cardBg,
+                bottomColor = cardBg,
+                scrimColor = cardBg,
+                inkColor = safeInk,
+                subtleInkColor = safeInk,
+                ringBarColor = safeInk,
+                ringTrackColor = safeTrack,
+            )
+        }
+    }
+}
+
+/**
  * Floating mini player: a rounded card that hovers above the nav bar with the
  * screen's content scrolling visibly behind and around it.
  *
@@ -195,6 +331,7 @@ fun MiniPlayer(
     player: PlayerManager,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
+    bgStyle: BackgroundStyle = BackgroundStyle.DEFAULT,
     onQueueCleared: (PlayerManager.ClearedQueue) -> Unit = {},
     /** Reported whenever the card's visibility flips (queue gains/loses its first item). */
     onVisibleChanged: (Boolean) -> Unit = {},
@@ -234,17 +371,25 @@ fun MiniPlayer(
     // Artwork tinting (or the theme pair when dynamic color is off / no art).
     val scheme = LocalPlayingColors.current
     val isDark = scheme?.dark ?: LocalVusicDark.current
+    val colorScheme = MaterialTheme.colorScheme
     val pillTokens = resolveMiniPlayerPillTokens(
         dark = isDark,
-        colorScheme = MaterialTheme.colorScheme,
+        colorScheme = colorScheme,
         playingScheme = scheme,
     )
-    val cardBg = pillTokens.containerColor
+    val styleColors = resolveMiniPlayerStyleColors(
+        style = bgStyle,
+        scheme = scheme,
+        colorScheme = colorScheme,
+        isDark = isDark,
+    )
+    val cardBg = styleColors.bottomColor
     val outline = pillTokens.borderColor
-    val ink = pillTokens.inkColor
-    val subInk = pillTokens.subInkColor
-    val ringBar = pillTokens.ringBarColor
-    val ringTrack = pillTokens.ringTrackColor
+    val ink = styleColors.inkColor
+    val subInk = styleColors.subtleInkColor
+    val ringBar = styleColors.ringBarColor
+    val ringTrack = styleColors.ringTrackColor
+    val coverUrl = player.coverArtUrl(song.coverArt, 128)
 
     // Ring progress: sampled from the player at ~4Hz and interpolated with a
     // matching 250ms tween, so the ring glides instead of stepping. The Canvas
@@ -394,7 +539,6 @@ fun MiniPlayer(
                 spotColor = pillTokens.spotShadowColor,
             )
             .clip(shape)
-            .background(cardBg)
             .border(pillTokens.borderWidthDp.dp, outline, shape)
             .clickable(onClick = onOpen)
             .pointerInput(queue.size, currentIndex, repeatMode) {
@@ -517,6 +661,48 @@ fun MiniPlayer(
             }
             .height(MiniPlayerHeight),
     ) {
+        Crossfade(
+            targetState = bgStyle,
+            animationSpec = tween(durationMillis = Motion.scaled(Motion.Normal)),
+            modifier = Modifier.matchParentSize(),
+            label = "mini-bg-style",
+        ) { style ->
+            val resolved = if (style == bgStyle) {
+                styleColors
+            } else {
+                resolveMiniPlayerStyleColors(
+                    style = style,
+                    scheme = scheme,
+                    colorScheme = colorScheme,
+                    isDark = isDark,
+                )
+            }
+            when (style) {
+                BackgroundStyle.DEFAULT -> Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(resolved.bottomColor),
+                )
+                BackgroundStyle.GRADIENT -> Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(resolved.topColor, resolved.bottomColor),
+                            ),
+                        ),
+                )
+                BackgroundStyle.BLUR -> Box(Modifier.fillMaxSize()) {
+                    BlurredArtworkBackground(
+                        coverId = coverUrl,
+                        bitmap = null,
+                        scrimColor = resolved.scrimColor,
+                        isDark = isDark,
+                        modifier = Modifier.matchParentSize(),
+                    )
+                }
+            }
+        }
         Row(
             // Symmetric horizontal insets: the ring box and the last button
             // box sit the same distance from the card edge on both sides, so

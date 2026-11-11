@@ -26,6 +26,21 @@ enum class ThemeMode { SYSTEM, DARK, LIGHT }
 /** Grid or list layout for album/artist collections. */
 enum class LayoutMode { GRID, LIST }
 
+/** Visual backdrop mode for player surfaces. */
+enum class BackgroundStyle(val storageKey: String, val label: String) {
+    DEFAULT("default", "Default"),
+    GRADIENT("gradient", "Gradient"),
+    BLUR("blur", "Blur"),
+    ;
+
+    companion object {
+        fun fromStorage(raw: String?, default: BackgroundStyle): BackgroundStyle {
+            val key = raw?.trim() ?: return default
+            return entries.firstOrNull { it.storageKey.equals(key, ignoreCase = true) } ?: default
+        }
+    }
+}
+
 /** Speed-dial pin: "album:{id}" or "playlist:{id}". */
 fun speedDialKey(type: String, id: String) = "$type:$id"
 
@@ -129,6 +144,10 @@ class SettingsStore internal constructor(
         val deviceFilesMinDurationSec = intPreferencesKey("device_files_min_duration_sec")
         val libraryViewMode = stringPreferencesKey("library_view_mode")
         val maxConcurrentDownloads = intPreferencesKey("max_concurrent_downloads")
+        // Player background styles (P11-F1)
+        val miniPlayerBgStyle = stringPreferencesKey("mini_player_bg_style")
+        val playerBgStyle = stringPreferencesKey("player_bg_style")
+        val queueBgStyle = stringPreferencesKey("queue_bg_style")
     }
 
     data class Settings(
@@ -160,6 +179,9 @@ class SettingsStore internal constructor(
         val downloadBitrate: Int = 320,
         val downloadFormat: String = "raw",
         val dynamicNpColor: Boolean = true,
+        val miniPlayerBgStyle: BackgroundStyle = BackgroundStyle.DEFAULT,
+        val playerBgStyle: BackgroundStyle = BackgroundStyle.GRADIENT,
+        val queueBgStyle: BackgroundStyle = BackgroundStyle.DEFAULT,
         val defaultLayout: LayoutMode = LayoutMode.GRID,
         val showOfflineChip: Boolean = true,
         val autoOffline: Boolean = false,
@@ -239,6 +261,9 @@ class SettingsStore internal constructor(
             downloadBitrate = p[K.downloadBitrate] ?: 320,
             downloadFormat = p[K.downloadFormat] ?: "raw",
             dynamicNpColor = p[K.dynamicNpColor] ?: true,
+            miniPlayerBgStyle = BackgroundStyle.fromStorage(p[K.miniPlayerBgStyle], BackgroundStyle.DEFAULT),
+            playerBgStyle = BackgroundStyle.fromStorage(p[K.playerBgStyle], BackgroundStyle.GRADIENT),
+            queueBgStyle = BackgroundStyle.fromStorage(p[K.queueBgStyle], BackgroundStyle.DEFAULT),
             defaultLayout = runCatching { LayoutMode.valueOf(p[K.defaultLayout] ?: "GRID") }
                 .getOrDefault(LayoutMode.GRID),
             showOfflineChip = p[K.showOfflineChip] ?: true,
@@ -355,6 +380,9 @@ class SettingsStore internal constructor(
     suspend fun setDownloadBitrate(v: Int) = edit { it[K.downloadBitrate] = v }
     suspend fun setDownloadFormat(v: String) = edit { it[K.downloadFormat] = v }
     suspend fun setDynamicNpColor(v: Boolean) = edit { it[K.dynamicNpColor] = v }
+    suspend fun setMiniPlayerBgStyle(style: BackgroundStyle) = edit { it[K.miniPlayerBgStyle] = style.storageKey }
+    suspend fun setPlayerBgStyle(style: BackgroundStyle) = edit { it[K.playerBgStyle] = style.storageKey }
+    suspend fun setQueueBgStyle(style: BackgroundStyle) = edit { it[K.queueBgStyle] = style.storageKey }
     suspend fun setDefaultLayout(v: LayoutMode) = edit { it[K.defaultLayout] = v.name }
     suspend fun setShowOfflineChip(v: Boolean) = edit { it[K.showOfflineChip] = v }
     suspend fun setAutoOffline(v: Boolean) = edit { it[K.autoOffline] = v }

@@ -2,6 +2,7 @@ package com.feishin.mobile.ui.player
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
@@ -10,6 +11,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -167,6 +169,7 @@ import coil.request.ImageRequest
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.data.favorites.FavoritesStore
 import com.feishin.mobile.data.favorites.PlaylistEvents
+import com.feishin.mobile.data.settings.BackgroundStyle
 import com.feishin.mobile.core.network.SyncedLyrics
 import com.feishin.mobile.core.ui.NowPlayingColors
 import com.feishin.mobile.core.ui.NowPlayingPalette
@@ -174,6 +177,7 @@ import com.feishin.mobile.core.ui.PlayingColors
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.components.ActionTarget
+import com.feishin.mobile.ui.components.BlurredArtworkBackground
 import com.feishin.mobile.ui.components.CoverImage
 import com.feishin.mobile.ui.components.EqualizerOverlay
 import com.feishin.mobile.ui.components.MarqueeTitle
@@ -252,6 +256,8 @@ fun NowPlayingScreen(
     onArtist: (String) -> Unit,
     onAlbum: (String) -> Unit,
     onActions: (ActionTarget) -> Unit,
+    bgStyle: BackgroundStyle = BackgroundStyle.GRADIENT,
+    queueBgStyle: BackgroundStyle = BackgroundStyle.DEFAULT,
     nowPlayingSheet: SheetState? = null,
     lyricsListState: LazyListState = rememberLazyListState(),
     lastScrolledLyricsIndex: Int = -1,
@@ -593,6 +599,12 @@ fun NowPlayingScreen(
     ) {
         // Stationary full-screen background layer: covers 100% of the screen at translationY = 0f
         // and fades smoothly (0f -> 1f on expand, 1f -> 0f on collapse).
+        val playerSurfaceColor = if (dynamicColor) {
+            playingColor(palette.backdropBottom)
+        } else {
+            MaterialTheme.colorScheme.surface
+        }
+        val playerIsDark = scheme?.dark ?: LocalVusicDark.current
         Box(
             Modifier
                 .fillMaxSize()
@@ -600,9 +612,34 @@ fun NowPlayingScreen(
                     val p = (nowPlayingSheet?.progress ?: 1f).coerceIn(0f, 1f)
                     translationY = 0f
                     alpha = (p / 0.65f).coerceIn(0f, 1f)
+                },
+        ) {
+            Crossfade(
+                targetState = bgStyle,
+                animationSpec = tween(durationMillis = Motion.scaled(Motion.Normal)),
+                label = "np-bg-style",
+            ) { style ->
+                when (style) {
+                    BackgroundStyle.DEFAULT -> Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(playerSurfaceColor),
+                    )
+                    BackgroundStyle.GRADIENT -> Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(backdrop),
+                    )
+                    BackgroundStyle.BLUR -> BlurredArtworkBackground(
+                        coverId = artUrl ?: thumbUrl,
+                        bitmap = null,
+                        scrimColor = playerSurfaceColor,
+                        isDark = playerIsDark,
+                        modifier = Modifier.fillMaxSize(),
+                    )
                 }
-                .background(backdrop),
-        )
+            }
+        }
 
         // Foreground UI content layer: translates vertically across the full screen height
         // and fades smoothly with the sheet progress.
@@ -879,6 +916,9 @@ fun NowPlayingScreen(
                     nowPlayingSheet = nowPlayingSheet,
                     player = player, repo = repo, messenger = messenger,
                     palette = palette, playlistEvents = playlistEvents,
+                    dynamicColor = dynamicColor,
+                    queueBgStyle = queueBgStyle,
+                    currentCoverUrl = artUrl ?: thumbUrl,
                     onActions = { onActions(ActionTarget.Track(it)) },
                     onDismiss = { sheet.close() },
                 )
@@ -2253,6 +2293,9 @@ private fun QueueSheet(
     repo: MusicDataRepository,
     messenger: UiMessenger,
     palette: NowPlayingPalette,
+    dynamicColor: Boolean = true,
+    queueBgStyle: BackgroundStyle = BackgroundStyle.DEFAULT,
+    currentCoverUrl: String? = null,
     nowPlayingSheet: SheetState? = null,
     playlistEvents: PlaylistEvents? = null,
     onActions: (com.feishin.mobile.domain.model.Track) -> Unit = {},
@@ -2431,6 +2474,14 @@ private fun QueueSheet(
     val sheetBrush: Brush = Brush.verticalGradient(
         listOf(playingColor(palette.sheetTop), playingColor(palette.sheetBottom)),
     )
+    val scheme = LocalPlayingColors.current
+    val sheetSurfaceColor = if (dynamicColor) {
+        playingColor(palette.sheetBottom)
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val sheetIsDark = scheme?.dark ?: LocalVusicDark.current
+    val sheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
 
     Box(Modifier.fillMaxSize()) {
         // Scrim: composed ONLY while the sheet is open so touches on Now Playing
@@ -2449,7 +2500,7 @@ private fun QueueSheet(
                     ),
             )
         }
-        Column(
+        Box(
             Modifier.fillMaxWidth()
                 .fillMaxHeight(0.78f)
                 .align(Alignment.BottomCenter)
@@ -2463,31 +2514,60 @@ private fun QueueSheet(
                     // Keep the header grab area solid while sliding.
                     clip = p < 1f
                 }
-                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-                .background(sheetBrush)
-                .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
-                .nestedScroll(nestedScroll)
-                .draggable(
-                    orientation = Orientation.Vertical,
-                    state = rememberDraggableState { delta ->
-                        if (!sheet.open && !sheet.dragging && (delta > 0f || nowPlayingSheet?.dragging == true)) {
-                            nowPlayingSheet?.dragByPixels(delta)
-                        } else {
-                            sheet.dragByPixels(delta)
-                        }
-                    },
-                    // Fling velocity is normalized to progress units so the
-                    // decision lives in SheetPhysics, not here.
-                    onDragStopped = { velocity ->
-                        if (nowPlayingSheet?.dragging == true) {
-                            nowPlayingSheet.onDragEnd(velocity)
-                        } else {
-                            sheet.onDragEnd(velocity)
-                        }
-                    },
-                )
-                .padding(horizontal = 16.dp),
+                .clip(sheetShape),
         ) {
+            Crossfade(
+                targetState = queueBgStyle,
+                animationSpec = tween(durationMillis = Motion.scaled(Motion.Normal)),
+                modifier = Modifier.matchParentSize(),
+                label = "queue-bg-style",
+            ) { style ->
+                when (style) {
+                    BackgroundStyle.DEFAULT -> Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(sheetSurfaceColor),
+                    )
+                    BackgroundStyle.GRADIENT -> Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(sheetBrush),
+                    )
+                    BackgroundStyle.BLUR -> BlurredArtworkBackground(
+                        coverId = currentCoverUrl,
+                        bitmap = null,
+                        scrimColor = sheetSurfaceColor,
+                        isDark = sheetIsDark,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                    .nestedScroll(nestedScroll)
+                    .draggable(
+                        orientation = Orientation.Vertical,
+                        state = rememberDraggableState { delta ->
+                            if (!sheet.open && !sheet.dragging && (delta > 0f || nowPlayingSheet?.dragging == true)) {
+                                nowPlayingSheet?.dragByPixels(delta)
+                            } else {
+                                sheet.dragByPixels(delta)
+                            }
+                        },
+                        // Fling velocity is normalized to progress units so the
+                        // decision lives in SheetPhysics, not here.
+                        onDragStopped = { velocity ->
+                            if (nowPlayingSheet?.dragging == true) {
+                                nowPlayingSheet.onDragEnd(velocity)
+                            } else {
+                                sheet.onDragEnd(velocity)
+                            }
+                        },
+                    )
+                    .padding(horizontal = 16.dp),
+            ) {
             // Single shared drag handle pill (36.dp x 4.dp, rounded) at the top edge.
             // At progress = 0f, tapping the 72.dp peek strip opens the queue sheet.
             Column(
@@ -2650,6 +2730,7 @@ private fun QueueSheet(
                         Spacer(Modifier.height(16.dp))
                     }
                 }
+            }
             }
         }
     }

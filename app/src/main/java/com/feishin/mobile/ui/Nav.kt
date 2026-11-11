@@ -109,6 +109,7 @@ import com.feishin.mobile.ui.player.NowPlayingScreen
 import com.feishin.mobile.ui.search.SearchScreen
 import com.feishin.mobile.ui.settings.SettingsScreen
 import com.feishin.mobile.ui.theme.VusicColors
+import com.feishin.mobile.data.settings.BackgroundStyle
 
 object Routes {
     const val HOME = "home"
@@ -526,6 +527,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
             MiniPlayer(
                 player = main.player,
                 onOpen = { nowPlayingSheet.openSheet() },
+                bgStyle = schemeSettings?.miniPlayerBgStyle ?: BackgroundStyle.DEFAULT,
                 expansionSheet = nowPlayingSheet,
                 onQueueCleared = { snap ->
                     // Undo lives ~5s: restoring brings back the queue,
@@ -600,6 +602,8 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                             nav.navigate(Routes.album(it))
                         },
                         onActions = { actionsTarget = it },
+                        bgStyle = schemeSettings?.playerBgStyle ?: BackgroundStyle.GRADIENT,
+                        queueBgStyle = schemeSettings?.queueBgStyle ?: BackgroundStyle.DEFAULT,
                         nowPlayingSheet = nowPlayingSheet,
                         lyricsListState = lyricsListState,
                         lastScrolledLyricsIndex = lastScrolledLyricsIndex,

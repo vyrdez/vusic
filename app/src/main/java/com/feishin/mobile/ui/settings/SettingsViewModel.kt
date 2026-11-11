@@ -20,6 +20,7 @@ import com.feishin.mobile.data.cache.MetadataCache
 import com.feishin.mobile.data.download.DownloadRepository
 import com.feishin.mobile.data.download.OfflineSyncStore
 import com.feishin.mobile.data.network.NetworkMonitor
+import com.feishin.mobile.data.settings.BackgroundStyle
 import com.feishin.mobile.data.settings.LayoutMode
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.data.settings.ThemeMode
@@ -187,6 +188,9 @@ class SettingsViewModel @Inject constructor(
     fun setDownloadBitrate(v: Int) = viewModelScope.launch { store.setDownloadBitrate(v) }
     fun setDownloadFormat(v: String) = viewModelScope.launch { store.setDownloadFormat(v) }
     fun setDynamicNpColor(v: Boolean) = viewModelScope.launch { store.setDynamicNpColor(v) }
+    fun setMiniPlayerBgStyle(style: BackgroundStyle) = viewModelScope.launch { store.setMiniPlayerBgStyle(style) }
+    fun setPlayerBgStyle(style: BackgroundStyle) = viewModelScope.launch { store.setPlayerBgStyle(style) }
+    fun setQueueBgStyle(style: BackgroundStyle) = viewModelScope.launch { store.setQueueBgStyle(style) }
     fun setDefaultLayout(v: LayoutMode) = viewModelScope.launch { store.setDefaultLayout(v) }
     fun setShowOfflineChip(v: Boolean) = viewModelScope.launch { store.setShowOfflineChip(v) }
     fun setAutoOffline(v: Boolean) = viewModelScope.launch { store.setAutoOffline(v) }

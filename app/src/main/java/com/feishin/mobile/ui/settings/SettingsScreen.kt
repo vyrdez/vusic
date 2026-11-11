@@ -68,6 +68,7 @@ import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.VusicControlColors
 import com.feishin.mobile.ui.theme.VusicControlDefaults
 import com.feishin.mobile.ui.theme.VusicSpacing
+import com.feishin.mobile.data.settings.BackgroundStyle
 import com.feishin.mobile.data.settings.LayoutMode
 import com.feishin.mobile.ui.components.LocalMiniClearance
 import com.feishin.mobile.data.settings.SettingsStore
@@ -476,6 +477,34 @@ private fun AppearanceScreen(vm: SettingsViewModel) {
             segmented = true,
         )
         SwitchRow("Dynamic Theme", s.dynamicNpColor, vm::setDynamicNpColor)
+    }
+    SettingsSection(title = "PLAYER")
+    SettingsCard {
+        val bgStyleOptions = BackgroundStyle.entries.map { it.label }
+        ChoiceRow(
+            label = "Mini-player background style",
+            value = s.miniPlayerBgStyle.label,
+            options = bgStyleOptions,
+            onSelect = { label ->
+                BackgroundStyle.entries.firstOrNull { it.label == label }?.let(vm::setMiniPlayerBgStyle)
+            },
+        )
+        ChoiceRow(
+            label = "Player background style",
+            value = s.playerBgStyle.label,
+            options = bgStyleOptions,
+            onSelect = { label ->
+                BackgroundStyle.entries.firstOrNull { it.label == label }?.let(vm::setPlayerBgStyle)
+            },
+        )
+        ChoiceRow(
+            label = "Queue page style",
+            value = s.queueBgStyle.label,
+            options = bgStyleOptions,
+            onSelect = { label ->
+                BackgroundStyle.entries.firstOrNull { it.label == label }?.let(vm::setQueueBgStyle)
+            },
+        )
     }
     SettingsSection("LYRICS")
     SettingsCard {
