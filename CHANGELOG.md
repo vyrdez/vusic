@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.1
+
+### Changed
+- **Search Section Headers (Section A)**:
+  - Unified Search header styling (`Recent searches`, `Top result`, `Songs`, `Albums`, `Artists`, `Playlists`) with Home via shared `SectionHeader` (`titleLarge`/`titleMedium` + `primary` tint).
+- **Light Theme Dynamic Tint (Section B)**:
+  - Strengthened Light theme dynamic surface/container chroma (`LightTintSpec` `T=94.5`/`C=12` background, `T=90..92`/`C=13..16` containers) so artwork hues read clearly in Light mode while enforcing >= 4.5:1 WCAG AA contrast.
+- **Opaque Spatial Blur (Section C)**:
+  - Enforced 100% opaque base (`baseAlpha = 1.0f`) beneath `BlurredArtworkBackground`, clipped blurred artwork (`0.80f..0.90f`), and uniform luminance-aware contrast scrimming so blurred backgrounds follow artwork colors spatially without underlying page bleed-through.
+- **Queue Sheet Polish (Section D)**:
+  - Added `7.dp` row spacing, `>= 64.dp` row height, concentric `20.dp`/`10.dp` current-row and cover radii with `0.40f` full-cover equalizer scrim, full-bleed `QueueList` with `28.dp` `DstIn` edge fade behind a transparent bottom bar, and frosted translucent highlight styling in `Blur` mode.
+
 ## 1.4.0
 
 ### Added

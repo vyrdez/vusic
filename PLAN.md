@@ -1676,3 +1676,17 @@ Version 1.4.0 (versionCode 18) — `applicationId com.feishin.mobile` unchanged.
   - Added Settings > Appearance & Layout dropdown selectors (`VusicDropdownSelector`) under new `PLAYER` section.
   - Verification: 936/936 unit tests passed, including `BlurScrimTest` (8/8) and `BackgroundStyleSettingsTest` (4/4). Full emulator sweep across 60 style combinations and 34 app-wide screens in dark and light themes. Blur gfxinfo workloads benchmarked in `docs/reference/after-11/perf.txt`.
 
+## Phase 11.1 status (1.4.1)
+
+Version 1.4.1 (versionCode 19) — `applicationId com.feishin.mobile` unchanged.
+
+- **P11.1-A search headers** (`8836c01`; `Components.kt`, `SearchScreen.kt`, `SearchHeaderStyleTest.kt`):
+  - Unified Search section headers (`Recent searches`, `Top result`, `Songs`, `Albums`, `Artists`, `Playlists`) with Home via shared `SectionHeader` (`SectionHeaderSpec`, `titleLarge`/`titleMedium`, `primary` tint) and verified Dark/Light + `1.3x` font scaling.
+- **P11.1-B light theme tint** (`2cda6a9`; `PlayingColors.kt`, `ArtworkFixtures.kt`, `LightThemeTintTest.kt`, `DynamicThemeV2Test.kt`, `ArtworkFixturesTest.kt`, `SectionCTokensTest.kt`):
+  - Strengthened Light theme dynamic background (`LightTintSpec` `T=94.5, C=12`) and containers (`T=90..92, C=13..16`) across 12 artwork fixtures (`purple`, `brown`, `yellow` added), clearing WCAG AA (`onSurface/bg >= 14.88:1`, `primary/container >= 5.13:1`).
+- **P11.1-C opaque blur** (`3ccce80`; `BlurScrim.kt`, `BlurredArtworkBackground.kt`, `MiniPlayer.kt`, `NowPlayingScreen.kt`, `BlurScrimTest.kt`):
+  - Painted `1.0f` opaque base outside `Crossfade` and switched Layer 2/3 to clipped `0.80f..0.90f` blurred artwork + uniform `BlurScrim` (`Dark 0.32..0.72` via `L^0.45`, `Light 0.54..0.82`) for spatial color fidelity; pixel-diff verified `0.0000` bleed-through across Mini-player, Now Playing, and Queue in Dark/Light.
+- **P11.1-D queue polish** (`3429a49`; `NowPlayingScreen.kt`, `QueuePolishSpecs.kt`, `QueuePolishTest.kt`):
+  - Applied `7.dp` row spacing, `>= 64.dp` row height, full-bleed backdrop under a transparent `56.dp` bottom bar with `28.dp` `drawWithCache` `DstIn` fade, concentric `20.dp`/`10.dp` current-row/cover radii with `0.40f` cover scrim, and contrast-clamped frosted highlight in `Blur` mode (`956/956` unit tests, pixel-sampling seam/opacity checks, live `1.3x` font/drag-reorder/swipe-remove/1079-song checks in `docs/reference/after-11.1/queue-check.txt`, and `gfxinfo` in `docs/reference/after-11.1/perf.txt`).
+
+
