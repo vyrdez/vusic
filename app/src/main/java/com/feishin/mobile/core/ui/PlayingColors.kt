@@ -18,9 +18,9 @@ package com.feishin.mobile.core.ui
  * enforced primary-vs-container ratio carries over to it.
  *
  * [miniContainer] is the mini player's fill, which is deliberately much darker
- * than [container] (the row highlight) in Dark mode and a pale card (`T=92.5`)
- * in Light mode — see [DarkToneSpec]. [miniOutline] is the 1dp hairline that
- * keeps the pill distinct from the page background.
+ * than [container] (the row highlight) in Dark mode and a tinted card (`T=91.0`)
+ * in Light mode — see [DarkToneSpec] and [LightTintSpec]. [miniOutline] is the
+ * 1dp hairline that keeps the pill distinct from the page background.
  */
 data class PlayingScheme(
     /** Null when this is the theme fallback rather than artwork. */
@@ -120,6 +120,83 @@ data class VusicDynamicScheme(
 }
 
 /**
+ * Every tone (CIELAB L*) and chroma cap for the LIGHT artwork tint, in one
+ * place so the look can be tuned without hunting through [PlayingColors].
+ *
+ * Terms, matching [DarkToneSpec]:
+ * - **tone** is perceptual lightness L* (0 = black, 100 = white).
+ * - **chroma** is CIELAB C*ab distance from neutral gray (0 = pure gray).
+ *
+ * Light surfaces use a calm, clearly visible pastel tint of the song color
+ * (~94.5 background, ~90-92 surface cards) while neutral artwork (white, gray,
+ * black) stays neutral gray.
+ */
+object LightTintSpec {
+
+    // ---- Chroma scaling bounds ---------------------------------------------
+
+    /** Seeds below this CIELAB chroma C*ab stay neutral gray (target chroma = 0). */
+    const val NEUTRAL_CHROMA_FLOOR = 4.0
+
+    /** Seed chroma at which the smooth tint scaling factor alpha reaches 1.0. */
+    const val FULL_CHROMA_PIVOT = 18.0
+
+    // ---- Page background & base surface ------------------------------------
+
+    /** Page background tone (clearly tinted off-white without washing out). */
+    const val BACKGROUND_TONE = 94.5f
+
+    /** Page background chroma cap (within sRGB gamut). */
+    const val BACKGROUND_CHROMA = 12.0f
+
+    /** Primary surface tone, matching [BACKGROUND_TONE]. */
+    const val SURFACE_TONE = 94.5f
+
+    /** Primary surface chroma cap. */
+    const val SURFACE_CHROMA = 12.0f
+
+    // ---- Surface containers & cards (a notch darker than background) -------
+
+    /** Lowest container tone (brightest elevated sheet/tile). */
+    const val CONTAINER_LOWEST_TONE = 96.5f
+    const val CONTAINER_LOWEST_CHROMA = 8.0f
+
+    /** Low container tone (subtle card step below background). */
+    const val CONTAINER_LOW_TONE = 92.0f
+    const val CONTAINER_LOW_CHROMA = 13.0f
+
+    /** Default container tone (cards, nav bar, surfaceContainer). */
+    const val CONTAINER_TONE = 91.0f
+    const val CONTAINER_CHROMA = 14.5f
+
+    /** Mini player fill tone & chroma (aligned with [CONTAINER_TONE]). */
+    const val MINI_CONTAINER_TONE = 91.0f
+    const val MINI_CONTAINER_CHROMA = 14.5f
+
+    /** High container tone (chips, elevated cards, dropdowns). */
+    const val CONTAINER_HIGH_TONE = 90.0f
+    const val CONTAINER_HIGH_CHROMA = 16.0f
+
+    /** Surface variant tone & chroma (aligned with [CONTAINER_HIGH_TONE]). */
+    const val SURFACE_VARIANT_TONE = 90.0f
+    const val SURFACE_VARIANT_CHROMA = 16.0f
+
+    // ---- Accent containers & Now Playing / Queue gradient stops ------------
+
+    const val PRIMARY_CONTAINER_TONE = 88.0f
+    const val PRIMARY_CONTAINER_CHROMA = 24.0f
+
+    const val SECONDARY_CONTAINER_TONE = 89.0f
+    const val SECONDARY_CONTAINER_CHROMA = 18.0f
+
+    const val SURFACE_TOP_TONE = 95.0f
+    const val SURFACE_TOP_CHROMA = 12.0f
+
+    const val SURFACE_BOTTOM_TONE = 90.5f
+    const val SURFACE_BOTTOM_CHROMA = 16.0f
+}
+
+/**
  * Builds [VusicDynamicScheme] and [PlayingScheme] from an artwork seed color.
  *
  * In Dynamic Theme v2, neutral seeds (white, near-white, gray, black) are
@@ -133,12 +210,12 @@ object PlayingColors {
     const val GRAY_SATURATION = 0.12f
 
     /** Below this CIELAB chroma C*ab, a seed is treated as pure neutral (target chroma = 0). */
-    const val NEUTRAL_CHROMA_FLOOR = 4.0
+    const val NEUTRAL_CHROMA_FLOOR = LightTintSpec.NEUTRAL_CHROMA_FLOOR
 
     /** Chroma at which the smooth neutral scaling factor alpha reaches 1.0. */
-    const val FULL_CHROMA_PIVOT = 18.0
+    const val FULL_CHROMA_PIVOT = LightTintSpec.FULL_CHROMA_PIVOT
 
-    /** Default light-mode surface tint strength (0f = pure neutral surfaces, 1f = full subtle song tint). */
+    /** Default light-mode surface tint strength (0f = pure neutral surfaces, 1f = full song tint). */
     const val DefaultLightTintStrength = 1.0f
 
     private const val WHITE = 0xFFFFFFFFL
@@ -608,28 +685,74 @@ object PlayingColors {
     private fun buildLightMaterialScheme(seed: Long, lightTintStrength: Float): VusicDynamicScheme {
         val hue = Contrast.labHue(seed)
         val seedChroma = Contrast.chromaOf(seed)
-        val isNeutral = seedChroma < NEUTRAL_CHROMA_FLOOR
-        val alpha = if (isNeutral) 0.0 else (seedChroma / FULL_CHROMA_PIVOT).coerceIn(0.0, 1.0)
+        val isNeutral = seedChroma < LightTintSpec.NEUTRAL_CHROMA_FLOOR
+        val alpha = if (isNeutral) {
+            0.0
+        } else {
+            ((seedChroma - LightTintSpec.NEUTRAL_CHROMA_FLOOR) /
+                (LightTintSpec.FULL_CHROMA_PIVOT - LightTintSpec.NEUTRAL_CHROMA_FLOOR))
+                .coerceIn(0.0, 1.0)
+        }
         val tint = lightTintStrength.toDouble().coerceIn(0.0, 1.0)
 
         fun c(cap: Float): Float = roleChroma(seedChroma, alpha, cap)
         fun surfaceChroma(cap: Float): Float = roleChroma(seedChroma, alpha * tint, cap)
 
-        // Clamped lightness invariant: light surfaces stay at T=90..99 even for a pure black seed.
-        val surfaceContainerLowest = Contrast.fromToneChroma(hue, 99f, surfaceChroma(2.5f))
-        val surface = Contrast.fromToneChroma(hue, 97.5f, surfaceChroma(3.5f))
-        val background = Contrast.fromToneChroma(hue, 97.0f, surfaceChroma(4.5f))
-        val surfaceContainerLow = Contrast.fromToneChroma(hue, 94.5f, surfaceChroma(5.0f))
-        val surfaceContainer = Contrast.fromToneChroma(hue, 92.5f, surfaceChroma(6.0f))
-        val surfaceContainerHigh = Contrast.fromToneChroma(hue, 90.0f, surfaceChroma(7.0f))
-        val surfaceVariant = surfaceContainerHigh
+        // Clamped lightness invariant: light surfaces stay at T=90..96.5 even for a pure black seed.
+        val surfaceContainerLowest = Contrast.fromToneChroma(
+            hue,
+            LightTintSpec.CONTAINER_LOWEST_TONE,
+            surfaceChroma(LightTintSpec.CONTAINER_LOWEST_CHROMA),
+        )
+        val surface = Contrast.fromToneChroma(
+            hue,
+            LightTintSpec.SURFACE_TONE,
+            surfaceChroma(LightTintSpec.SURFACE_CHROMA),
+        )
+        val background = Contrast.fromToneChroma(
+            hue,
+            LightTintSpec.BACKGROUND_TONE,
+            surfaceChroma(LightTintSpec.BACKGROUND_CHROMA),
+        )
+        val surfaceContainerLow = Contrast.fromToneChroma(
+            hue,
+            LightTintSpec.CONTAINER_LOW_TONE,
+            surfaceChroma(LightTintSpec.CONTAINER_LOW_CHROMA),
+        )
+        val surfaceContainer = Contrast.fromToneChroma(
+            hue,
+            LightTintSpec.CONTAINER_TONE,
+            surfaceChroma(LightTintSpec.CONTAINER_CHROMA),
+        )
+        val surfaceContainerHigh = Contrast.fromToneChroma(
+            hue,
+            LightTintSpec.CONTAINER_HIGH_TONE,
+            surfaceChroma(LightTintSpec.CONTAINER_HIGH_CHROMA),
+        )
+        val surfaceVariant = Contrast.fromToneChroma(
+            hue,
+            LightTintSpec.SURFACE_VARIANT_TONE,
+            surfaceChroma(LightTintSpec.SURFACE_VARIANT_CHROMA),
+        )
 
         // Containers: soft tint of seed
-        val primaryContainer = Contrast.fromToneChroma(hue, 88f, c(24f))
-        val secondaryContainer = Contrast.fromToneChroma(hue, 89f, c(18f))
+        val primaryContainer = Contrast.fromToneChroma(
+            hue,
+            LightTintSpec.PRIMARY_CONTAINER_TONE,
+            c(LightTintSpec.PRIMARY_CONTAINER_CHROMA),
+        )
+        val secondaryContainer = Contrast.fromToneChroma(
+            hue,
+            LightTintSpec.SECONDARY_CONTAINER_TONE,
+            c(LightTintSpec.SECONDARY_CONTAINER_CHROMA),
+        )
 
-        // MiniPlayer in Light mode: pale card (T=92.5) and legible outline
-        val miniContainer = surfaceContainer
+        // MiniPlayer in Light mode: tinted card (T=91.0) and legible outline
+        val miniContainer = Contrast.fromToneChroma(
+            hue,
+            LightTintSpec.MINI_CONTAINER_TONE,
+            surfaceChroma(LightTintSpec.MINI_CONTAINER_CHROMA),
+        )
         val miniOutline = enforceContrastAcross(
             hue = hue,
             startTone = 55f,
@@ -640,8 +763,16 @@ object PlayingColors {
         )
 
         // Light gradient stops for Now Playing / Queue
-        val surfaceTop = Contrast.fromToneChroma(hue, 96f, c(10f))
-        val surfaceBottom = Contrast.fromToneChroma(hue, 92f, c(14f))
+        val surfaceTop = Contrast.fromToneChroma(
+            hue,
+            LightTintSpec.SURFACE_TOP_TONE,
+            surfaceChroma(LightTintSpec.SURFACE_TOP_CHROMA),
+        )
+        val surfaceBottom = Contrast.fromToneChroma(
+            hue,
+            LightTintSpec.SURFACE_BOTTOM_TONE,
+            surfaceChroma(LightTintSpec.SURFACE_BOTTOM_CHROMA),
+        )
 
         // Primary / Accent: tone ~35-45 (charcoal T=38 for neutral sources, never blue)
         val basePrimaryTone = if (isNeutral) 38f else 40f
@@ -654,7 +785,20 @@ object PlayingColors {
             hue = hue,
             startTone = basePrimaryTone,
             chroma = primaryChroma,
-            backgrounds = listOf(background, surface, surfaceContainerLow, surfaceContainer, surfaceContainerHigh, primaryContainer, secondaryContainer, miniContainer, surfaceTop, surfaceBottom),
+            backgrounds = listOf(
+                surfaceContainerLowest,
+                background,
+                surface,
+                surfaceContainerLow,
+                surfaceContainer,
+                surfaceContainerHigh,
+                surfaceVariant,
+                primaryContainer,
+                secondaryContainer,
+                miniContainer,
+                surfaceTop,
+                surfaceBottom,
+            ),
             minRatio = 4.5,
             preferLighter = false,
         )
@@ -712,7 +856,16 @@ object PlayingColors {
             preferLighter = true,
         )
 
-        val surfaceBgs = listOf(background, surface, surfaceContainerLow, surfaceContainer, surfaceContainerHigh)
+        val surfaceBgs = listOf(
+            surfaceContainerLowest,
+            background,
+            surface,
+            surfaceContainerLow,
+            surfaceContainer,
+            miniContainer,
+            surfaceContainerHigh,
+            surfaceVariant,
+        )
         val onSurface = enforceContrastAcross(
             hue = hue,
             startTone = 10f,

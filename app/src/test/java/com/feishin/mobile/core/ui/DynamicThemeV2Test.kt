@@ -22,7 +22,7 @@ class DynamicThemeV2Test {
         return min(diff, 360.0 - diff)
     }
 
-    // ---- 1. Dominant-color selection across all 9 ArtworkFixtures.ALL --------
+    // ---- 1. Dominant-color selection across all 12 ArtworkFixtures.ALL -------
 
     @Test
     fun fixtures_whiteAndWhiteBlueLogo_selectNeutralWhiteNeverBlue() {
@@ -119,6 +119,45 @@ class DynamicThemeV2Test {
     }
 
     @Test
+    fun fixtures_purple_selectsPurpleHue() {
+        val seed = ArtworkColorExtractor.extractSourceColor(
+            ArtworkFixtures.ALL.getValue(ArtworkFixtures.NAME_PURPLE),
+        )!!
+        val expected = ArtworkFixtures.COLOR_PURPLE.toLong() and 0xFFFFFFFFL
+        assertTrue("purple chroma > 40, got ${Contrast.chromaOf(seed)}", Contrast.chromaOf(seed) > 40.0)
+        assertTrue(
+            "purple hue mismatch: ${Contrast.labHue(seed)} vs ${Contrast.labHue(expected)}",
+            hueDistanceDeg(Contrast.labHue(seed), Contrast.labHue(expected)) < 5.0,
+        )
+    }
+
+    @Test
+    fun fixtures_brown_selectsBrownHue() {
+        val seed = ArtworkColorExtractor.extractSourceColor(
+            ArtworkFixtures.ALL.getValue(ArtworkFixtures.NAME_BROWN),
+        )!!
+        val expected = ArtworkFixtures.COLOR_BROWN.toLong() and 0xFFFFFFFFL
+        assertTrue("brown chroma > 18, got ${Contrast.chromaOf(seed)}", Contrast.chromaOf(seed) > 18.0)
+        assertTrue(
+            "brown hue mismatch: ${Contrast.labHue(seed)} vs ${Contrast.labHue(expected)}",
+            hueDistanceDeg(Contrast.labHue(seed), Contrast.labHue(expected)) < 5.0,
+        )
+    }
+
+    @Test
+    fun fixtures_yellow_selectsYellowHue() {
+        val seed = ArtworkColorExtractor.extractSourceColor(
+            ArtworkFixtures.ALL.getValue(ArtworkFixtures.NAME_YELLOW),
+        )!!
+        val expected = ArtworkFixtures.COLOR_YELLOW.toLong() and 0xFFFFFFFFL
+        assertTrue("yellow chroma > 40, got ${Contrast.chromaOf(seed)}", Contrast.chromaOf(seed) > 40.0)
+        assertTrue(
+            "yellow hue mismatch: ${Contrast.labHue(seed)} vs ${Contrast.labHue(expected)}",
+            hueDistanceDeg(Contrast.labHue(seed), Contrast.labHue(expected)) < 5.0,
+        )
+    }
+
+    @Test
     fun fixtures_multicolor_selectsLargestRegionGreenHue() {
         val seed = ArtworkColorExtractor.extractSourceColor(
             ArtworkFixtures.ALL.getValue(ArtworkFixtures.NAME_MULTICOLOR),
@@ -208,7 +247,7 @@ class DynamicThemeV2Test {
 
     @Test
     fun determinism_repeatedCallsAndTieBreakAreIdentical() {
-        assertEquals(9, ArtworkFixtures.ALL.size)
+        assertEquals(12, ArtworkFixtures.ALL.size)
         for ((name, artwork) in ArtworkFixtures.ALL) {
             val first = ArtworkColorExtractor.extractMostUsedColor(artwork.argb, artwork.width, artwork.height)
             repeat(5) {
@@ -247,10 +286,10 @@ class DynamicThemeV2Test {
         assertTrue(Contrast.toneOf(seed) > 95.0)
     }
 
-    // ---- 4. Tone & luminance bounds across all 9 fixtures ------------------
+    // ---- 4. Tone & luminance bounds across all 12 fixtures -----------------
 
     @Test
-    fun darkTheme_surfacesStayDarkAcrossAllNineFixtures() {
+    fun darkTheme_surfacesStayDarkAcrossAllTwelveFixtures() {
         for ((name, artwork) in ArtworkFixtures.ALL) {
             val scheme = PlayingColors.schemeFromPixels(artwork.argb, artwork.width, artwork.height, dark = true)!!
             val bgTone = Contrast.toneOf(scheme.background)
@@ -276,7 +315,14 @@ class DynamicThemeV2Test {
     }
 
     @Test
-    fun lightTheme_surfacesStayLightAcrossAllNineFixturesEvenWithBlackCover() {
+    fun lightTheme_surfacesStayLightAcrossAllTwelveFixturesEvenWithBlackCover() {
+        val neutralNames = setOf(
+            ArtworkFixtures.NAME_WHITE,
+            ArtworkFixtures.NAME_NEAR_WHITE_PASTEL,
+            ArtworkFixtures.NAME_WHITE_BLUE_LOGO,
+            ArtworkFixtures.NAME_GRAY,
+            ArtworkFixtures.NAME_BLACK,
+        )
         for (tint in listOf(PlayingColors.DefaultLightTintStrength, 1.0f)) {
             for ((name, artwork) in ArtworkFixtures.ALL) {
                 val scheme = PlayingColors.schemeFromPixels(
@@ -288,8 +334,13 @@ class DynamicThemeV2Test {
                 )!!
                 val bgTone = Contrast.toneOf(scheme.background)
                 val surfTone = Contrast.toneOf(scheme.surface)
-                assertTrue("$name (tint=$tint) light background L* must be >= 90, got $bgTone", bgTone >= 90.0)
-                assertTrue("$name (tint=$tint) light surface L* must be >= 90, got $surfTone", surfTone >= 90.0)
+                val contTone = Contrast.toneOf(scheme.surfaceContainer)
+                val highTone = Contrast.toneOf(scheme.surfaceContainerHigh)
+                assertTrue("$name (tint=$tint) light background L* must be in [93.5, 95.5], got $bgTone", bgTone in 93.5..95.5)
+                assertTrue("$name (tint=$tint) light surface L* must be in [93.5, 95.5], got $surfTone", surfTone in 93.5..95.5)
+                assertTrue("$name (tint=$tint) light surfaceContainer L* must be in [89.5, 92.5], got $contTone", contTone in 89.5..92.5)
+                assertTrue("$name (tint=$tint) light surfaceContainerHigh L* must be in [89.5, 92.5], got $highTone", highTone in 89.5..92.5)
+                assertTrue("$name (tint=$tint) light surfaceContainer ($contTone) must be < background ($bgTone)", contTone < bgTone)
                 assertTrue(
                     "$name (tint=$tint) light background luminance must stay light",
                     Contrast.luminance(scheme.background) > 0.70,
@@ -298,11 +349,22 @@ class DynamicThemeV2Test {
                     "$name (tint=$tint) light surface luminance must stay light",
                     Contrast.luminance(scheme.surface) > 0.75,
                 )
+                if (name in neutralNames) {
+                    assertTrue(
+                        "$name neutral background C* must be < 1.5, got ${Contrast.chromaOf(scheme.background)}",
+                        Contrast.chromaOf(scheme.background) < 1.5,
+                    )
+                } else {
+                    assertTrue(
+                        "$name colorful surfaceContainer C* must be >= 12.0, got ${Contrast.chromaOf(scheme.surfaceContainer)}",
+                        Contrast.chromaOf(scheme.surfaceContainer) >= 12.0,
+                    )
+                }
             }
         }
     }
 
-    // ---- 5. Contrast guards across all 9 fixtures in BOTH Dark & Light -----
+    // ---- 5. Contrast guards across all 12 fixtures in BOTH Dark & Light ----
 
     @Test
     fun contrastGuards_allTextAndIconPairsMeetWcagAcrossAllFixturesDarkAndLight() {

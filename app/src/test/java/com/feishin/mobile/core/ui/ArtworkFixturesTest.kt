@@ -14,6 +14,9 @@ class ArtworkFixturesTest {
         "black",
         "red",
         "blue",
+        "purple",
+        "brown",
+        "yellow",
         "multicolor",
         "transparent_edge",
     )
@@ -44,6 +47,9 @@ class ArtworkFixturesTest {
             ArtworkFixtures.black(),
             ArtworkFixtures.red(),
             ArtworkFixtures.blue(),
+            ArtworkFixtures.purple(),
+            ArtworkFixtures.brown(),
+            ArtworkFixtures.yellow(),
             ArtworkFixtures.multicolor(),
             ArtworkFixtures.transparentEdge(),
         )
@@ -55,11 +61,32 @@ class ArtworkFixturesTest {
             ArtworkFixtures.black(),
             ArtworkFixtures.red(),
             ArtworkFixtures.blue(),
+            ArtworkFixtures.purple(),
+            ArtworkFixtures.brown(),
+            ArtworkFixtures.yellow(),
             ArtworkFixtures.multicolor(),
             ArtworkFixtures.transparentEdge(),
         )
 
         assertEquals(first, second)
+    }
+
+    @Test
+    fun purpleBrownYellowFixturesAreOpaqueChromaticSolids() {
+        val chromatic = listOf(
+            ArtworkFixtures.NAME_PURPLE to ArtworkFixtures.COLOR_PURPLE,
+            ArtworkFixtures.NAME_BROWN to ArtworkFixtures.COLOR_BROWN,
+            ArtworkFixtures.NAME_YELLOW to ArtworkFixtures.COLOR_YELLOW,
+        )
+        for ((name, expectedColor) in chromatic) {
+            val pixels = ArtworkFixtures.ALL.getValue(name)
+            assertTrue("$name all pixels match expected", pixels.argb.all { it == expectedColor })
+            val argbLong = expectedColor.toLong() and 0xFFFFFFFFL
+            assertTrue(
+                "$name chroma must reach FULL_CHROMA_PIVOT (>= 18), got ${Contrast.chromaOf(argbLong)}",
+                Contrast.chromaOf(argbLong) >= PlayingColors.FULL_CHROMA_PIVOT,
+            )
+        }
     }
 
     @Test

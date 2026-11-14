@@ -49,11 +49,14 @@ object ArtworkFixtures {
     const val NAME_BLACK = "black"
     const val NAME_RED = "red"
     const val NAME_BLUE = "blue"
+    const val NAME_PURPLE = "purple"
+    const val NAME_BROWN = "brown"
+    const val NAME_YELLOW = "yellow"
     const val NAME_MULTICOLOR = "multicolor"
     const val NAME_TRANSPARENT_EDGE = "transparent_edge"
 
     // Expected dominant hue family per fixture (documentation & test oracle):
-    // white, white, white, gray, black, red, blue, multicolor-largest, centerColor.
+    // white, white, white, gray, black, red, blue, purple, brown, yellow, multicolor-largest, centerColor.
     const val EXPECTED_HUE_WHITE = "white"
     const val EXPECTED_HUE_NEAR_WHITE_PASTEL = "white"
     const val EXPECTED_HUE_WHITE_BLUE_LOGO = "white"
@@ -61,6 +64,9 @@ object ArtworkFixtures {
     const val EXPECTED_HUE_BLACK = "black"
     const val EXPECTED_HUE_RED = "red"
     const val EXPECTED_HUE_BLUE = "blue"
+    const val EXPECTED_HUE_PURPLE = "purple"
+    const val EXPECTED_HUE_BROWN = "brown"
+    const val EXPECTED_HUE_YELLOW = "yellow"
     const val EXPECTED_HUE_MULTICOLOR = "green" // ~55% green vs ~15% red / blue / amber
     const val EXPECTED_HUE_TRANSPARENT_EDGE = "purple" // center color 0xFF8E24AA
 
@@ -72,6 +78,9 @@ object ArtworkFixtures {
         NAME_BLACK to EXPECTED_HUE_BLACK,
         NAME_RED to EXPECTED_HUE_RED,
         NAME_BLUE to EXPECTED_HUE_BLUE,
+        NAME_PURPLE to EXPECTED_HUE_PURPLE,
+        NAME_BROWN to EXPECTED_HUE_BROWN,
+        NAME_YELLOW to EXPECTED_HUE_YELLOW,
         NAME_MULTICOLOR to EXPECTED_HUE_MULTICOLOR,
         NAME_TRANSPARENT_EDGE to EXPECTED_HUE_TRANSPARENT_EDGE,
     )
@@ -81,6 +90,9 @@ object ArtworkFixtures {
     val COLOR_BLACK = 0xFF000000.toInt()
     val COLOR_RED = 0xFFE61919.toInt()
     val COLOR_BLUE = 0xFF195AE6.toInt()
+    val COLOR_PURPLE = 0xFF7B2CBF.toInt()
+    val COLOR_BROWN = 0xFF7B4B2A.toInt()
+    val COLOR_YELLOW = 0xFFD4A017.toInt()
     val COLOR_LOGO_BLUE = 0xFF1565C0.toInt()
     val COLOR_MULTI_GREEN = 0xFF22A84A.toInt()
     val COLOR_MULTI_RED = 0xFFE62E2E.toInt()
@@ -126,6 +138,12 @@ object ArtworkFixtures {
 
     fun blue(size: Int = DEFAULT_SIZE): ArtworkPixels = solid(size, COLOR_BLUE)
 
+    fun purple(size: Int = DEFAULT_SIZE): ArtworkPixels = solid(size, COLOR_PURPLE)
+
+    fun brown(size: Int = DEFAULT_SIZE): ArtworkPixels = solid(size, COLOR_BROWN)
+
+    fun yellow(size: Int = DEFAULT_SIZE): ArtworkPixels = solid(size, COLOR_YELLOW)
+
     /** Four distinct hues in separate regions; green top band (~55%) is clearly largest. */
     fun multicolor(size: Int = DEFAULT_SIZE): ArtworkPixels {
         val pixels = IntArray(size * size)
@@ -166,6 +184,9 @@ object ArtworkFixtures {
         NAME_BLACK to black(),
         NAME_RED to red(),
         NAME_BLUE to blue(),
+        NAME_PURPLE to purple(),
+        NAME_BROWN to brown(),
+        NAME_YELLOW to yellow(),
         NAME_MULTICOLOR to multicolor(),
         NAME_TRANSPARENT_EDGE to transparentEdge(),
     )

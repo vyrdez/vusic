@@ -121,7 +121,7 @@ class SectionCTokensTest {
 
     @Test
     fun dynamicSchemes_allNineFixtures_darkAndLight_meetAllSectionCContrastTargets() {
-        assertEquals(9, ArtworkFixtures.ALL.size)
+        assertEquals(12, ArtworkFixtures.ALL.size)
         for (dark in listOf(true, false)) {
             for ((name, artwork) in ArtworkFixtures.ALL) {
                 val scheme = PlayingColors.schemeFromPixels(
