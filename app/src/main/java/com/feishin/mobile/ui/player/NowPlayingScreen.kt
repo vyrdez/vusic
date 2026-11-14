@@ -14,6 +14,7 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
@@ -131,6 +132,7 @@ import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.BlendMode
@@ -1975,6 +1977,57 @@ private fun SyncedLyricsList(
     }
 }
 
+@Composable
+private fun StaticEqualizerOverlay(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Box(Modifier.width(3.dp).height(7.dp).clip(RoundedCornerShape(1.dp)).background(Color.White))
+        Box(Modifier.width(3.dp).height(13.dp).clip(RoundedCornerShape(1.dp)).background(Color.White))
+        Box(Modifier.width(3.dp).height(9.dp).clip(RoundedCornerShape(1.dp)).background(Color.White))
+    }
+}
+
+/**
+ * Fades the bottom edge of the scrolling queue list over [fadeHeight] right as
+ * rows enter the overlaid bottom controls region, using an offscreen `DstIn`
+ * alpha mask so the real sheet background (`Default`, `Gradient`, or `Blur`)
+ * shows seamlessly behind both the fading list and transparent controls.
+ */
+private fun Modifier.queueBottomEdgeFade(
+    fadeHeight: Dp,
+    bottomControlsHeight: Dp,
+    navBarBottomPx: Float,
+): Modifier = this
+    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+    .drawWithCache {
+        val stops = computeQueueBottomFadeStops(
+            viewportHeightPx = size.height,
+            fadeHeightPx = fadeHeight.toPx(),
+            bottomControlsHeightPx = bottomControlsHeight.toPx(),
+            navBarBottomPx = navBarBottomPx,
+        )
+        val fadeBrush = stops?.let { (startStop, endStop) ->
+            Brush.verticalGradient(
+                0f to Color.Black,
+                startStop to Color.Black,
+                endStop to Color.Transparent,
+                1f to Color.Transparent,
+            )
+        }
+        onDrawWithContent {
+            drawContent()
+            if (fadeBrush != null) {
+                drawRect(
+                    brush = fadeBrush,
+                    blendMode = BlendMode.DstIn,
+                )
+            }
+        }
+    }
+
 /**
  * The reorderable queue list. onMove mutates ONLY the local [displayOrder]
  * (cheap, per frame); [onCommit] fires once on drop and writes through to the
@@ -2002,6 +2055,9 @@ private fun QueueList(
     onRemove: (Long) -> Unit,
     onActions: (com.feishin.mobile.domain.model.Track) -> Unit,
     palette: NowPlayingPalette,
+    queueBgStyle: BackgroundStyle,
+    isDark: Boolean,
+    bottomContentPaddingDp: Int,
     modifier: Modifier = Modifier,
 ) {
     val reorderState = rememberReorderableLazyColumnState(listState) { from, to ->
@@ -2022,7 +2078,15 @@ private fun QueueList(
             listState.animateScrollToItem(currentDisplayIndex)
         }
     }
-    // Bottom padding clears the bar so the last row is never hidden under it.
+    val highlightStyle = resolveQueueHighlightStyle(
+        style = queueBgStyle,
+        isDark = isDark,
+        colorScheme = MaterialTheme.colorScheme,
+    )
+    val rowShape = RoundedCornerShape(QueuePolishSpecs.HIGHLIGHT_CORNER_RADIUS_DP.dp)
+    val coverShape = RoundedCornerShape(QueuePolishSpecs.COVER_CORNER_RADIUS_DP.dp)
+    val highlightAnimDurationMs = Motion.scaled(QueuePolishSpecs.HIGHLIGHT_CROSSFADE_MS)
+    // Bottom padding clears the overlaid controls + nav bar inset so the last row scrolls free.
     LazyColumn(
         state = listState,
         // NO overscroll effect on this list, on purpose.
@@ -2041,10 +2105,18 @@ private fun QueueList(
         // animation on this one list; the sheet moving with the finger in its
         // place is the behaviour that was asked for.
         modifier = modifier.fillMaxWidth().overscroll(com.feishin.mobile.core.common.PassThroughOverscroll),
-        contentPadding = PaddingValues(bottom = 56.dp),
+        verticalArrangement = Arrangement.spacedBy(QueuePolishSpecs.ROW_VERTICAL_GAP_DP.dp),
+        contentPadding = PaddingValues(
+            start = QueuePolishSpecs.LIST_HORIZONTAL_PADDING_DP.dp,
+            end = QueuePolishSpecs.LIST_HORIZONTAL_PADDING_DP.dp,
+            bottom = bottomContentPaddingDp.dp,
+        ),
     ) {
-        items(displayOrder, key = { it.queueId }, contentType = { "item" }) { item ->
-            val idx = displayIds.indexOf(item.queueId)
+        itemsIndexed(
+            displayOrder,
+            key = { _, item -> item.queueId },
+            contentType = { _, _ -> "item" },
+        ) { idx, item ->
             // animateItem is a LazyItemScope extension: create it here (where
             // the scope is the receiver) and pass it into the row.
             val placement = Modifier.animateItem()
@@ -2078,7 +2150,14 @@ private fun QueueList(
                 SwipeToDismissBox(
                     state = dismissState,
                     enableDismissFromStartToEnd = false,
-                    backgroundContent = {},
+                    modifier = if (isDragging) Modifier else Modifier.clip(rowShape),
+                    backgroundContent = {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .clip(rowShape),
+                        )
+                    },
                 ) {
                     // Identity, not position: during a drag the rows around the
                     // current entry shift on every frame, and only the entry's
@@ -2088,39 +2167,60 @@ private fun QueueList(
                     // Played rows (behind the current entry) dim but stay
                     // legible: secondary text clears 4.5:1, above the 3:1 bar.
                     val played = highlight.isPlayed
-                    // Every colour here comes from the resolved palette, never
-                    // from the artwork directly. With dynamic color OFF that
-                    // means the theme's own highlight pair, which is what keeps
-                    // the current row readable on a light backdrop.
-                    val rowBg = if (isCurrent) {
-                        playingColor(palette.rowHighlight)
+                    // Fade alpha within the same RGB so crossfading out never tints gray.
+                    val targetRowBg = if (isCurrent) {
+                        highlightStyle.containerColor
                     } else {
-                        Color.Transparent
+                        highlightStyle.containerColor.copy(alpha = 0f)
+                    }
+                    val targetRowBorder = if (isCurrent && highlightStyle.borderAlpha > 0f) {
+                        highlightStyle.borderColor
+                    } else {
+                        highlightStyle.borderColor.copy(alpha = 0f)
                     }
                     // Every row gets an EXPLICIT colour: Color.Unspecified
                     // falls back to LocalContentColor, which is dark here
                     // (the sheet is an overlay with no Surface), so upcoming
                     // rows rendered dim instead of full strength.
-                    val rowTitle = when {
-                        isCurrent -> playingColor(palette.rowHighlightContent)
+                    val targetRowTitle = when {
+                        isCurrent -> highlightStyle.titleColor
                         played -> playingColor(palette.sheetDim)
                         else -> playingColor(palette.sheetContent)
                     }
                     // (colors above are explicit: Unspecified would fall back
                     // to the dark LocalContentColor and dim these rows)
-                    val rowSub = when {
-                        isCurrent -> playingColor(palette.rowHighlightDim)
+                    val targetRowSub = when {
+                        isCurrent -> highlightStyle.subtitleColor
                         else -> playingColor(palette.sheetDim)
                     }
+                    val targetRowIcon = when {
+                        isCurrent -> highlightStyle.iconColor
+                        else -> playingColor(palette.sheetDim)
+                    }
+                    val colorSpec = tween<Color>(durationMillis = highlightAnimDurationMs)
+                    val rowBg by animateColorAsState(targetRowBg, colorSpec, label = "queue-row-bg")
+                    val rowBorder by animateColorAsState(targetRowBorder, colorSpec, label = "queue-row-border")
+                    val rowTitle by animateColorAsState(targetRowTitle, colorSpec, label = "queue-row-title")
+                    val rowSub by animateColorAsState(targetRowSub, colorSpec, label = "queue-row-sub")
+                    val rowIcon by animateColorAsState(targetRowIcon, colorSpec, label = "queue-row-icon")
+
                     Row(
                         placement
                             // Lift the dragged row above its neighbours so it
                             // is never painted under the rows it passes over.
                             .zIndex(if (isDragging) 1f else 0f)
                             .fillMaxWidth()
-                            .shadow(if (isDragging) 8.dp else 0.dp, RoundedCornerShape(16.dp))
-                            // Current row: 16dp rounded container from the artwork scheme.
-                            .background(rowBg, RoundedCornerShape(16.dp))
+                            .heightIn(min = QueuePolishSpecs.ROW_MIN_HEIGHT_DP.dp)
+                            .shadow(if (isDragging) 8.dp else 0.dp, rowShape)
+                            .background(rowBg, rowShape)
+                            .then(
+                                if (rowBorder.alpha > 0f) {
+                                    Modifier.border(0.5.dp, rowBorder, rowShape)
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .clip(rowShape)
                             .combinedClickable(
                                 enabled = idx >= 0,
                                 onClick = { if (idx >= 0) onPlayQueueItem(item.queueId) },
@@ -2131,33 +2231,35 @@ private fun QueueList(
                                     onActions(item.song)
                                 },
                             )
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                            .padding(QueuePolishSpecs.HIGHLIGHT_INNER_PADDING_DP.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         val artUrl = player.coverArtUrl(item.song.coverArt, 128)
-                        Box(Modifier.size(56.dp), contentAlignment = Alignment.BottomStart) {
-                            // 56dp art with 8dp corners (one place, so the
-                            // current-row highlight and the art share a radius).
-                            CoverImage(artUrl, item.song.title, modifier = Modifier.size(56.dp), roundedDp = 8.dp)
-                            if (isCurrent && isPlaying) {
-                                // Dark scrim behind the bars: readable on any
-                                // art (see TrackRow).
+                        Box(
+                            Modifier.size(QueuePolishSpecs.COVER_SIZE_DP.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            // 48dp art with 10dp concentric corners (20dp outer - 10dp padding).
+                            CoverImage(
+                                artUrl,
+                                item.song.title,
+                                modifier = Modifier.size(QueuePolishSpecs.COVER_SIZE_DP.dp),
+                                roundedDp = QueuePolishSpecs.COVER_CORNER_RADIUS_DP.dp,
+                            )
+                            if (isCurrent) {
                                 Box(
-                                    Modifier.padding(6.dp).size(28.dp)
-                                        .background(Color.Black.copy(alpha = 0.55f), CircleShape)
-                                        .padding(6.dp),
+                                    Modifier
+                                        .matchParentSize()
+                                        .clip(coverShape)
+                                        .background(Color.Black.copy(alpha = QueuePolishSpecs.COVER_SCRIM_ALPHA)),
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    EqualizerOverlay(Modifier.fillMaxSize())
+                                    if (isPlaying) {
+                                        EqualizerOverlay(Modifier.size(16.dp))
+                                    } else {
+                                        StaticEqualizerOverlay(Modifier.size(16.dp))
+                                    }
                                 }
-                            } else if (isCurrent) {
-                                Icon(
-                                    Icons.Default.PlayArrow, "Current track",
-                                    tint = Color.White,
-                                    modifier = Modifier.padding(6.dp).size(20.dp)
-                                        .background(Color.Black.copy(alpha = 0.45f), CircleShape)
-                                        .padding(2.dp),
-                                )
                             }
                         }
                         Spacer(Modifier.width(12.dp))
@@ -2186,7 +2288,7 @@ private fun QueueList(
                             Icon(
                                 Icons.Default.MoreVert,
                                 contentDescription = "Track options",
-                                tint = rowSub,
+                                tint = rowIcon,
                             )
                         }
                         // Immediate drag from the handle: no long-press delay,
@@ -2205,7 +2307,7 @@ private fun QueueList(
                             Icon(
                                 Icons.Default.DragHandle,
                                 contentDescription = "Reorder",
-                                tint = rowSub,
+                                tint = rowIcon,
                             )
                         }
                     }
@@ -2218,6 +2320,7 @@ private fun QueueList(
 /**
  * Queue bottom bar: shuffle left, close chevron centered, repeat right. Both
  * toggles show the player's live state and stay in sync with Now Playing.
+ * Transparent container overlaid directly over the edge-faded sheet backdrop.
  */
 @Composable
 private fun QueueBottomBar(
@@ -2227,60 +2330,92 @@ private fun QueueBottomBar(
     onRepeat: () -> Unit,
     onClose: () -> Unit,
     palette: NowPlayingPalette,
+    queueBgStyle: BackgroundStyle,
+    isDark: Boolean,
+    modifier: Modifier = Modifier,
 ) {
-    val content = playingColor(palette.content)
-    // Icons need 3:1, not 4.5:1, so a 0.55 alpha on an already-high-contrast
-    // ink stays above the bar (>= 4:1 measured in both themes).
-    val dim = content.copy(alpha = 0.55f)
-    // Active toggles get the palette's verified accent (>= 3:1 on the sheet)
-    // on a tonal pill, so "on" is unmistakable next to "off" in both themes.
-    val activeTint = playingColor(palette.accent)
-    val activePill = playingColor(palette.rowHighlight)
-    // OPAQUE scrim: the list must never ghost through the controls.
-    val scrim = playingColor(palette.sheetBottom)
+    val controlColors = resolveQueueBottomControlColors(
+        style = queueBgStyle,
+        isDark = isDark,
+        colorScheme = MaterialTheme.colorScheme,
+        onSheetColor = playingColor(palette.sheetContent),
+    )
+    val pillShape = RoundedCornerShape(QueuePolishSpecs.HIGHLIGHT_CORNER_RADIUS_DP.dp)
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
-            .background(scrim)
-            .padding(top = 4.dp),
+            .height(QueuePolishSpecs.BOTTOM_CONTROLS_HEIGHT_DP.dp)
+            .background(controlColors.containerColor),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Box(
             Modifier
-                .clip(RoundedCornerShape(20.dp))
-                .then(if (shuffleOn) Modifier.background(activePill) else Modifier),
+                .clip(pillShape)
+                .then(
+                    if (shuffleOn) {
+                        Modifier
+                            .background(controlColors.activePillColor, pillShape)
+                            .then(
+                                if (controlColors.activePillBorderColor.alpha > 0f) {
+                                    Modifier.border(0.5.dp, controlColors.activePillBorderColor, pillShape)
+                                } else {
+                                    Modifier
+                                },
+                            )
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
             IconButton(onClick = onShuffle, modifier = Modifier.size(48.dp)) {
                 Icon(
                     Icons.Default.Shuffle,
                     contentDescription = if (shuffleOn) "Shuffle on" else "Shuffle off",
-                    tint = if (shuffleOn) activeTint else dim,
+                    tint = if (shuffleOn) controlColors.activeIconTint else controlColors.inactiveIconTint,
                 )
             }
         }
         IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
-            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Close queue", tint = content)
+            Icon(
+                Icons.Default.KeyboardArrowDown,
+                contentDescription = "Close queue",
+                tint = controlColors.chevronTint,
+            )
         }
         val repeatActive = repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF
         Box(
             Modifier
-                .clip(RoundedCornerShape(20.dp))
-                .then(if (repeatActive) Modifier.background(activePill) else Modifier),
+                .clip(pillShape)
+                .then(
+                    if (repeatActive) {
+                        Modifier
+                            .background(controlColors.activePillColor, pillShape)
+                            .then(
+                                if (controlColors.activePillBorderColor.alpha > 0f) {
+                                    Modifier.border(0.5.dp, controlColors.activePillBorderColor, pillShape)
+                                } else {
+                                    Modifier
+                                },
+                            )
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
             IconButton(onClick = onRepeat, modifier = Modifier.size(48.dp)) {
                 when (repeatMode) {
                     androidx.media3.common.Player.REPEAT_MODE_ONE -> Icon(
                         Icons.Default.RepeatOne, contentDescription = "Repeat one",
-                        tint = activeTint,
+                        tint = controlColors.activeIconTint,
                     )
                     androidx.media3.common.Player.REPEAT_MODE_ALL -> Icon(
                         Icons.Default.Repeat, contentDescription = "Repeat all",
-                        tint = activeTint,
+                        tint = controlColors.activeIconTint,
                     )
                     else -> Icon(
                         Icons.Default.Repeat, contentDescription = "Repeat off",
-                        tint = dim,
+                        tint = controlColors.inactiveIconTint,
                     )
                 }
             }
@@ -2315,6 +2450,11 @@ private fun QueueSheet(
     val haptics = LocalHapticFeedback.current
     val density = LocalDensity.current
     val navBarBottomPx = WindowInsets.navigationBars.getBottom(density).toFloat()
+    val navBarBottomDp = with(density) { kotlin.math.ceil(navBarBottomPx.toDp().value).toInt() }
+    val bottomContentPaddingDp = computeListBottomContentPaddingDp(
+        controlsHeightDp = QueuePolishSpecs.BOTTOM_CONTROLS_HEIGHT_DP,
+        navBarBottomInsetDp = navBarBottomDp,
+    )
     val peekHeightPx = with(density) { 80.dp.toPx() } + navBarBottomPx
     var showSaveDialog by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
@@ -2550,7 +2690,6 @@ private fun QueueSheet(
             Column(
                 Modifier
                     .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
                     .nestedScroll(nestedScroll)
                     .draggable(
                         orientation = Orientation.Vertical,
@@ -2570,14 +2709,14 @@ private fun QueueSheet(
                                 sheet.onDragEnd(velocity)
                             }
                         },
-                    )
-                    .padding(horizontal = 16.dp),
+                    ),
             ) {
             // Single shared drag handle pill (36.dp x 4.dp, rounded) at the top edge.
             // At progress = 0f, tapping the 72.dp peek strip opens the queue sheet.
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
                     .then(
                         if (!sheet.open) {
                             Modifier
@@ -2625,6 +2764,7 @@ private fun QueueSheet(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
                             .height(52.dp)
                             .graphicsLayer {
                                 val p = sheet.progress.coerceIn(0f, 1f)
@@ -2640,7 +2780,7 @@ private fun QueueSheet(
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
-                    // Queue header, list and bottom bar fading in directly below that same single handle.
+                    // Queue header, list and overlaid bottom bar fading in directly below that same single handle.
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -2652,7 +2792,10 @@ private fun QueueSheet(
                         Spacer(Modifier.height(6.dp))
                         // Header: big bold source title on the left; the Radio chip (when
                         // active) and the Save button right-aligned on the same row.
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             // Large + bold; marquees only when it actually overflows.
                             MarqueeTitle(
                                 text = sourceName ?: "Queue (${queue.size})",
@@ -2694,45 +2837,61 @@ private fun QueueSheet(
                             "${queue.size} songs · ${formatDuration(queue.sumOf { it.song.durationSec.toLong() }.toInt())}",
                             style = MaterialTheme.typography.bodySmall,
                             color = playingColor(palette.sheetDim),
-                            modifier = Modifier.padding(top = 2.dp),
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp),
                         )
                         Spacer(Modifier.height(10.dp))
-                        QueueList(
-                            displayOrder = displayOrder,
-                            listState = listState,
-                            // The player's current entry, by id. Read from the LIVE queue
-                            // (not displayOrder), so the highlight is unaffected by the
-                            // in-drag local order.
-                            currentQueueId = queue.getOrNull(currentIndex)?.queueId,
-                            isPlaying = isPlaying,
-                            player = player,
-                            haptics = haptics,
-                            onMoveLocal = { from, to ->
-                                // Read `displayOrder` directly. It is a delegated state var,
-                                // so a lambda captured once by
-                                // rememberReorderableLazyColumnState still sees the CURRENT
-                                // order. `shownIds` was a plain val frozen at composition, so
-                                // every frame after the first reordered from the ORIGINAL
-                                // list and the drag drifted back to the start.
-                                displayOrder = displayOrder.toMutableList().apply { add(to, removeAt(from)) }
-                            },
-                            onCommit = { commitIfDirty() },
-                            onPlayQueueItem = { qid -> player.playOrToggle(qid) },
-                            onRemove = { id -> player.removeById(id) },
-                            onActions = onActions,
-                            palette = palette,
-                            modifier = Modifier.weight(1f),
-                        )
-                        // Bottom bar: shuffle | close chevron | repeat, all live state.
-                        QueueBottomBar(
-                            shuffleOn = shuffleOn,
-                            repeatMode = repeatMode,
-                            onShuffle = { player.toggleShuffle() },
-                            onRepeat = { player.cycleRepeat() },
-                            onClose = onDismiss,
-                            palette = palette,
-                        )
-                        Spacer(Modifier.height(16.dp))
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                            QueueList(
+                                displayOrder = displayOrder,
+                                listState = listState,
+                                // The player's current entry, by id. Read from the LIVE queue
+                                // (not displayOrder), so the highlight is unaffected by the
+                                // in-drag local order.
+                                currentQueueId = queue.getOrNull(currentIndex)?.queueId,
+                                isPlaying = isPlaying,
+                                player = player,
+                                haptics = haptics,
+                                onMoveLocal = { from, to ->
+                                    // Read `displayOrder` directly. It is a delegated state var,
+                                    // so a lambda captured once by
+                                    // rememberReorderableLazyColumnState still sees the CURRENT
+                                    // order. `shownIds` was a plain val frozen at composition, so
+                                    // every frame after the first reordered from the ORIGINAL
+                                    // list and the drag drifted back to the start.
+                                    displayOrder = displayOrder.toMutableList().apply { add(to, removeAt(from)) }
+                                },
+                                onCommit = { commitIfDirty() },
+                                onPlayQueueItem = { qid -> player.playOrToggle(qid) },
+                                onRemove = { id -> player.removeById(id) },
+                                onActions = onActions,
+                                palette = palette,
+                                queueBgStyle = queueBgStyle,
+                                isDark = sheetIsDark,
+                                bottomContentPaddingDp = bottomContentPaddingDp,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .queueBottomEdgeFade(
+                                        fadeHeight = QueuePolishSpecs.BOTTOM_FADE_HEIGHT_DP.dp,
+                                        bottomControlsHeight = QueuePolishSpecs.BOTTOM_CONTROLS_HEIGHT_DP.dp,
+                                        navBarBottomPx = navBarBottomPx,
+                                    ),
+                            )
+                            // Bottom bar: transparent overlay above nav bar inset.
+                            QueueBottomBar(
+                                shuffleOn = shuffleOn,
+                                repeatMode = repeatMode,
+                                onShuffle = { player.toggleShuffle() },
+                                onRepeat = { player.cycleRepeat() },
+                                onClose = onDismiss,
+                                palette = palette,
+                                queueBgStyle = queueBgStyle,
+                                isDark = sheetIsDark,
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+                                    .padding(horizontal = 16.dp),
+                            )
+                        }
                     }
                 }
             }
