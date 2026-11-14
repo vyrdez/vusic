@@ -50,6 +50,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Typography
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -60,6 +62,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -76,6 +81,7 @@ import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.LocalPlayingColors
 import com.feishin.mobile.ui.theme.Motion
 import com.feishin.mobile.ui.theme.VusicSpacing
+import com.feishin.mobile.ui.theme.VusicTypography
 import com.feishin.mobile.ui.theme.playingColor
 
 fun formatDuration(seconds: Int): String {
@@ -154,20 +160,47 @@ fun EqualizerOverlay(modifier: Modifier = Modifier) {
     }
 }
 
+data class SectionHeaderSpec(
+    val textStyle: TextStyle,
+    val color: Color,
+    val paddingStart: Dp,
+    val paddingTop: Dp,
+    val paddingEnd: Dp,
+    val paddingBottom: Dp,
+)
+
+fun resolveSectionHeaderSpec(
+    typography: Typography = VusicTypography,
+    colorScheme: ColorScheme,
+): SectionHeaderSpec = SectionHeaderSpec(
+    textStyle = typography.titleLarge,
+    color = colorScheme.primary,
+    paddingStart = VusicSpacing.ScreenHorizontal,
+    paddingTop = VusicSpacing.SectionGap,
+    paddingEnd = 8.dp,
+    paddingBottom = VusicSpacing.HeaderToContent,
+)
+
+fun resolveSubSectionHeaderSpec(
+    typography: Typography = VusicTypography,
+    colorScheme: ColorScheme,
+): SectionHeaderSpec = resolveSectionHeaderSpec(
+    typography = typography,
+    colorScheme = colorScheme,
+)
+
 @Composable
 fun SubSectionHeader(
     title: String,
     modifier: Modifier = Modifier,
+    actionText: String? = null,
+    onAction: (() -> Unit)? = null,
 ) {
-    Text(
-        title,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = modifier.padding(
-            start = VusicSpacing.ScreenHorizontal,
-            top = VusicSpacing.SubHeaderTop,
-            bottom = VusicSpacing.SubHeaderBottom,
-        ),
+    SectionHeader(
+        title = title,
+        modifier = modifier,
+        actionText = actionText,
+        onAction = onAction,
     )
 }
 
@@ -194,11 +227,19 @@ fun SectionHeader(
     avatarUrl: String? = null,
     onPlayAll: (() -> Unit)? = null,
     onOpen: (() -> Unit)? = null,
+    actionText: String? = null,
+    onAction: (() -> Unit)? = null,
 ) {
+    val spec = resolveSectionHeaderSpec(MaterialTheme.typography, MaterialTheme.colorScheme)
     Row(
         modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, top = VusicSpacing.SectionGap, end = 8.dp, bottom = VusicSpacing.HeaderToContent),
+            .padding(
+                start = spec.paddingStart,
+                top = spec.paddingTop,
+                end = spec.paddingEnd,
+                bottom = spec.paddingBottom,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (avatarUrl != null) {
@@ -211,11 +252,17 @@ fun SectionHeader(
             }
             Text(
                 title,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
+                style = spec.textStyle,
+                color = spec.color,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.semantics { heading() },
             )
+        }
+        if (actionText != null && onAction != null) {
+            TextButton(onClick = onAction) {
+                Text(actionText, maxLines = 1, softWrap = false)
+            }
         }
         if (onPlayAll != null) {
             Text(

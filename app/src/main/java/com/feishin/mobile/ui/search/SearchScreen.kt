@@ -71,7 +71,7 @@ import com.feishin.mobile.ui.components.SkeletonLoader
 import com.feishin.mobile.ui.components.TrackRow
 import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.components.rememberSavableListState
-import com.feishin.mobile.ui.components.SubSectionHeader
+import com.feishin.mobile.ui.components.SectionHeader
 import com.feishin.mobile.ui.components.ArtistAvatar
 import com.feishin.mobile.ui.theme.VusicColors
 import kotlinx.coroutines.launch
@@ -240,18 +240,11 @@ private fun RecentSearches(
         EmptyState("Type to search")
         return
     }
-    Row(
-        Modifier.fillMaxWidth().padding(16.dp, 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "Recent searches",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1f),
-        )
-        TextButton(onClick = onClearAll) { Text("Clear all") }
-    }
+    SectionHeader(
+        title = "Recent searches",
+        actionText = "Clear all",
+        onAction = onClearAll,
+    )
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current)) {
         items(recent, key = { "rs$it" }, contentType = { "item" }) { r ->
             Row(
@@ -306,7 +299,7 @@ private fun AllResults(
     ) {
         if (top != null) {
             item(key = "top") {
-                SubSectionHeader("Top result")
+                SectionHeader("Top result")
                 when (top) {
                     is SearchGrouping.TopHit.Artist -> TopArtistRow(
                         id = top.id, name = top.name, repo = repo, vm = vm,
@@ -328,7 +321,7 @@ private fun AllResults(
             }
         }
         if (res.tracks.isNotEmpty()) {
-            item(key = "songs-h") { SubSectionHeader("Songs") }
+            item(key = "songs-h") { SectionHeader("Songs") }
             items(songs, key = { "s${it.id}" }) { song ->
                 TrackRow(
                     track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),
@@ -347,19 +340,19 @@ private fun AllResults(
             }
         }
         if (albums.isNotEmpty()) {
-            item(key = "albums-h") { SubSectionHeader("Albums") }
+            item(key = "albums-h") { SectionHeader("Albums") }
             items(albums, key = { "b${it.id}" }) { a ->
                 AlbumRow(a, repo, onAlbum, onActions)
             }
         }
         if (artists.isNotEmpty()) {
-            item(key = "artists-h") { SubSectionHeader("Artists") }
+            item(key = "artists-h") { SectionHeader("Artists") }
             items(artists, key = { "a${it.id}" }) { a ->
                 ArtistSearchRow(a, repo, vm, onArtist, onActions)
             }
         }
         if (playlists.isNotEmpty()) {
-            item(key = "playlists-h") { SubSectionHeader("Playlists") }
+            item(key = "playlists-h") { SectionHeader("Playlists") }
             items(playlists, key = { "p${it.id}" }) { p ->
                 PlaylistSearchRow(p, repo, onPlaylist, onActions)
             }
