@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import com.feishin.mobile.core.common.MiniPlayerGesture
 import com.feishin.mobile.core.ui.BlurScrim
+import com.feishin.mobile.core.ui.BlurSurfaceRole
 import com.feishin.mobile.core.ui.Contrast
 import com.feishin.mobile.core.ui.NowPlayingColors
 import com.feishin.mobile.core.ui.PlayingColors
@@ -287,9 +288,30 @@ fun resolveMiniPlayerStyleColors(
 
         BackgroundStyle.BLUR -> {
             val worstArtArgb = if (isDark) 0xFFFFFFFFL else 0xFF000000L
-            val worstAlpha = BlurScrim.scrimAlpha(if (isDark) 1f else 0f, isDark)
-            val worstBlurBgArgb = Contrast.blend(cardBgArgb, worstArtArgb, worstAlpha)
-            val blurBgs = listOf(cardBgArgb, worstBlurBgArgb)
+            val worstLum = if (isDark) 1f else 0f
+            val accentTintArgb = scheme?.container ?: colorScheme.primaryContainer.toPackedArgb()
+            val stackWorst = BlurScrim.resolveStack(
+                role = BlurSurfaceRole.MINI_PLAYER,
+                avgLuminance = worstLum,
+                isDark = isDark,
+                baseColorArgb = cardBgArgb,
+                accentTintArgb = accentTintArgb,
+            )
+            val leftWorstBg = BlurScrim.compositeLayerColor(
+                baseColorArgb = stackWorst.baseColorArgb,
+                artworkArgb = worstArtArgb,
+                artworkAlpha = stackWorst.artworkAlpha,
+                scrimColorArgb = stackWorst.scrimStartArgb,
+                scrimAlpha = stackWorst.scrimStartAlpha,
+            )
+            val rightWorstBg = BlurScrim.compositeLayerColor(
+                baseColorArgb = stackWorst.baseColorArgb,
+                artworkArgb = worstArtArgb,
+                artworkAlpha = stackWorst.artworkAlpha,
+                scrimColorArgb = stackWorst.scrimEndArgb,
+                scrimAlpha = stackWorst.scrimEndAlpha,
+            )
+            val blurBgs = listOf(cardBgArgb, leftWorstBg, rightWorstBg)
             val candidateInkArgb = scheme?.surfaceText ?: colorScheme.onSurface.toPackedArgb()
             val fallbackInk = NowPlayingColors.contentFor(cardBgArgb)
             val safeInkArgb = NowPlayingColors.ensureReadable(
@@ -302,7 +324,7 @@ fun resolveMiniPlayerStyleColors(
             val safeTrack = playingColor(PlayingColors.ringTrack(cardBgArgb, safeInkArgb))
             MiniPlayerStyleColors(
                 style = style,
-                topColor = cardBg,
+                topColor = playingColor(accentTintArgb),
                 bottomColor = cardBg,
                 scrimColor = cardBg,
                 inkColor = safeInk,
@@ -661,44 +683,51 @@ fun MiniPlayer(
             }
             .height(MiniPlayerHeight),
     ) {
-        Crossfade(
-            targetState = bgStyle,
-            animationSpec = tween(durationMillis = Motion.scaled(Motion.Normal)),
-            modifier = Modifier.matchParentSize(),
-            label = "mini-bg-style",
-        ) { style ->
-            val resolved = if (style == bgStyle) {
-                styleColors
-            } else {
-                resolveMiniPlayerStyleColors(
-                    style = style,
-                    scheme = scheme,
-                    colorScheme = colorScheme,
-                    isDark = isDark,
-                )
-            }
-            when (style) {
-                BackgroundStyle.DEFAULT -> Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(resolved.bottomColor),
-                )
-                BackgroundStyle.GRADIENT -> Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(resolved.topColor, resolved.bottomColor),
+        // Opaque pill base beneath Crossfade so style transitions or blur never bleed Home content.
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(cardBg.copy(alpha = 1f)),
+        ) {
+            Crossfade(
+                targetState = bgStyle,
+                animationSpec = tween(durationMillis = Motion.scaled(Motion.Normal)),
+                modifier = Modifier.fillMaxSize(),
+                label = "mini-bg-style",
+            ) { style ->
+                val resolved = if (style == bgStyle) {
+                    styleColors
+                } else {
+                    resolveMiniPlayerStyleColors(
+                        style = style,
+                        scheme = scheme,
+                        colorScheme = colorScheme,
+                        isDark = isDark,
+                    )
+                }
+                when (style) {
+                    BackgroundStyle.DEFAULT -> Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(resolved.bottomColor),
+                    )
+                    BackgroundStyle.GRADIENT -> Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(resolved.topColor, resolved.bottomColor),
+                                ),
                             ),
-                        ),
-                )
-                BackgroundStyle.BLUR -> Box(Modifier.fillMaxSize()) {
-                    BlurredArtworkBackground(
+                    )
+                    BackgroundStyle.BLUR -> BlurredArtworkBackground(
                         coverId = coverUrl,
                         bitmap = null,
                         scrimColor = resolved.scrimColor,
                         isDark = isDark,
-                        modifier = Modifier.matchParentSize(),
+                        modifier = Modifier.fillMaxSize(),
+                        role = BlurSurfaceRole.MINI_PLAYER,
+                        accentTintColor = resolved.topColor,
                     )
                 }
             }

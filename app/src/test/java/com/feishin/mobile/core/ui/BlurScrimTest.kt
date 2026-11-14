@@ -371,4 +371,213 @@ class BlurScrimTest {
             }
         }
     }
+
+    @Test
+    fun artworkAlpha_staysWithinBoundsAcrossFullLuminanceRange() {
+        for (dark in listOf(true, false)) {
+            for (step in -5..25) {
+                val l = step / 20f
+                val alpha = BlurScrim.artworkAlpha(l, isDark = dark)
+                assertTrue(
+                    "artworkAlpha out of [${BlurScrim.ARTWORK_MIN_ALPHA}, ${BlurScrim.ARTWORK_MAX_ALPHA}] for dark=$dark, L=$l: $alpha",
+                    alpha in BlurScrim.ARTWORK_MIN_ALPHA..BlurScrim.ARTWORK_MAX_ALPHA,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun resolveStack_baseAlphaAlwaysOpaqueAcrossRolesThemesAndFixtures() {
+        for (dark in listOf(true, false)) {
+            val staticCs = PlayingColors.buildMaterialScheme(seedArgb = null, dark = dark).toMaterialColorScheme()
+            for ((_, artwork) in ArtworkFixtures.ALL) {
+                val dyn = PlayingColors.schemeFromPixels(artwork.argb, artwork.width, artwork.height, dark = dark)!!
+                val scheme = dyn.toPlayingScheme()
+                val lum = BlurScrim.averageLuminance(artwork.argb)
+                for (role in BlurSurfaceRole.entries) {
+                    val dynSpec = BlurScrim.resolveStack(
+                        role = role,
+                        avgLuminance = lum,
+                        isDark = dark,
+                        baseColorArgb = if (role == BlurSurfaceRole.MINI_PLAYER) scheme.miniContainer else scheme.surfaceBottom,
+                        accentTintArgb = scheme.container,
+                    )
+                    val staticSpec = BlurScrim.resolveStack(
+                        role = role,
+                        avgLuminance = lum,
+                        isDark = dark,
+                        baseColorArgb = staticCs.surface.toPackedArgb(),
+                        accentTintArgb = staticCs.primaryContainer.toPackedArgb(),
+                    )
+                    assertEquals(1.0f, dynSpec.baseAlpha, 0f)
+                    assertEquals(1.0f, staticSpec.baseAlpha, 0f)
+                    assertEquals(255, Contrast.alpha(dynSpec.baseColorArgb))
+                    assertEquals(255, Contrast.alpha(staticSpec.baseColorArgb))
+                    assertTrue(dynSpec.artworkAlpha in BlurScrim.ARTWORK_MIN_ALPHA..BlurScrim.ARTWORK_MAX_ALPHA)
+                    assertTrue(staticSpec.artworkAlpha in BlurScrim.ARTWORK_MIN_ALPHA..BlurScrim.ARTWORK_MAX_ALPHA)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun resolveStack_usesUniformScrimPreservingSpatialArtworkAcrossAllRoles() {
+        for (dark in listOf(true, false)) {
+            val base = if (dark) 0xFF121212L else 0xFFF4F6F9L
+            val accent = if (dark) 0xFF28323EL else 0xFFD4E5F7L
+            for (lum in listOf(0f, 0.25f, 0.5f, 0.75f, 1f)) {
+                val expectedScrimAlpha = BlurScrim.scrimAlpha(lum, dark)
+                for (role in BlurSurfaceRole.entries) {
+                    val spec = BlurScrim.resolveStack(role, lum, dark, base, accent)
+                    assertTrue(
+                        "$role dark=$dark lum=$lum artworkAlpha (${spec.artworkAlpha}) must be in [0.75, 1.0]",
+                        spec.artworkAlpha in 0.75f..1.0f,
+                    )
+                    assertTrue(
+                        "$role dark=$dark lum=$lum scrim delta must be <= 0.05f (${spec.scrimStartAlpha} vs ${spec.scrimEndAlpha})",
+                        abs(spec.scrimStartAlpha - spec.scrimEndAlpha) <= 0.05f,
+                    )
+                    assertEquals(expectedScrimAlpha, spec.scrimStartAlpha, 1e-6f)
+                    assertEquals(expectedScrimAlpha, spec.scrimEndAlpha, 1e-6f)
+                    assertEquals(base, spec.scrimStartArgb)
+                    assertEquals(base, spec.scrimEndArgb)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun resolveStack_splitWhiteTopPurpleBottomArtwork_preservesSpatialColorsAndContrast() {
+        val topWhite = 0xFFFFFFFFL
+        val bottomPurple = 0xFF9C4A88L
+        val splitPixels = IntArray(64 * 64) { idx ->
+            if (idx / 64 < 32) topWhite.toInt() else bottomPurple.toInt()
+        }
+        val avgLum = BlurScrim.averageLuminance(splitPixels)
+
+        for (dark in listOf(true, false)) {
+            val base = if (dark) 0xFF121212L else 0xFFF7F9FBL
+            val text = if (dark) 0xFFFFFFFFL else 0xFF0B0F14L
+            val icon = if (dark) 0xFFD0C4D8L else 0xFF3E3548L
+            for (role in BlurSurfaceRole.entries) {
+                val stack = BlurScrim.resolveStack(role, avgLum, dark, base)
+                val topBg = BlurScrim.compositeLayerColor(
+                    stack.baseColorArgb, topWhite, stack.artworkAlpha, stack.scrimStartArgb, stack.scrimStartAlpha,
+                )
+                val bottomBg = BlurScrim.compositeLayerColor(
+                    stack.baseColorArgb, bottomPurple, stack.artworkAlpha, stack.scrimEndArgb, stack.scrimEndAlpha,
+                )
+                assertTrue(
+                    "$role dark=$dark top and bottom must preserve spatial luminance difference",
+                    Contrast.luminance(topBg) > Contrast.luminance(bottomBg) + 0.02,
+                )
+                assertTrue(
+                    "$role dark=$dark bottom must preserve purple chroma (red > green)",
+                    Contrast.red(bottomBg) > Contrast.green(bottomBg),
+                )
+                assertContrast("$role dark=$dark split top text", text, topBg, 4.5)
+                assertContrast("$role dark=$dark split bottom text", text, bottomBg, 4.5)
+                assertContrast("$role dark=$dark split top icon", icon, topBg, 3.0)
+                assertContrast("$role dark=$dark split bottom icon", icon, bottomBg, 3.0)
+            }
+        }
+    }
+
+    @Test
+    fun resolveStack_fullOpaqueStackWorstCaseContrastAcrossFixturesAndStatic() {
+        for (dark in listOf(true, false)) {
+            val staticDyn = PlayingColors.buildMaterialScheme(seedArgb = null, dark = dark)
+            val staticCs = staticDyn.toMaterialColorScheme()
+            val staticNpPalette = staticNowPlayingPalette(staticCs, dark)
+
+            for ((name, artwork) in ArtworkFixtures.ALL) {
+                val dyn = PlayingColors.schemeFromPixels(artwork.argb, artwork.width, artwork.height, dark = dark)!!
+                val dynCs = dyn.toMaterialColorScheme()
+                val dynPlayingScheme = dyn.toPlayingScheme()
+                val dynNpPalette = NowPlayingColors.fromScheme(dynPlayingScheme)
+
+                val fixtureAvgLum = BlurScrim.averageLuminance(artwork.argb)
+                val fixtureAvgColor = averageRgb(artwork.argb)
+                val worstLum = if (dark) 1f else 0f
+                val worstArt = if (dark) 0xFFFFFFFFL else 0xFF000000L
+
+                for (dynamicOn in listOf(true, false)) {
+                    val tag = "$name(dark=$dark,dynamic=$dynamicOn)"
+                    val scheme = if (dynamicOn) dynPlayingScheme else null
+                    val cs = if (dynamicOn) dynCs else staticCs
+                    val npPalette = if (dynamicOn) dynNpPalette else staticNpPalette
+
+                    val scenarios = listOf(
+                        Triple("worst", worstLum, worstArt),
+                        Triple("fixture", fixtureAvgLum, fixtureAvgColor),
+                    )
+
+                    // 1) PLAYER stack
+                    val npBase = if (dynamicOn) npPalette.backdropBottom else cs.surface.toPackedArgb()
+                    val npText = if (dynamicOn) npPalette.content else cs.onSurface.toPackedArgb()
+                    val npIcon = if (dynamicOn) npPalette.accent else cs.primary.toPackedArgb()
+                    for ((label, lum, art) in scenarios) {
+                        val stack = BlurScrim.resolveStack(BlurSurfaceRole.PLAYER, lum, dark, npBase)
+                        val topBg = BlurScrim.compositeLayerColor(
+                            stack.baseColorArgb, art, stack.artworkAlpha, stack.scrimStartArgb, stack.scrimStartAlpha,
+                        )
+                        val bottomBg = BlurScrim.compositeLayerColor(
+                            stack.baseColorArgb, art, stack.artworkAlpha, stack.scrimEndArgb, stack.scrimEndAlpha,
+                        )
+                        assertContrast("$tag stack PLAYER $label top text", npText, topBg, 4.5)
+                        assertContrast("$tag stack PLAYER $label bottom text", npText, bottomBg, 4.5)
+                        assertContrast("$tag stack PLAYER $label top icon", npIcon, topBg, 3.0)
+                        assertContrast("$tag stack PLAYER $label bottom icon", npIcon, bottomBg, 3.0)
+                    }
+
+                    // 2) QUEUE stack
+                    val qBase = if (dynamicOn) npPalette.sheetBottom else cs.surface.toPackedArgb()
+                    val qText = if (dynamicOn) npPalette.sheetContent else cs.onSurface.toPackedArgb()
+                    val qIcon = if (dynamicOn) npPalette.accent else cs.primary.toPackedArgb()
+                    for ((label, lum, art) in scenarios) {
+                        val stack = BlurScrim.resolveStack(BlurSurfaceRole.QUEUE, lum, dark, qBase)
+                        val topBg = BlurScrim.compositeLayerColor(
+                            stack.baseColorArgb, art, stack.artworkAlpha, stack.scrimStartArgb, stack.scrimStartAlpha,
+                        )
+                        val bottomBg = BlurScrim.compositeLayerColor(
+                            stack.baseColorArgb, art, stack.artworkAlpha, stack.scrimEndArgb, stack.scrimEndAlpha,
+                        )
+                        assertContrast("$tag stack QUEUE $label top text", qText, topBg, 4.5)
+                        assertContrast("$tag stack QUEUE $label bottom text", qText, bottomBg, 4.5)
+                        assertContrast("$tag stack QUEUE $label top icon", qIcon, topBg, 3.0)
+                        assertContrast("$tag stack QUEUE $label bottom icon", qIcon, bottomBg, 3.0)
+                    }
+
+                    // 3) MINI_PLAYER stack
+                    val mini = resolveMiniPlayerStyleColors(BackgroundStyle.BLUR, scheme, cs, isDark = dark)
+                    val miniBase = mini.scrimColor.toPackedArgb()
+                    val miniAccent = mini.topColor.toPackedArgb()
+                    val miniInk = mini.inkColor.toPackedArgb()
+                    val miniSubInk = mini.subtleInkColor.toPackedArgb()
+                    val miniBar = mini.ringBarColor.toPackedArgb()
+                    for ((label, lum, art) in scenarios) {
+                        val stack = BlurScrim.resolveStack(BlurSurfaceRole.MINI_PLAYER, lum, dark, miniBase, miniAccent)
+                        val leftBg = BlurScrim.compositeLayerColor(
+                            stack.baseColorArgb, art, stack.artworkAlpha, stack.scrimStartArgb, stack.scrimStartAlpha,
+                        )
+                        val rightBg = BlurScrim.compositeLayerColor(
+                            stack.baseColorArgb, art, stack.artworkAlpha, stack.scrimEndArgb, stack.scrimEndAlpha,
+                        )
+                        assertContrast("$tag stack MINI $label left ink", miniInk, leftBg, 4.5)
+                        assertContrast("$tag stack MINI $label right ink", miniInk, rightBg, 4.5)
+                        assertContrast("$tag stack MINI $label left subInk", miniSubInk, leftBg, 4.5)
+                        assertContrast("$tag stack MINI $label right subInk", miniSubInk, rightBg, 4.5)
+                        assertContrast("$tag stack MINI $label left ringBar", miniBar, leftBg, 3.0)
+                        assertContrast("$tag stack MINI $label right ringBar", miniBar, rightBg, 3.0)
+                    }
+                    assertContrast(
+                        "$tag stack MINI ringTrack",
+                        miniBar,
+                        mini.ringTrackColor.compositeOver(miniBase),
+                        3.0,
+                    )
+                }
+            }
+        }
+    }
 }

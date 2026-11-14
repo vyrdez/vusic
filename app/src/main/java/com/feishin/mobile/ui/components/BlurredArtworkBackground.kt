@@ -20,20 +20,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.imageLoader
 import coil.request.ImageRequest
 import com.feishin.mobile.core.ui.ArtworkBlurCache
+import com.feishin.mobile.core.ui.BlurGradientAxis
 import com.feishin.mobile.core.ui.BlurScrim
+import com.feishin.mobile.core.ui.BlurSurfaceRole
 import com.feishin.mobile.core.ui.BlurredArtwork
 import com.feishin.mobile.core.ui.DebugCoverOverride
 import com.feishin.mobile.ui.theme.Motion
+import com.feishin.mobile.ui.theme.playingColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -53,17 +59,11 @@ private const val COVER_CROSSFADE_MS = 400
 private val HARDWARE_BLUR_RADIUS = 68.dp
 
 /**
- * Renders a cached, low-resolution (64-128px) blurred artwork background scaled to
- * fill its bounds with [ContentScale.Crop], overlaid with a contrast-safe scrim
- * whose alpha is computed by [BlurScrim.scrimAlpha].
- *
- * - On API 31+, [ArtworkBlurCache] stores the downscaled bitmap and [Modifier.blur]
- *   blurs that small layer on the GPU.
- * - On API < 31, [ArtworkBlurCache] produces a pre-blurred bitmap once on a
- *   background dispatcher (~64-80dp equivalent radius when scaled up).
- * - When [bitmap] is null and [coverId] is a loadable URL/URI, a 96x96 software
- *   bitmap is fetched via Coil off the main thread and passed to [ArtworkBlurCache].
- * - Callers may clip this composable to any shape via [modifier] (e.g. `Modifier.clip(shape)`).
+ * Renders the shared 3-layer opaque blurred artwork background stack:
+ * 1. Solid 100% opaque base (`baseAlpha == 1.0f`) outside the cover crossfade.
+ * 2. Clipped, low-resolution blurred artwork at [BlurScrim.artworkAlpha] (`0.80f..0.90f`),
+ *    using [BlurredEdgeTreatment.Rectangle] on API 31+ so edges never sample transparent black.
+ * 3. Uniform contrast scrim from [BlurScrim.resolveStack] preserving spatial artwork colors.
  */
 @Composable
 fun BlurredArtworkBackground(
@@ -72,6 +72,8 @@ fun BlurredArtworkBackground(
     scrimColor: Color,
     isDark: Boolean,
     modifier: Modifier = Modifier,
+    role: BlurSurfaceRole = BlurSurfaceRole.PLAYER,
+    accentTintColor: Color = scrimColor,
 ) {
     val context = LocalContext.current
     val debugOverride by DebugCoverOverride.current.collectAsState()
@@ -148,42 +150,84 @@ fun BlurredArtworkBackground(
                 .fillMaxSize()
                 .blur(
                     radius = HARDWARE_BLUR_RADIUS,
-                    edgeTreatment = BlurredEdgeTreatment.Unbounded,
+                    edgeTreatment = BlurredEdgeTreatment.Rectangle,
                 )
         } else {
             Modifier.fillMaxSize()
         }
     }
 
-    Box(modifier = modifier) {
+    val opaqueBaseColor = remember(scrimColor) { scrimColor.copy(alpha = BlurScrim.BASE_ALPHA) }
+    val opaqueAccentColor = remember(accentTintColor) { accentTintColor.copy(alpha = 1.0f) }
+
+    // Layer 1: 100% opaque base sits outside Crossfade so cover transitions or
+    // initial loads never dip combined surface opacity below 1.0.
+    Box(
+        modifier = modifier
+            .clipToBounds()
+            .background(opaqueBaseColor),
+    ) {
         Crossfade(
             targetState = entry,
             animationSpec = crossfadeSpec,
             label = "blurred-artwork-crossfade",
         ) { currentEntry: BlurredArtwork? ->
             if (currentEntry != null && blurSupported) {
+                val stack = remember(
+                    role,
+                    currentEntry.avgLuminance,
+                    isDark,
+                    opaqueBaseColor,
+                    opaqueAccentColor,
+                ) {
+                    BlurScrim.resolveStack(
+                        role = role,
+                        avgLuminance = currentEntry.avgLuminance,
+                        isDark = isDark,
+                        baseColorArgb = opaqueBaseColor.toArgb().toLong() and 0xFFFFFFFFL,
+                        accentTintArgb = opaqueAccentColor.toArgb().toLong() and 0xFFFFFFFFL,
+                    )
+                }
                 val imageBitmap = remember(currentEntry.coverId, currentEntry.bitmap) {
                     currentEntry.bitmap.asImageBitmap()
                 }
-                val overlayColor = remember(currentEntry.avgLuminance, isDark, scrimColor) {
-                    val alpha = BlurScrim.scrimAlpha(currentEntry.avgLuminance, isDark)
-                    scrimColor.copy(alpha = alpha)
+                val isUniformScrim = stack.scrimStartArgb == stack.scrimEndArgb &&
+                    stack.scrimStartAlpha == stack.scrimEndAlpha
+                val uniformScrimColor = remember(stack) {
+                    playingColor(stack.scrimStartArgb).copy(alpha = stack.scrimStartAlpha)
+                }
+                val scrimBrush = remember(stack, isUniformScrim) {
+                    if (isUniformScrim) {
+                        null
+                    } else {
+                        val stops = listOf(
+                            playingColor(stack.scrimStartArgb).copy(alpha = stack.scrimStartAlpha),
+                            playingColor(stack.scrimEndArgb).copy(alpha = stack.scrimEndAlpha),
+                        )
+                        when (stack.gradientAxis) {
+                            BlurGradientAxis.VERTICAL -> Brush.verticalGradient(stops)
+                            BlurGradientAxis.HORIZONTAL -> Brush.horizontalGradient(stops)
+                        }
+                    }
                 }
                 Box(Modifier.fillMaxSize()) {
+                    // Layer 2: Clipped blurred artwork over the solid opaque base.
                     Image(
                         bitmap = imageBitmap,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
+                        alpha = stack.artworkAlpha,
                         modifier = if (currentEntry.isPreBlurred) Modifier.fillMaxSize() else blurModifier,
                     )
+                    // Layer 3: Uniform contrast scrim preserving spatial artwork colors.
                     Box(
-                        Modifier
-                            .fillMaxSize()
-                            .background(overlayColor),
+                        if (scrimBrush != null) {
+                            Modifier.fillMaxSize().background(scrimBrush)
+                        } else {
+                            Modifier.fillMaxSize().background(uniformScrimColor)
+                        },
                     )
                 }
-            } else {
-                Box(Modifier.fillMaxSize().background(scrimColor))
             }
         }
     }

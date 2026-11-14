@@ -171,6 +171,7 @@ import com.feishin.mobile.data.favorites.FavoritesStore
 import com.feishin.mobile.data.favorites.PlaylistEvents
 import com.feishin.mobile.data.settings.BackgroundStyle
 import com.feishin.mobile.core.network.SyncedLyrics
+import com.feishin.mobile.core.ui.BlurSurfaceRole
 import com.feishin.mobile.core.ui.NowPlayingColors
 import com.feishin.mobile.core.ui.NowPlayingPalette
 import com.feishin.mobile.core.ui.PlayingColors
@@ -612,7 +613,8 @@ fun NowPlayingScreen(
                     val p = (nowPlayingSheet?.progress ?: 1f).coerceIn(0f, 1f)
                     translationY = 0f
                     alpha = (p / 0.65f).coerceIn(0f, 1f)
-                },
+                }
+                .background(playerSurfaceColor.copy(alpha = 1f)),
         ) {
             Crossfade(
                 targetState = bgStyle,
@@ -636,6 +638,7 @@ fun NowPlayingScreen(
                         scrimColor = playerSurfaceColor,
                         isDark = playerIsDark,
                         modifier = Modifier.fillMaxSize(),
+                        role = BlurSurfaceRole.PLAYER,
                     )
                 }
             }
@@ -2514,7 +2517,8 @@ private fun QueueSheet(
                     // Keep the header grab area solid while sliding.
                     clip = p < 1f
                 }
-                .clip(sheetShape),
+                .clip(sheetShape)
+                .background(sheetSurfaceColor.copy(alpha = 1.0f)),
         ) {
             Crossfade(
                 targetState = queueBgStyle,
@@ -2539,6 +2543,7 @@ private fun QueueSheet(
                         scrimColor = sheetSurfaceColor,
                         isDark = sheetIsDark,
                         modifier = Modifier.fillMaxSize(),
+                        role = BlurSurfaceRole.QUEUE,
                     )
                 }
             }
