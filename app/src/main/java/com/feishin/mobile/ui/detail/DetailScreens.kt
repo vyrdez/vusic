@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.feishin.mobile.core.common.PlaylistOrdering
+import com.feishin.mobile.core.common.QueueContextResolver
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.launch
 import com.feishin.mobile.core.common.PlaylistSortKey
@@ -359,6 +360,20 @@ fun PlaylistDetailScreen(
             val visibleTracks = remember(visibleIndices, p.tracks) {
                 visibleIndices.map { p.tracks[it] }
             }
+            val fullSortedIndices = remember(p.tracks, sort) {
+                PlaylistOrdering.visibleIndices(
+                    size = p.tracks.size,
+                    sort = sort,
+                    query = "",
+                    titleAt = { p.tracks[it].title },
+                    artistAt = { p.tracks[it].artist },
+                    albumAt = { p.tracks[it].album },
+                    durationAt = { p.tracks[it].durationSec },
+                )
+            }
+            val fullSortedTracks = remember(fullSortedIndices, p.tracks) {
+                fullSortedIndices.map { p.tracks[it] }
+            }
             val topBar = LocalTopBarController.current
             val scope = rememberCoroutineScope()
             val focusManager = LocalFocusManager.current
@@ -499,12 +514,21 @@ fun PlaylistDetailScreen(
                     // Keyed by source position, not id alone: a playlist may
                     // legitimately hold the same song twice, and the source
                     // index is what stays stable across a re-sort/re-filter.
-                    itemsIndexed(visibleIndices, key = { _, src -> "${p.tracks[src].id}#$src" }) { visibleIndex, src ->
+                    itemsIndexed(visibleIndices, key = { _, src -> "${p.tracks[src].id}#$src" }) { _, src ->
                         val song = p.tracks[src]
                         TrackRow(
                             track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),
-                            // Play exactly what the user can see.
-                            onClick = { player.playAll(visibleTracks, visibleIndex, source = p.name) },
+                            // Queue the full sorted playlist starting at the tapped song so
+                            // skipping continues through the whole playlist, not just the filter.
+                            onClick = {
+                                val ctx = QueueContextResolver.resolvePlayContext(
+                                    fullSortedTracks = fullSortedTracks,
+                                    clickedTrack = song,
+                                    fullSortedSourceIndices = fullSortedIndices,
+                                    clickedSourceIndex = src,
+                                )
+                                player.playAll(ctx.tracks, ctx.startIndex, source = p.name)
+                            },
                             onActions = { onActions(ActionTarget.Track(song)) },
                             // Always the STORED index (`src`), never the visible
                             // one, so a removal under a sort or filter still hits

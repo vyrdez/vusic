@@ -78,6 +78,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.feishin.mobile.core.common.QueueContextResolver
 import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.data.cache.CACHED_SONGS_PLAYLIST_ID
 import com.feishin.mobile.data.favorites.FAVORITE_SONGS_PLAYLIST_ID
@@ -385,7 +386,10 @@ fun LibraryScreen(
                                         Box(Modifier.animateItem()) {
                                             SongGridCell(
                                                 song = song, artUrl = repo.coverArtUrl(song.coverArt, 300),
-                                                onClick = { player.playAll(shown, shown.indexOf(song), source = "Songs") },
+                                                onClick = {
+                                                    val ctx = QueueContextResolver.resolvePlayContext(s.value, song)
+                                                    player.playAll(ctx.tracks, ctx.startIndex, source = "Songs")
+                                                },
                                                 onActions = { onActions(ActionTarget.Track(song)) },
                                             )
                                         }
@@ -400,7 +404,10 @@ fun LibraryScreen(
                                     items(shown, key = { it.id }, contentType = { "item" }) { song ->
                                         TrackRow(
                                             track = song, artUrl = repo.coverArtUrl(song.coverArt, 128),
-                                            onClick = { player.playAll(shown, shown.indexOf(song), source = "Songs") },
+                                            onClick = {
+                                                val ctx = QueueContextResolver.resolvePlayContext(s.value, song)
+                                                player.playAll(ctx.tracks, ctx.startIndex, source = "Songs")
+                                            },
                                             onActions = { onActions(ActionTarget.Track(song)) },
                                             onArtist = { id -> onArtist(id) },
                                             isCurrent = song.id == nowPlaying?.id, isPlaying = isPlaying,
@@ -758,6 +765,9 @@ private fun DownloadsTab(
         EmptyState("No songs match \"$query\"")
         return
     }
+    val fullSortedTracks = remember(done, sort) {
+        sortDownloads(done, sort).map { it.toDomainTrack() }
+    }
     val total = filtered.fold(0L) { acc, e -> acc + e.sizeBytes }
     if (grid) {
         LazyVerticalGrid(
@@ -777,14 +787,16 @@ private fun DownloadsTab(
                     com.feishin.mobile.ui.settings.SettingsActionButton(label = "Manage", onClick = onManage)
                 }
             }
-            itemsIndexed(filtered, key = { _, entity -> entity.songId }, contentType = { _, _ -> "item" }) { index, entity ->
+            itemsIndexed(filtered, key = { _, entity -> entity.songId }, contentType = { _, _ -> "item" }) { _, entity ->
+                val track = entity.toDomainTrack()
                 SongGridCell(
-                    song = entity.toDomainTrack(),
+                    song = track,
                     artUrl = repo.coverArtUrl(entity.coverArt, 300),
                     onClick = {
-                        player.playAll(filtered.map { it.toDomainTrack() }, startIndex = index, source = "Downloads")
+                        val ctx = QueueContextResolver.resolvePlayContext(fullSortedTracks, track)
+                        player.playAll(ctx.tracks, startIndex = ctx.startIndex, source = "Downloads")
                     },
-                    onActions = { onActions(ActionTarget.Track(entity.toDomainTrack())) },
+                    onActions = { onActions(ActionTarget.Track(track)) },
                 )
             }
         }
@@ -807,14 +819,16 @@ private fun DownloadsTab(
                 com.feishin.mobile.ui.settings.SettingsActionButton(label = "Manage", onClick = onManage)
             }
         }
-        itemsIndexed(filtered, key = { _, entity -> entity.songId }, contentType = { _, _ -> "item" }) { index, entity ->
+        itemsIndexed(filtered, key = { _, entity -> entity.songId }, contentType = { _, _ -> "item" }) { _, entity ->
+            val track = entity.toDomainTrack()
             TrackRow(
-                track = entity.toDomainTrack(),
+                track = track,
                 artUrl = repo.coverArtUrl(entity.coverArt, 128),
                 onClick = {
-                    player.playAll(filtered.map { it.toDomainTrack() }, startIndex = index, source = "Downloads")
+                    val ctx = QueueContextResolver.resolvePlayContext(fullSortedTracks, track)
+                    player.playAll(ctx.tracks, startIndex = ctx.startIndex, source = "Downloads")
                 },
-                onActions = { onActions(ActionTarget.Track(entity.toDomainTrack())) },
+                onActions = { onActions(ActionTarget.Track(track)) },
                 downloadState = entity,
                 isCurrent = entity.songId == nowPlaying?.id,
                 isPlaying = isPlaying,

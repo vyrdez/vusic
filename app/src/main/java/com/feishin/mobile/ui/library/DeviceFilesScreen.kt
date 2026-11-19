@@ -65,6 +65,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.feishin.mobile.core.common.QueueContextResolver
 import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.AlbumDetail
 import com.feishin.mobile.domain.model.Artist
@@ -290,11 +291,17 @@ fun DeviceFilesScreen(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(bottom = VusicSpacing.ContentBottom + LocalMiniClearance.current),
                         ) {
-                            itemsIndexed(state.songs, key = { _, track -> track.id }, contentType = { _, _ -> "track" }) { idx, track ->
+                            itemsIndexed(state.songs, key = { _, track -> track.id }, contentType = { _, _ -> "track" }) { _, track ->
                                 TrackRow(
                                     track = track,
                                     artUrl = track.coverArt,
-                                    onClick = { vm.playSongs(state.songs, idx) },
+                                    onClick = {
+                                        val ctx = QueueContextResolver.resolvePlayContext(
+                                            state.allSortedSongs.ifEmpty { state.songs },
+                                            track,
+                                        )
+                                        vm.playSongs(ctx.tracks, ctx.startIndex)
+                                    },
                                     onActions = { onActions(ActionTarget.Track(track)) },
                                     onArtist = { },
                                     isCurrent = track.id == nowPlaying?.id,

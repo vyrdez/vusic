@@ -36,6 +36,7 @@ import kotlinx.coroutines.withContext
 
 data class DeviceFilesState(
     val songs: List<Track> = emptyList(),
+    val allSortedSongs: List<Track> = emptyList(),
     val albums: List<Album> = emptyList(),
     val artists: List<Artist> = emptyList(),
     val selectedTab: String = "SONGS",
@@ -347,7 +348,12 @@ class DeviceFilesViewModel @Inject constructor(
         val query = _state.value.searchQuery
         val defaultSort = SortChoice("TITLE", true)
 
-        val filteredSongs = DeviceFilesFilter.filterAndSort(allTracks, query, defaultSort)
+        val allSortedSongs = DeviceFilesFilter.filterAndSort(allTracks, "", defaultSort)
+        val filteredSongs = if (query.isBlank()) {
+            allSortedSongs
+        } else {
+            DeviceFilesFilter.filterAndSort(allTracks, query, defaultSort)
+        }
 
         val filteredAlbums = if (query.isBlank()) {
             allAlbums.sortedBy { it.name.lowercase() }
@@ -367,6 +373,7 @@ class DeviceFilesViewModel @Inject constructor(
 
         _state.value = _state.value.copy(
             songs = filteredSongs,
+            allSortedSongs = allSortedSongs,
             albums = filteredAlbums,
             artists = filteredArtists,
         )
