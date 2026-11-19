@@ -922,6 +922,8 @@ fun NowPlayingScreen(
                     player = player, repo = repo, messenger = messenger,
                     palette = palette, playlistEvents = playlistEvents,
                     dynamicColor = dynamicColor,
+                    playerBgStyle = bgStyle,
+                    playerSurfaceColor = playerSurfaceColor,
                     queueBgStyle = queueBgStyle,
                     currentCoverUrl = artUrl ?: thumbUrl,
                     onActions = { onActions(ActionTarget.Track(it)) },
@@ -2432,6 +2434,8 @@ private fun QueueSheet(
     messenger: UiMessenger,
     palette: NowPlayingPalette,
     dynamicColor: Boolean = true,
+    playerBgStyle: BackgroundStyle = BackgroundStyle.DEFAULT,
+    playerSurfaceColor: Color = Color.Unspecified,
     queueBgStyle: BackgroundStyle = BackgroundStyle.DEFAULT,
     currentCoverUrl: String? = null,
     nowPlayingSheet: SheetState? = null,
@@ -2618,12 +2622,35 @@ private fun QueueSheet(
         listOf(playingColor(palette.sheetTop), playingColor(palette.sheetBottom)),
     )
     val scheme = LocalPlayingColors.current
+    val colorScheme = MaterialTheme.colorScheme
     val sheetSurfaceColor = if (dynamicColor) {
         playingColor(palette.sheetBottom)
     } else {
-        MaterialTheme.colorScheme.surface
+        colorScheme.surface
     }
     val sheetIsDark = scheme?.dark ?: LocalVusicDark.current
+    val resolvedPlayerSurfaceColor = if (playerSurfaceColor == Color.Unspecified) {
+        sheetSurfaceColor
+    } else {
+        playerSurfaceColor
+    }
+    val collapsedStripColors = remember(
+        playerBgStyle,
+        sheetIsDark,
+        colorScheme,
+        resolvedPlayerSurfaceColor,
+        palette.content,
+        palette.dim,
+    ) {
+        resolveCollapsedStripColors(
+            playerStyle = playerBgStyle,
+            isDark = sheetIsDark,
+            colorScheme = colorScheme,
+            playerSurfaceColor = resolvedPlayerSurfaceColor,
+            contentColor = playingColor(palette.content),
+            dimColor = playingColor(palette.dim),
+        )
+    }
     val sheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
 
     Box(Modifier.fillMaxSize()) {
@@ -2657,34 +2684,43 @@ private fun QueueSheet(
                     // Keep the header grab area solid while sliding.
                     clip = p < 1f
                 }
-                .clip(sheetShape)
-                .background(sheetSurfaceColor.copy(alpha = 1.0f)),
+                .clip(sheetShape),
         ) {
-            Crossfade(
-                targetState = queueBgStyle,
-                animationSpec = tween(durationMillis = Motion.scaled(Motion.Normal)),
-                modifier = Modifier.matchParentSize(),
-                label = "queue-bg-style",
-            ) { style ->
-                when (style) {
-                    BackgroundStyle.DEFAULT -> Box(
-                        Modifier
-                            .fillMaxSize()
-                            .background(sheetSurfaceColor),
-                    )
-                    BackgroundStyle.GRADIENT -> Box(
-                        Modifier
-                            .fillMaxSize()
-                            .background(sheetBrush),
-                    )
-                    BackgroundStyle.BLUR -> BlurredArtworkBackground(
-                        coverId = currentCoverUrl,
-                        bitmap = null,
-                        scrimColor = sheetSurfaceColor,
-                        isDark = sheetIsDark,
-                        modifier = Modifier.fillMaxSize(),
-                        role = BlurSurfaceRole.QUEUE,
-                    )
+            // Queue sheet background layer: alpha = 0f while collapsed so the
+            // continuous Player backdrop shows seamlessly behind the peek strip,
+            // fading in to 1f across progress 0f..0.25f on upward drag.
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .graphicsLayer { alpha = queueSheetSurfaceAlpha(sheet.progress) }
+                    .background(sheetSurfaceColor.copy(alpha = 1.0f)),
+            ) {
+                Crossfade(
+                    targetState = queueBgStyle,
+                    animationSpec = tween(durationMillis = Motion.scaled(Motion.Normal)),
+                    modifier = Modifier.matchParentSize(),
+                    label = "queue-bg-style",
+                ) { style ->
+                    when (style) {
+                        BackgroundStyle.DEFAULT -> Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(sheetSurfaceColor),
+                        )
+                        BackgroundStyle.GRADIENT -> Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(sheetBrush),
+                        )
+                        BackgroundStyle.BLUR -> BlurredArtworkBackground(
+                            coverId = currentCoverUrl,
+                            bitmap = null,
+                            scrimColor = sheetSurfaceColor,
+                            isDark = sheetIsDark,
+                            modifier = Modifier.fillMaxSize(),
+                            role = BlurSurfaceRole.QUEUE,
+                        )
+                    }
                 }
             }
             Column(
@@ -2738,7 +2774,9 @@ private fun QueueSheet(
                         .width(36.dp)
                         .height(4.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(content.copy(alpha = 0.5f)),
+                        .background(
+                            if (!sheet.open) collapsedStripColors.handleColor else content.copy(alpha = 0.5f),
+                        ),
                 )
                 Spacer(Modifier.height(6.dp))
                 if (!sheet.open) {
@@ -2751,7 +2789,7 @@ private fun QueueSheet(
                         MarqueeTitle(
                             text = "Playing from ${sourceName ?: "Queue"}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = dim,
+                            color = collapsedStripColors.textColor,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -2775,7 +2813,7 @@ private fun QueueSheet(
                         MarqueeTitle(
                             text = "Playing from ${sourceName ?: "Queue"}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = dim,
+                            color = collapsedStripColors.textColor,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth(),
                         )

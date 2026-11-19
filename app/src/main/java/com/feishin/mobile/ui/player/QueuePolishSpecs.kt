@@ -73,6 +73,11 @@ object QueuePolishSpecs {
     const val BLUR_LIGHT_FILL_ALPHA_DEFAULT = 0.50f
     const val BLUR_LIGHT_FILL_ALPHA_MAX = 0.55f
     const val BLUR_BORDER_ALPHA = 0.12f
+
+    // ---- Phase 11.2 Section A: Transparent collapsed strip morph -----------
+
+    /** Sheet drag progress at which the Queue sheet's own surface reaches full opacity. */
+    const val QUEUE_SURFACE_FADE_IN_END_PROGRESS = 0.25f
 }
 
 /** Resolved colors and hairline border for the highlighted current queue row. */
@@ -407,5 +412,145 @@ fun resolveQueueBottomControlColors(
         activeIconTint = activeIconTint,
         activePillColor = activePillColor,
         activePillBorderColor = activeBorder,
+    )
+}
+
+// ---- Phase 11.2 Section A: Collapsed Queue Strip & Lyrics Clearance --------
+
+/** Resolved drag-handle pill and "Playing from ..." label colors for the collapsed queue strip. */
+data class CollapsedStripColors(
+    val handleColor: Color,
+    val textColor: Color,
+)
+
+/**
+ * Opacity of the Queue sheet's own surface layer as it morphs open from the
+ * transparent collapsed strip (`0f` at `<= 0f` or non-finite, strictly monotonic
+ * across `0f..QUEUE_SURFACE_FADE_IN_END_PROGRESS`, `1f` for `>= 0.25f`).
+ */
+fun queueSheetSurfaceAlpha(progress: Float): Float {
+    if (!progress.isFinite() || progress <= 0f) return 0f
+    val end = QueuePolishSpecs.QUEUE_SURFACE_FADE_IN_END_PROGRESS
+    if (progress >= end) return 1f
+    return (progress / end).coerceIn(0f, 1f)
+}
+
+/**
+ * Total bottom clearance (in dp) reserved below `LyricsPanel` so lyrics stop
+ * strictly above the collapsed queue strip and system navigation bar inset.
+ */
+fun computeLyricsBottomClearanceDp(
+    stripHeightDp: Int = 80,
+    navBarBottomInsetDp: Int = 0,
+): Int = stripHeightDp.coerceAtLeast(0) + navBarBottomInsetDp.coerceAtLeast(0)
+
+/**
+ * Alpha multiplier produced by `Modifier.lyricsEdgeFade()` at vertical coordinate
+ * [yInPanelPx] inside a lyrics panel of height [panelHeightPx] with top/bottom
+ * edge fade [edgeFadeHeightPx]. Reaches `0f` at `yInPanelPx >= panelHeightPx`.
+ */
+fun computeLyricsEdgeFadeAlpha(
+    yInPanelPx: Float,
+    panelHeightPx: Float,
+    edgeFadeHeightPx: Float,
+): Float {
+    if (!yInPanelPx.isFinite() || !panelHeightPx.isFinite() || !edgeFadeHeightPx.isFinite()) return 0f
+    if (panelHeightPx <= 0f) return 0f
+    if (yInPanelPx <= 0f || yInPanelPx >= panelHeightPx) return 0f
+    val fade = edgeFadeHeightPx.coerceIn(0f, panelHeightPx / 2f)
+    if (fade <= 0f) return 1f
+    val topAlpha = (yInPanelPx / fade).coerceIn(0f, 1f)
+    val bottomAlpha = ((panelHeightPx - yInPanelPx) / fade).coerceIn(0f, 1f)
+    return minOf(topAlpha, bottomAlpha)
+}
+
+/**
+ * Resolves the collapsed queue strip's drag-handle pill and "Playing from ..." text colors
+ * over the continuous full-screen Player backdrop ([playerStyle]), guaranteeing >= 4.5:1
+ * text contrast and >= 3.1:1 handle contrast across Dark & Light themes and artwork luminances.
+ */
+fun resolveCollapsedStripColors(
+    playerStyle: BackgroundStyle,
+    isDark: Boolean,
+    colorScheme: ColorScheme,
+    playerSurfaceColor: Color,
+    contentColor: Color,
+    dimColor: Color,
+    avgArtworkLuminance: Float? = null,
+): CollapsedStripColors {
+    val playerSurfaceArgb = playerSurfaceColor.toPackedArgb()
+    val schemeSurfaceArgb = colorScheme.surface.toPackedArgb()
+    val playerIsLight = Contrast.luminance(playerSurfaceArgb) > NowPlayingColors.LIGHT_SURFACE_LUMINANCE
+    val targetInk = when (playerStyle) {
+        BackgroundStyle.BLUR -> if (isDark) WHITE_ARGB else NEAR_BLACK_ARGB
+        BackgroundStyle.DEFAULT,
+        BackgroundStyle.GRADIENT,
+        -> if (playerIsLight) NEAR_BLACK_ARGB else WHITE_ARGB
+    }
+
+    fun List<Long>.addIfSamePolarity(argb: Long): List<Long> =
+        if ((Contrast.luminance(argb) > NowPlayingColors.LIGHT_SURFACE_LUMINANCE) == playerIsLight) {
+            this + argb
+        } else {
+            this
+        }
+
+    val backdrops = when (playerStyle) {
+        BackgroundStyle.DEFAULT -> listOf(playerSurfaceArgb)
+            .addIfSamePolarity(schemeSurfaceArgb)
+            .addIfSamePolarity(colorScheme.surfaceContainer.toPackedArgb())
+            .addIfSamePolarity(colorScheme.background.toPackedArgb())
+            .distinct()
+
+        BackgroundStyle.GRADIENT -> listOf(playerSurfaceArgb)
+            .addIfSamePolarity(schemeSurfaceArgb)
+            .addIfSamePolarity(colorScheme.background.toPackedArgb())
+            .addIfSamePolarity(colorScheme.surfaceContainerLowest.toPackedArgb())
+            .addIfSamePolarity(colorScheme.surfaceContainer.toPackedArgb())
+            .addIfSamePolarity(colorScheme.surfaceContainerHigh.toPackedArgb())
+            .distinct()
+
+        BackgroundStyle.BLUR -> buildList {
+            add(playerSurfaceArgb)
+            val playerLum = Contrast.luminance(playerSurfaceArgb)
+            val isBaseSurface = if (isDark) playerLum <= 0.08 else playerLum >= 0.65
+            if (isBaseSurface) {
+                addAll(blurBackdrops(playerSurfaceArgb, isDark, avgArtworkLuminance))
+            }
+            if (schemeSurfaceArgb != playerSurfaceArgb || !isBaseSurface) {
+                if ((Contrast.luminance(schemeSurfaceArgb) > NowPlayingColors.LIGHT_SURFACE_LUMINANCE) == !isDark) {
+                    addAll(blurBackdrops(schemeSurfaceArgb, isDark, avgArtworkLuminance))
+                }
+            }
+        }
+    }
+
+    val contentOpaqueArgb = if (contentColor.alpha >= 0.999f) {
+        contentColor.toPackedArgb()
+    } else {
+        Contrast.blend(contentColor.toPackedArgb(), playerSurfaceArgb, contentColor.alpha)
+    }
+    val dimOpaqueArgb = if (dimColor.alpha >= 0.999f) {
+        dimColor.toPackedArgb()
+    } else {
+        Contrast.blend(dimColor.toPackedArgb(), playerSurfaceArgb, dimColor.alpha)
+    }
+
+    val textArgb = ensureReadableToward(
+        inkArgb = dimOpaqueArgb,
+        targetArgb = targetInk,
+        backgrounds = backdrops,
+        minRatio = NowPlayingColors.TEXT_MIN_RATIO,
+    )
+    val handleSeed = Contrast.blend(contentOpaqueArgb, playerSurfaceArgb, 0.55f)
+    val handleArgb = ensureReadableToward(
+        inkArgb = handleSeed,
+        targetArgb = targetInk,
+        backgrounds = backdrops,
+        minRatio = 3.1,
+    )
+    return CollapsedStripColors(
+        handleColor = playingColor(handleArgb),
+        textColor = playingColor(textArgb),
     )
 }
