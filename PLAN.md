@@ -1689,4 +1689,15 @@ Version 1.4.1 (versionCode 19) — `applicationId com.feishin.mobile` unchanged.
 - **P11.1-D queue polish** (`3429a49`; `NowPlayingScreen.kt`, `QueuePolishSpecs.kt`, `QueuePolishTest.kt`):
   - Applied `7.dp` row spacing, `>= 64.dp` row height, full-bleed backdrop under a transparent `56.dp` bottom bar with `28.dp` `drawWithCache` `DstIn` fade, concentric `20.dp`/`10.dp` current-row/cover radii with `0.40f` cover scrim, and contrast-clamped frosted highlight in `Blur` mode (`956/956` unit tests, pixel-sampling seam/opacity checks, live `1.3x` font/drag-reorder/swipe-remove/1079-song checks in `docs/reference/after-11.1/queue-check.txt`, and `gfxinfo` in `docs/reference/after-11.1/perf.txt`).
 
+## Phase 11.2 status (1.4.2)
+
+Version 1.4.2 (versionCode 20) — `applicationId com.feishin.mobile` unchanged.
+
+- **P11.2-A seamless player blur and queue strip** (`2e53cb9`; `QueuePolishSpecs.kt`, `NowPlayingScreen.kt`, `QueueStripMorphTest.kt`):
+  - Removed the collapsed queue sheet's opaque background fill/blur/scrim at `progress == 0f` and moved sheet surface fade-in to a draw-phase `graphicsLayer` child (`queueSheetSurfaceAlpha`, `0f..1f` over `0f..0.25f`) so `"Playing from ..."` sits transparently on the continuous `NowPlayingScreen` backdrop across `Default`, `Gradient`, and `Blur` in Dark/Light themes and across `Song <-> Lyrics` switches.
+  - Added contrast-safe `resolveCollapsedStripColors` for the collapsed drag handle and label, verified `96.dp` bottom lyrics clearance + `56.dp` `DstIn` edge fade at `1.3x` font scale, and recorded pixel continuity (`edge_jump max_d`: Dark `39.88`/`41.13` -> `0.60`; Light `0.43`/`1.44`), static-strip invariance (`0.0000%` diff), zero bleed-through (`0.0000%` strip diff, `0.0085%` full-screen cover-bounds delta), and `gfxinfo` in `docs/reference/after-11.2/blur-seam-check.txt`.
+- **P11.2-B full-context filtered queueing** (`e85cfbc`; `QueueContextResolver.kt`, `DetailScreens.kt`, `LibraryScreen.kt`, `DeviceFilesViewModel.kt`, `DeviceFilesScreen.kt`, `QueueContextResolverTest.kt`):
+  - Resolved track taps inside filtered/searched lists to the full sorted source collection starting at the tapped track (preserving active sort order and duplicate playlist entries) across playlists (`PlaylistDetailScreen`, covering user playlists, Favorites, and Cached), `Library > Songs`, `Library > Downloads`, and `Device Files > Songs`, while keeping header Play/Shuffle scoped to `visibleTracks` and `onRemove` mapped to stored source indices.
+  - Verification: `.\gradlew.bat assembleDebug assembleRelease lint test` passed (`testDebugUnitTest`: `968/968`, `testReleaseUnitTest`: `968/968`, `0` lint errors, signed release APKs `app-arm64-v8a-release.apk` / `app-x86_64-release.apk` with `CN=Vusic`); live emulator checks confirmed `1079`-song `test` playlist, `255`-song `Downloads`, and `500`-song `Songs` queues + Next/Prev neighbor playback (`docs/reference/after-11.2/B1-playlist-filtered-full-queue.png`, `B2-downloads-filtered-full-queue.png`, `B3-songs-filtered-full-queue.png`).
+
 

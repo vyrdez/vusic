@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.2
+
+### Fixed
+- **Seamless Unified Player Background & Collapsed Queue Strip (Section A)**:
+  - Removed the collapsed queue sheet's opaque background fill/blur/scrim at `progress == 0f` and moved sheet surface fade-in to a draw-phase `graphicsLayer` alpha (`queueSheetSurfaceAlpha`, ramping `0f -> 1f` over `0f..0.25f`) so the `"Playing from ..."` strip sits seamlessly on the continuous `NowPlayingScreen` backdrop across `Default`, `Gradient`, and `Blur` in both Dark and Light themes and across `Song <-> Lyrics` tab switches.
+  - Added contrast-safe `resolveCollapsedStripColors` for the collapsed drag handle and `"Playing from ..."` label, and verified `96.dp` bottom clearance + `56.dp` `DstIn` edge fade keeps synced and plain lyrics cleanly clear of the strip even at `1.3x` font scale.
+- **Full-Context Filtered Queueing (Section B)**:
+  - Added `QueueContextResolver.resolvePlayContext` so tapping a track inside a filtered/searched list queues the full sorted source collection starting at the tapped track (preserving active sort order and duplicate playlist entries) instead of a 1-song filtered queue.
+  - Wired across playlists (`PlaylistDetailScreen`, covering user playlists, Favorites, and Cached), `Library > Songs`, `Library > Downloads`, and `Device Files > Songs`, while keeping header Play/Shuffle scoped to the visible subset and playlist removal mapped to stored source indices.
+
 ## 1.4.1
 
 ### Changed
