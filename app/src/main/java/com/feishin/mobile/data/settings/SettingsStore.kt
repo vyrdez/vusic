@@ -443,7 +443,11 @@ class SettingsStore internal constructor(
     suspend fun setDeviceFilesMinDurationSec(v: Int) = edit { it[K.deviceFilesMinDurationSec] = v }
     suspend fun setLibraryViewMode(v: String) = edit { it[K.libraryViewMode] = v }
     suspend fun setDeviceFilesStandalone(v: Boolean) = edit { it[K.deviceFilesStandalone] = v }
-    suspend fun setLibrarySourceFilter(v: String) = edit { it[K.librarySourceFilter] = v.ifBlank { "ALL" } }
+    suspend fun setLibrarySourceFilter(v: String) {
+        val next = v.ifBlank { "ALL" }
+        edit { it[K.librarySourceFilter] = next }
+        latestSettings = (latestSettings ?: Settings()).copy(librarySourceFilter = next)
+    }
     suspend fun setFederatedTimeoutMs(v: Long) = edit { it[K.federatedTimeoutMs] = v.coerceIn(2_000L, 10_000L) }
 
     /** Per-tab sort choice, e.g. tab = "ALBUMS". */

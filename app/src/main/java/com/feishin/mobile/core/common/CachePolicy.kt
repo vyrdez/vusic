@@ -22,6 +22,8 @@ class CachePolicy(
     private val lastAttempt = HashMap<String, Long>()
     private val forced = HashSet<String>()
     private val consumedGeneration = HashMap<String, Long>()
+    private val logicalGeneration = HashMap<String, Long>()
+    private val consumedLogicalGeneration = HashMap<Pair<String, String>, Long>()
     private var forceGeneration = 0L
     private var forceAllUntil = 0L
 
@@ -39,6 +41,15 @@ class CachePolicy(
     }
 
     /**
+     * Marks [logicalKey] as forced for every scoped reader once, so sibling
+     * profiles do not consume the invalidation for each other.
+     */
+    @Synchronized
+    fun forceLogical(logicalKey: String) {
+        logicalGeneration[logicalKey] = (logicalGeneration[logicalKey] ?: 0L) + 1L
+    }
+
+    /**
      * True when this read must go to the network instead of serving the cache.
      * Consumes the force for [key]: a refresh pass fires several reads, and the
      * read-backs that follow it must not trigger a second network round.
@@ -50,6 +61,33 @@ class CachePolicy(
             return true
         }
         return forced.remove(key)
+    }
+
+    /**
+     * Scoped variant of [consumeForced] that honors [forceAll], per-[scopedKey]
+     * [force], and per-[logicalKey] [forceLogical] independently per profile.
+     */
+    @Synchronized
+    fun consumeForced(scopedKey: String, logicalKey: String): Boolean {
+        val logicalGen = logicalGeneration[logicalKey]
+        if (clock() < forceAllUntil && consumedGeneration[scopedKey] != forceGeneration) {
+            consumedGeneration[scopedKey] = forceGeneration
+            forced.remove(scopedKey)
+            if (logicalGen != null) {
+                consumedLogicalGeneration[scopedKey to logicalKey] = logicalGen
+            }
+            return true
+        }
+        val directForced = forced.remove(scopedKey)
+        val logicalForced = if (logicalGen != null) {
+            val pair = scopedKey to logicalKey
+            val prev = consumedLogicalGeneration[pair]
+            consumedLogicalGeneration[pair] = logicalGen
+            prev != logicalGen
+        } else {
+            false
+        }
+        return directForced || logicalForced
     }
 
     /**
@@ -72,6 +110,8 @@ class CachePolicy(
         lastAttempt.clear()
         forced.clear()
         consumedGeneration.clear()
+        logicalGeneration.clear()
+        consumedLogicalGeneration.clear()
         forceGeneration = 0L
         forceAllUntil = 0L
     }

@@ -6,6 +6,9 @@ import coil.ImageLoader
 import coil.disk.DiskCache
 import coil.intercept.Interceptor
 import coil.memory.MemoryCache
+import com.feishin.mobile.core.common.GlobalId
+import com.feishin.mobile.core.network.CoverCacheKey
+import com.feishin.mobile.data.auth.ProfileStore
 import com.feishin.mobile.data.remote.CleartextGuardInterceptor
 import com.feishin.mobile.data.remote.ProfileAuthInterceptor
 import com.feishin.mobile.data.remote.ProfileTrustManager
@@ -22,6 +25,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
@@ -102,6 +106,7 @@ object NetworkModule {
         @javax.inject.Named("coil") coilClient: OkHttpClient,
         settings: com.feishin.mobile.data.settings.SettingsStore,
         cachedCoverDao: com.feishin.mobile.data.db.CachedCoverDao,
+        profileStore: ProfileStore,
     ): ImageLoader {
         // Same deal as the stream cache: the size is fixed at construction, so
         // a changed value takes effect on the next launch.
@@ -115,7 +120,7 @@ object NetworkModule {
         return ImageLoader.Builder(ctx)
             .okHttpClient(coilClient)
             .components {
-                add(OfflineCoverInterceptor(cachedCoverDao))
+                add(OfflineCoverInterceptor(cachedCoverDao, profileStore))
                 add(com.feishin.mobile.core.ui.LocalAudioCoverFetcher.Factory(ctx))
             }
             .crossfade(true)
@@ -130,22 +135,55 @@ object NetworkModule {
 
 class OfflineCoverInterceptor(
     private val cachedCoverDao: com.feishin.mobile.data.db.CachedCoverDao,
+    private val profileStore: ProfileStore? = null,
 ) : Interceptor {
     override suspend fun intercept(chain: Interceptor.Chain): coil.request.ImageResult {
         val request = chain.request
         val url = request.data?.toString() ?: ""
-        if (url.contains("getCoverArt")) {
-            val coverId = runCatching { Uri.parse(url).getQueryParameter("id") }.getOrNull()
-            if (!coverId.isNullOrBlank()) {
-                val path = cachedCoverDao.path(coverId)
-                if (path != null) {
-                    val file = File(path)
-                    if (file.exists() && file.length() > 0) {
-                        return chain.proceed(request.newBuilder().data(file).build())
-                    }
+        val key = resolveKey(request, url)
+        if (!key.isNullOrBlank()) {
+            val path = cachedCoverDao.path(key)
+            if (path != null) {
+                val file = File(path)
+                if (file.exists() && file.length() > 0) {
+                    return chain.proceed(request.newBuilder().data(file).build())
                 }
             }
         }
         return chain.proceed(request)
+    }
+
+    internal fun resolveKey(request: coil.request.ImageRequest, url: String): String? {
+        request.tags.tag(CoverCacheKey::class.java)?.key?.takeIf { it.isNotBlank() }?.let { return it }
+        val parsedUrl = runCatching { url.toHttpUrlOrNull() }.getOrNull()
+        if (url.contains("getCoverArt")) {
+            val rawId = parsedUrl?.queryParameter("id")
+                ?: runCatching { Uri.parse(url).getQueryParameter("id") }.getOrNull()
+            if (!rawId.isNullOrBlank()) {
+                val profileId = parsedUrl?.let {
+                    profileStore?.findByHost(it.scheme, it.host, it.port)?.id
+                }
+                return if (profileId != null) GlobalId.format(profileId, rawId) else rawId
+            }
+        }
+        if (parsedUrl != null) {
+            JELLYFIN_COVER_REGEX.find(parsedUrl.encodedPath)?.groupValues?.getOrNull(1)?.let { itemId ->
+                val profileId = profileStore?.findByHost(parsedUrl.scheme, parsedUrl.host, parsedUrl.port)?.id
+                return if (profileId != null) GlobalId.format(profileId, itemId) else itemId
+            }
+        }
+        DRIVE_COVER_REGEX.find(url)?.let { match ->
+            val profileId = match.groupValues[1]
+            val itemId = match.groupValues[2]
+            if (GlobalId.PROFILE_ID_REGEX.matches(profileId) && itemId.isNotBlank()) {
+                return GlobalId.format(profileId, itemId)
+            }
+        }
+        return null
+    }
+
+    private companion object {
+        val JELLYFIN_COVER_REGEX = Regex("/Items/([^/]+)/Images/Primary")
+        val DRIVE_COVER_REGEX = Regex("drive-cover://([^/]+)/([^/?#]+)")
     }
 }

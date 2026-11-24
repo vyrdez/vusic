@@ -60,7 +60,6 @@ class DownloadWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         DownloadNotifications.ensureChannel(applicationContext)
         dao.requeueInterrupted()
-        val root = repo.downloadsDir()
         var didWork = false
         var retryable = false
 
@@ -71,7 +70,7 @@ class DownloadWorker @AssistedInject constructor(
                 if (batch.isEmpty()) break
                 didWork = true
                 val outcomes = supervisorScope {
-                    batch.map { row -> async(Dispatchers.IO) { transfer(row, root) } }.awaitAll()
+                    batch.map { row -> async(Dispatchers.IO) { transfer(row) } }.awaitAll()
                 }
                 if (outcomes.any { it == Outcome.RETRY }) retryable = true
             }
@@ -111,7 +110,7 @@ class DownloadWorker @AssistedInject constructor(
 
     private enum class Outcome { DONE, PAUSED, FAILED, RETRY }
 
-    private suspend fun transfer(row: DownloadEntity, root: File): Outcome {
+    private suspend fun transfer(row: DownloadEntity): Outcome {
         if (!DownloadStateMachine.canTransition(row.statusEnum, DownloadStatus.DOWNLOADING)) {
             return Outcome.DONE
         }
@@ -132,16 +131,26 @@ class DownloadWorker @AssistedInject constructor(
         }
         dao.setStatus(row.songId, DownloadStatus.DOWNLOADING.name)
 
+        val root = repo.downloadsDir(row.profileId)
         val quality = repo.downloadQuality()
         val ext = DownloadStateMachine.resolvedExtension(row.suffix, quality)
-        val target = File(root, "${row.songId}.$ext")
-        val partial = File(repo.partialDir(), "${row.songId}.part")
+        val safeId = DownloadRepository.sanitizeId(row.songId)
+        val target = File(root, "$safeId.$ext")
+        val partial = File(repo.partialDir(), "$safeId.part")
+        if (!partial.exists()) {
+            row.tempPath?.let(::File)?.takeIf { it.exists() }?.renameTo(partial)
+        }
+
+        val existingFile = row.filePath?.let(::File)?.takeIf { it.exists() }
+        if (existingFile != null && isValidTargetFile(existingFile, row, quality)) {
+            dao.markCompleted(row.songId, existingFile.absolutePath, existingFile.length())
+            downloadCover(row)
+            return Outcome.DONE
+        }
 
         // Already finished on disk: just record it if valid, otherwise delete.
         if (target.exists()) {
-            val valid = target.length() >= DownloadStateMachine.MIN_VALID_AUDIO_BYTES &&
-                (row.expectedBytes <= 0 || !quality.isOriginal || target.length() == row.expectedBytes)
-            if (valid) {
+            if (isValidTargetFile(target, row, quality)) {
                 dao.markCompleted(row.songId, target.absolutePath, target.length())
                 downloadCover(row)
                 return Outcome.DONE
@@ -312,6 +321,14 @@ class DownloadWorker @AssistedInject constructor(
             Outcome.FAILED
         }
     }
+
+    private fun isValidTargetFile(
+        file: File,
+        row: DownloadEntity,
+        quality: com.feishin.mobile.core.common.StreamQuality,
+    ): Boolean =
+        file.length() >= DownloadStateMachine.MIN_VALID_AUDIO_BYTES &&
+            (row.expectedBytes <= 0 || !quality.isOriginal || file.length() == row.expectedBytes)
 
     /** Artwork must live on disk too, so Now Playing and notifications work offline. */
     private suspend fun downloadCover(row: DownloadEntity) {

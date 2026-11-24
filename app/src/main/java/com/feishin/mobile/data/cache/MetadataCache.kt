@@ -46,6 +46,10 @@ class MetadataCache @Inject constructor(
         io { runCatching { dao.clear() } }
     }
 
+    suspend fun deleteByPrefix(prefix: String) {
+        io { runCatching { dao.deleteByPrefix(prefix) } }
+    }
+
     companion object
 }
 
@@ -60,4 +64,5 @@ object MetadataCacheKeys {
     fun artist(id: String) = "artist:$id"
     fun playlist(id: String) = "playlist:$id"
     fun songs(size: Int) = "songs:$size"
+    fun scoped(profileId: String, logicalKey: String): String = "$profileId:$logicalKey"
 }

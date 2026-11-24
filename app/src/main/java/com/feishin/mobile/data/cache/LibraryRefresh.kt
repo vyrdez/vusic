@@ -62,5 +62,11 @@ class LibraryRefresh @Inject constructor() {
     fun invalidateAll() = policy.forceAll()
 
     /** One entry, e.g. after starring: its next read must not serve the cache. */
-    fun invalidate(key: String) = policy.force(key)
+    fun invalidate(key: String) {
+        policy.force(key)
+        policy.forceLogical(key)
+    }
+
+    /** Invalidates a logical key across every enabled backend profile once. */
+    fun invalidateLogical(key: String) = policy.forceLogical(key)
 }

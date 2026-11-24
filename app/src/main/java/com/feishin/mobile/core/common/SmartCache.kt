@@ -1,7 +1,6 @@
 package com.feishin.mobile.core.common
 
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-
+import java.util.Locale
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /**
@@ -14,19 +13,37 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
  */
 object StableCacheKey {
 
-    /** Query params that change the audio bytes and must stay in the key. */
-    private val STABLE_PARAMS = setOf("id", "maxBitRate", "format")
+    /** Lowercase query params that change the audio bytes and must stay in the key. */
+    private val STABLE_PARAMS_LOWER = setOf(
+        "id",
+        "maxbitrate",
+        "format",
+        "static",
+        "maxstreamingbitrate",
+        "audiobitrate",
+        "audiocodec",
+        "container",
+        "mediasourceid",
+    )
 
-    fun keyFor(uri: String): String {
+    fun keyFor(uri: String, profileId: String? = null): String {
         val url = runCatching { uri.toHttpUrlOrNull() }.getOrNull() ?: return uri
         val kept = url.queryParameterNames
-            .filter { it in STABLE_PARAMS }
+            .filter { it.lowercase(Locale.ROOT) in STABLE_PARAMS_LOWER }
             .sorted()
             .joinToString("&") { name ->
                 url.queryParameterValues(name).filterNotNull().sorted()
                     .joinToString(",") { "$name=$it" }
             }
-        val base = "${url.scheme}://${url.host}${url.encodedPath}"
+        val base = if (profileId == null || profileId == "p1") {
+            "${url.scheme}://${url.host}${url.encodedPath}"
+        } else {
+            val isDefaultPort =
+                (url.scheme == "http" && url.port == 80) ||
+                    (url.scheme == "https" && url.port == 443)
+            val portPart = if (isDefaultPort) "" else ":${url.port}"
+            "$profileId:${url.scheme}://${url.host}$portPart${url.encodedPath}"
+        }
         return if (kept.isEmpty()) base else "$base?$kept"
     }
 }

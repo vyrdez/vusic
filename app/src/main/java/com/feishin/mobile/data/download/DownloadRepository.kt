@@ -2,9 +2,10 @@ package com.feishin.mobile.data.download
 
 import android.content.Context
 import com.feishin.mobile.core.common.DownloadStateMachine
+import com.feishin.mobile.core.common.GlobalId
+import com.feishin.mobile.core.common.PlaybackSource
 import com.feishin.mobile.core.common.QualityPolicy
 import com.feishin.mobile.core.common.StreamQuality
-import com.feishin.mobile.data.auth.CredentialsStore
 import com.feishin.mobile.data.db.CachedCoverDao
 import com.feishin.mobile.data.db.CachedCoverEntity
 import com.feishin.mobile.data.db.DownloadDao
@@ -17,7 +18,6 @@ import com.feishin.mobile.domain.model.AlbumDetail
 import com.feishin.mobile.domain.model.PlaylistDetail
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
-import com.feishin.mobile.core.common.PlaybackSource
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
@@ -50,7 +50,6 @@ class DownloadRepository @Inject constructor(
     private val groups: DownloadGroupDao,
     private val covers: CachedCoverDao,
     private val settings: SettingsStore,
-    private val creds: CredentialsStore,
     private val repo: MusicDataRepository,
     private val scheduler: DownloadScheduler,
     private val network: com.feishin.mobile.data.network.NetworkMonitor,
@@ -74,8 +73,14 @@ class DownloadRepository @Inject constructor(
     }
 
     companion object {
+        fun sanitizeId(id: String): String =
+            id.replace(':', '_').replace(Regex("[^A-Za-z0-9._-]"), "_")
+
         fun sanitizeCoverArtId(coverArtId: String): String =
             coverArtId.replace(Regex("[^A-Za-z0-9._-]"), "_")
+
+        fun downloadsDir(filesDir: File, profileId: String = "p1"): File =
+            File(filesDir, "downloads/${sanitizeId(profileId)}").apply { mkdirs() }
 
         fun isCorruptDownloadedFile(file: File?): Boolean {
             if (file == null || !file.exists()) return true
@@ -202,6 +207,8 @@ class DownloadRepository @Inject constructor(
                 error = null,
                 groupId = groupId ?: prior?.groupId,
                 enqueuedAt = prior?.enqueuedAt ?: System.currentTimeMillis(),
+                profileId = GlobalId.profileIdOrNull(t.id)
+                    ?: if (GlobalId.isDeviceLocal(t.id)) "local" else "p1",
             )
         }
         if (rows.isNotEmpty()) {
@@ -212,18 +219,29 @@ class DownloadRepository @Inject constructor(
 
     suspend fun enqueueAlbum(album: AlbumDetail) {
         val groupId = "album:${album.id}"
-        groups.upsert(DownloadGroupEntity(groupId, "album", album.name, keepDownloaded = true))
+        val profileId = GlobalId.profileIdOrNull(album.id) ?: "p1"
+        groups.upsert(DownloadGroupEntity(groupId, "album", album.name, keepDownloaded = true, profileId = profileId))
         enqueueTracks(album.tracks, groupId)
     }
 
     suspend fun enqueuePlaylist(playlist: PlaylistDetail) {
         val groupId = "playlist:${playlist.id}"
-        groups.upsert(DownloadGroupEntity(groupId, "playlist", playlist.name, keepDownloaded = true))
+        val profileId = GlobalId.profileIdOrNull(playlist.id)
+            ?: if (playlist.id.startsWith("local_pl:")) "local" else "p1"
+        groups.upsert(DownloadGroupEntity(groupId, "playlist", playlist.name, keepDownloaded = true, profileId = profileId))
         enqueueTracks(playlist.tracks, groupId)
     }
 
     suspend fun enqueueFavorites(tracks: List<Track>) {
-        groups.upsert(DownloadGroupEntity("favorites", "favorites", "Favorite songs", keepDownloaded = true))
+        groups.upsert(
+            DownloadGroupEntity(
+                "favorites",
+                "favorites",
+                "Favorite songs",
+                keepDownloaded = true,
+                profileId = "__favorites__",
+            ),
+        )
         enqueueTracks(tracks, "favorites")
     }
 
@@ -252,9 +270,18 @@ class DownloadRepository @Inject constructor(
 
     suspend fun setKeepDownloaded(groupId: String, type: String, name: String, keep: Boolean) {
         val current = groups.byId(groupId)
+        val profileId = when {
+            groupId == "favorites" -> "__favorites__"
+            groupId.startsWith("album:") -> GlobalId.profileIdOrNull(groupId.removePrefix("album:")) ?: "p1"
+            groupId.startsWith("playlist:") -> {
+                val raw = groupId.removePrefix("playlist:")
+                GlobalId.profileIdOrNull(raw) ?: if (raw.startsWith("local_pl:")) "local" else "p1"
+            }
+            else -> "p1"
+        }
         groups.upsert(
             if (current != null) current.copy(keepDownloaded = keep)
-            else DownloadGroupEntity(groupId, type, name, keepDownloaded = keep),
+            else DownloadGroupEntity(groupId, type, name, keepDownloaded = keep, profileId = profileId),
         )
     }
 
@@ -340,21 +367,26 @@ class DownloadRepository @Inject constructor(
         }
     }
 
+    suspend fun removeProfileData(profileId: String, keepDownloads: Boolean) = withContext(Dispatchers.IO) {
+        covers.deleteByPrefix("$profileId:")
+        if (!keepDownloads) {
+            dao.byProfile(profileId).forEach { row ->
+                row.filePath?.let { runCatching { File(it).delete() } }
+                row.tempPath?.let { runCatching { File(it).delete() } }
+            }
+            runCatching { downloadsDir(profileId).deleteRecursively() }
+            dao.deleteByProfile(profileId)
+            groups.deleteByProfile(profileId)
+        }
+    }
+
     // ---------- storage layout ----------
 
-    fun downloadsDir(): File = File(context.filesDir, "downloads/${serverFolder()}").apply { mkdirs() }
+    fun downloadsDir(profileId: String = "p1"): File = downloadsDir(context.filesDir, profileId)
 
     fun coversDir(): File = File(context.filesDir, "download_covers").apply { mkdirs() }
 
     fun partialDir(): File = File(context.filesDir, "download_partials").apply { mkdirs() }
-
-    private fun serverFolder(): String {
-        val host = runCatching {
-            java.net.URI(creds.state.value?.serverUrl ?: "").host
-        }.getOrNull()
-        val raw = host?.takeIf { it.isNotBlank() } ?: (creds.state.value?.serverUrl ?: "default")
-        return raw.replace(Regex("[^A-Za-z0-9._-]"), "_")
-    }
 
     /** Free space on the files partition, in bytes. */
     fun freeBytes(): Long = runCatching {

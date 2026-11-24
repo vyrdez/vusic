@@ -3,9 +3,11 @@
 package com.feishin.mobile.data.cache
 
 import com.feishin.mobile.core.common.CachedMembership
+import com.feishin.mobile.core.common.GlobalId
 import com.feishin.mobile.data.db.CachedTrackDao
 import com.feishin.mobile.data.db.CachedTrackEntity
 import com.feishin.mobile.domain.model.Track
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -92,6 +94,7 @@ class CachedTrackStore @Inject constructor(
                 sizeBytes = sizeBytes,
                 cachedAt = prior?.cachedAt ?: System.currentTimeMillis(),
                 lastPlayedAt = prior?.lastPlayedAt ?: System.currentTimeMillis(),
+                profileId = GlobalId.profileIdOrNull(track.id) ?: "p1",
             ),
         )
     }
@@ -129,12 +132,27 @@ class CachedTrackStore @Inject constructor(
         val row = dao.byId(songId) ?: return null
         if (!isFullyCached(row.cacheKey, row.sizeBytes)) return null
         val params = row.cacheKey.substringAfter('?', "")
-            .split('&').mapNotNull { p ->
-                val i = p.indexOf('='); if (i <= 0) null else p.substring(0, i) to p.substring(i + 1)
-            }.toMap()
-        val bitrate = params["maxBitRate"]?.toIntOrNull() ?: 0
-        val format = params["format"] ?: "raw"
+            .split('&')
+            .mapNotNull { p ->
+                val i = p.indexOf('=')
+                if (i <= 0) null else p.substring(0, i).lowercase(Locale.ROOT) to p.substring(i + 1)
+            }
+            .toMap()
+        val bitrate = params["maxbitrate"]?.toIntOrNull()
+            ?: params["maxstreamingbitrate"]?.toLongOrNull()?.div(1000)?.toInt()
+            ?: params["audiobitrate"]?.toLongOrNull()?.div(1000)?.toInt()
+            ?: 0
+        val format = params["format"]?.ifBlank { null }
+            ?: params["container"]?.ifBlank { null }
+            ?: params["audiocodec"]?.ifBlank { null }
+            ?: "raw"
         return bitrate to format
+    }
+
+    suspend fun clearForProfile(profileId: String) {
+        val rows = dao.byProfile(profileId)
+        rows.forEach { row -> bytes.removeResource(row.cacheKey) }
+        dao.deleteByProfile(profileId)
     }
 
     /** Drops rows the LRU evictor (or an external clear) already removed. */

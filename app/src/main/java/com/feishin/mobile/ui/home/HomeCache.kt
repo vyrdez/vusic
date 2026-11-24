@@ -6,9 +6,11 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.Track
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -46,36 +48,81 @@ class InMemoryHomeCache : HomeCache {
 }
 
 @Singleton
-class DiskHomeCache @Inject constructor(
-    @ApplicationContext private val context: Context,
+class DiskHomeCache private constructor(
+    private val storeProvider: () -> DataStore<Preferences>,
+    private val settings: SettingsStore?,
 ) : HomeCache {
-    private val json = Json { ignoreUnknownKeys = true }
-    private val key: Preferences.Key<String> = stringPreferencesKey("home_snapshot_v1")
-    private val memory = HashMap<String, HomeUi>()
+    @Inject
+    constructor(
+        @ApplicationContext context: Context,
+        settings: SettingsStore,
+    ) : this(
+        storeProvider = { context.homeCacheStore },
+        settings = settings,
+    )
 
-    override fun get(genre: String): HomeUi? = memory[genre]
+    constructor(context: Context) : this(
+        storeProvider = { context.homeCacheStore },
+        settings = null,
+    )
+
+    internal constructor(
+        store: DataStore<Preferences>,
+        settings: SettingsStore? = null,
+    ) : this(
+        storeProvider = { store },
+        settings = settings,
+    )
+
+    private val store: DataStore<Preferences> by lazy { storeProvider() }
+    private val json = Json { ignoreUnknownKeys = true }
+    private val memory = ConcurrentHashMap<String, HomeUi>()
+
+    private fun syncFilter(): String =
+        normalizeFilter(settings?.latestSettings?.librarySourceFilter)
+
+    private suspend fun currentFilter(): String =
+        normalizeFilter(settings?.settingsNow()?.librarySourceFilter)
+
+    override fun get(genre: String): HomeUi? = memory[memoryKey(syncFilter(), genre)]
 
     override fun put(genre: String, ui: HomeUi) {
-        memory[genre] = ui
+        memory[memoryKey(syncFilter(), genre)] = ui
     }
 
     override suspend fun loadDisk(genre: String): HomeUi? = withContext(Dispatchers.IO) {
-        memory[genre] ?: runCatching {
-            val raw = context.homeCacheStore.data.first()[key] ?: return@runCatching null
+        val filter = currentFilter()
+        val memKey = memoryKey(filter, genre)
+        memory[memKey] ?: runCatching {
+            val raw = store.data.first()[snapshotKeyFor(filter)] ?: return@runCatching null
             val snap = json.decodeFromString(HomeSnapshot.serializer(), raw)
             if (snap.genre != genre) return@runCatching null
-            snap.toUi().also { memory[genre] = it }
+            snap.toUi().also { memory[memKey] = it }
         }.getOrNull()
     }
 
     override suspend fun saveDisk(genre: String, ui: HomeUi) {
         withContext(Dispatchers.IO) {
-            put(genre, ui)
+            val filter = currentFilter()
+            memory[memoryKey(filter, genre)] = ui
             runCatching {
                 val snap = HomeSnapshot.from(genre, ui)
-                context.homeCacheStore.edit { it[key] = json.encodeToString(HomeSnapshot.serializer(), snap) }
+                store.edit { it[snapshotKeyFor(filter)] = json.encodeToString(HomeSnapshot.serializer(), snap) }
             }
         }
+    }
+
+    companion object {
+        internal fun normalizeFilter(raw: String?): String {
+            val trimmed = raw?.trim().orEmpty()
+            return if (trimmed.isEmpty() || trimmed == "DEVICE") "ALL" else trimmed
+        }
+
+        internal fun snapshotKeyFor(filter: String): Preferences.Key<String> =
+            stringPreferencesKey("home_snapshot_v2_${normalizeFilter(filter)}")
+
+        internal fun memoryKey(filter: String, genre: String): String =
+            "${normalizeFilter(filter)}:$genre"
     }
 }
 
