@@ -9,7 +9,6 @@ import com.feishin.mobile.core.network.SubsonicAuth
 import com.feishin.mobile.data.auth.CredentialsStore
 import com.feishin.mobile.data.mapper.toDomain
 import com.feishin.mobile.data.model.ArtistInfo2Dto
-import com.feishin.mobile.data.remote.AuthInterceptor
 import com.feishin.mobile.data.remote.SubsonicApi
 import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.AlbumDetail
@@ -38,7 +37,6 @@ class MusicRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val api: SubsonicApi,
     private val creds: CredentialsStore,
-    private val auth: AuthInterceptor,
     private val cache: com.feishin.mobile.data.cache.MetadataCache,
     private val refresh: com.feishin.mobile.data.cache.LibraryRefresh,
     private val network: com.feishin.mobile.data.network.NetworkMonitor,
@@ -548,11 +546,12 @@ class MusicRepository @Inject constructor(
         }
 
     override fun streamUrl(track: Track, maxBitrate: Int, format: String): String {
+        val c = creds.state.value ?: throw IllegalStateException("Not logged in")
         val b = Uri.parse(base() + "stream.view").buildUpon()
             .appendQueryParameter("id", track.id)
         if (maxBitrate > 0) b.appendQueryParameter("maxBitRate", maxBitrate.toString())
         if (format != "raw") b.appendQueryParameter("format", format)
-        auth.authQuery().forEach { (k, v) -> b.appendQueryParameter(k, v) }
+        SubsonicAuth.authQuery(c.username, c.password).forEach { (k, v) -> b.appendQueryParameter(k, v) }
         return b.build().toString()
     }
 
@@ -567,9 +566,10 @@ class MusicRepository @Inject constructor(
     }
 
     override fun downloadUrl(track: Track): String {
+        val c = creds.state.value ?: throw IllegalStateException("Not logged in")
         val b = Uri.parse(base() + "download.view").buildUpon()
             .appendQueryParameter("id", track.id)
-        auth.authQuery().forEach { (k, v) -> b.appendQueryParameter(k, v) }
+        SubsonicAuth.authQuery(c.username, c.password).forEach { (k, v) -> b.appendQueryParameter(k, v) }
         return b.build().toString()
     }
 }

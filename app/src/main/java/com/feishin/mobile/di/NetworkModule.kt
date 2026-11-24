@@ -6,9 +6,9 @@ import coil.ImageLoader
 import coil.disk.DiskCache
 import coil.intercept.Interceptor
 import coil.memory.MemoryCache
-import com.feishin.mobile.data.remote.AuthInterceptor
-import com.feishin.mobile.data.remote.DynamicTrustManager
-import com.feishin.mobile.data.remote.HostRewriteInterceptor
+import com.feishin.mobile.data.remote.CleartextGuardInterceptor
+import com.feishin.mobile.data.remote.ProfileAuthInterceptor
+import com.feishin.mobile.data.remote.ProfileTrustManager
 import com.feishin.mobile.data.remote.RedactingHttpLogger
 import com.feishin.mobile.data.remote.SubsonicApi
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
@@ -38,16 +38,17 @@ object NetworkModule {
     }
 
     @Provides @Singleton
-    fun provideOkHttp(auth: AuthInterceptor, rewrite: HostRewriteInterceptor, tm: DynamicTrustManager): OkHttpClient {
+    fun provideOkHttp(
+        cleartextGuard: CleartextGuardInterceptor,
+        profileAuth: ProfileAuthInterceptor,
+        tm: ProfileTrustManager,
+    ): OkHttpClient {
         val ssl = tm.sslContext()
         return OkHttpClient.Builder()
             .sslSocketFactory(ssl.socketFactory, tm)
-            .hostnameVerifier { hostname, session ->
-                if (tm.allowSelfSigned) true
-                else okhttp3.internal.tls.OkHostnameVerifier.verify(hostname, session)
-            }
-            .addInterceptor(rewrite)
-            .addInterceptor(auth)
+            .hostnameVerifier(tm.hostnameVerifier())
+            .addInterceptor(cleartextGuard)
+            .addInterceptor(profileAuth)
             // Library reads must fail visibly and fast on a bad network: the
             // spinner turns into an error with Retry instead of hanging.
             .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
@@ -57,12 +58,14 @@ object NetworkModule {
             .retryOnConnectionFailure(false)
             // Debug-only, credential-redacting (release: no logging at all).
             .addInterceptor(RedactingHttpLogger())
+            .addNetworkInterceptor(profileAuth.redirectGuard())
             .build()
     }
 
     @Provides @Singleton
     fun provideRetrofit(json: Json, client: OkHttpClient): Retrofit {
-        // Real host comes from HostRewriteInterceptor (reacts to login), so any valid base works.
+        // Legacy fallback Retrofit instance retained until P12.0-G replaces MusicRepository;
+        // per-profile APIs are created by BackendClientFactory.
         return Retrofit.Builder()
             .baseUrl("https://localhost/rest/")
             .client(client)
@@ -74,19 +77,22 @@ object NetworkModule {
     fun provideApi(retrofit: Retrofit): SubsonicApi = retrofit.create(SubsonicApi::class.java)
 
     /**
-     * Dedicated client for Coil: shares the dynamic trust manager (self-signed
-     * setting applies, no restart) but skips the host-rewrite/auth interceptors,
-     * since cover URLs are already absolute and signed with a stable salt.
+     * Dedicated client for Coil: shares per-host TLS, cleartext guard, host-pinned
+     * auth (no double-signing on pre-signed Subsonic cover URLs), and redirect guard.
      */
     @Provides @Singleton @javax.inject.Named("coil")
-    fun provideCoilOkHttp(tm: DynamicTrustManager): OkHttpClient {
+    fun provideCoilOkHttp(
+        cleartextGuard: CleartextGuardInterceptor,
+        profileAuth: ProfileAuthInterceptor,
+        tm: ProfileTrustManager,
+    ): OkHttpClient {
         val ssl = tm.sslContext()
         return OkHttpClient.Builder()
             .sslSocketFactory(ssl.socketFactory, tm)
-            .hostnameVerifier { hostname, session ->
-                if (tm.allowSelfSigned) true
-                else okhttp3.internal.tls.OkHostnameVerifier.verify(hostname, session)
-            }
+            .hostnameVerifier(tm.hostnameVerifier())
+            .addInterceptor(cleartextGuard)
+            .addInterceptor(profileAuth)
+            .addNetworkInterceptor(profileAuth.redirectGuard())
             .build()
     }
 

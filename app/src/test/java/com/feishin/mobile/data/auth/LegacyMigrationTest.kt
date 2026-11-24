@@ -6,9 +6,9 @@ import android.content.SharedPreferences
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.data.backend.BackendClientFactory
-import com.feishin.mobile.data.remote.AuthInterceptor
-import com.feishin.mobile.data.remote.DynamicTrustManager
-import com.feishin.mobile.data.remote.HostRewriteInterceptor
+import com.feishin.mobile.data.remote.CleartextGuardInterceptor
+import com.feishin.mobile.data.remote.ProfileAuthInterceptor
+import com.feishin.mobile.data.remote.ProfileTrustManager
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.BackendType
 import com.feishin.mobile.domain.model.ProfileCredentials
@@ -57,6 +57,23 @@ class LegacyMigrationTest {
         ignoreUnknownKeys = true
         explicitNulls = false
         coerceInputValues = true
+    }
+
+    private fun newBaseClient(
+        profileStore: ProfileStore,
+        probeRegistry: TransientProbeRegistry,
+        settings: SettingsStore,
+    ): OkHttpClient {
+        val cleartextGuard = CleartextGuardInterceptor(profileStore, probeRegistry, settings)
+        val profileAuth = ProfileAuthInterceptor(profileStore, probeRegistry)
+        val trustManager = ProfileTrustManager(profileStore, probeRegistry, settings)
+        return OkHttpClient.Builder()
+            .sslSocketFactory(trustManager.sslContext().socketFactory, trustManager)
+            .hostnameVerifier(trustManager.hostnameVerifier())
+            .addInterceptor(cleartextGuard)
+            .addInterceptor(profileAuth)
+            .addNetworkInterceptor(profileAuth.redirectGuard())
+            .build()
     }
 
     @Test
@@ -138,22 +155,19 @@ class LegacyMigrationTest {
         val legacyCreds = CredentialsStore(stubContext())
         val profileStore = ProfileStore(profilePrefs, legacyCreds, settings, legacyPrefs)
         val probeRegistry = TransientProbeRegistry()
-        val baseClient = OkHttpClient.Builder()
-            .addInterceptor(HostRewriteInterceptor(legacyCreds))
-            .addInterceptor(AuthInterceptor(legacyCreds))
-            .build()
-        val backendFactory = BackendClientFactory(testJson(), baseClient, DynamicTrustManager(settings))
+        val baseClient = newBaseClient(profileStore, probeRegistry, settings)
+        val backendFactory = BackendClientFactory(testJson(), baseClient)
         val auth = AuthRepository(profileStore, legacyCreds, backendFactory, probeRegistry, settings)
         auth.preload()
 
-        var observedProbeIdDuringPing: String? = null
+        var observedWireProfileHeader: String? = "unset"
         var probeFoundByHostDuringPing: ServerProfile? = null
         var storeSizeDuringPing = -1
 
         LocalSubsonicServer { req ->
             when {
                 req.path.endsWith("/ping.view") -> {
-                    observedProbeIdDuringPing = req.headers[BackendClientFactory.HEADER_PROFILE_ID.lowercase()]
+                    observedWireProfileHeader = req.headers[BackendClientFactory.HEADER_PROFILE_ID.lowercase()]
                     probeFoundByHostDuringPing = probeRegistry.findByHost("127.0.0.1", req.serverPort)
                     storeSizeDuringPing = profileStore.profiles.value.size
                     assertTrue(req.query.contains("u=alice"))
@@ -186,11 +200,11 @@ class LegacyMigrationTest {
             assertTrue(profile.openSubsonicExtensions.formPost)
             assertEquals(listOf("songLyrics", "formPost"), profile.openSubsonicExtensions.rawNames)
 
-            val probeId = observedProbeIdDuringPing
-            assertNotNull(probeId)
-            assertTrue(probeId!!.startsWith(TransientProbeRegistry.PROBE_PREFIX))
+            // Internal X-Vusic-Profile-Id header must NEVER reach the wire.
+            assertNull(observedWireProfileHeader)
             assertNotNull(probeFoundByHostDuringPing)
-            assertEquals(probeId, probeFoundByHostDuringPing?.id)
+            val probeId = probeFoundByHostDuringPing!!.id
+            assertTrue(probeId.startsWith(TransientProbeRegistry.PROBE_PREFIX))
             assertEquals(0, storeSizeDuringPing)
 
             // Probe must be cleaned up after completion.
@@ -208,7 +222,8 @@ class LegacyMigrationTest {
         val legacyCreds = CredentialsStore(stubContext())
         val profileStore = ProfileStore(profilePrefs, legacyCreds, settings, legacyPrefs)
         val probeRegistry = TransientProbeRegistry()
-        val backendFactory = BackendClientFactory(testJson(), OkHttpClient(), DynamicTrustManager(settings))
+        val baseClient = newBaseClient(profileStore, probeRegistry, settings)
+        val backendFactory = BackendClientFactory(testJson(), baseClient)
         val auth = AuthRepository(profileStore, legacyCreds, backendFactory, probeRegistry, settings)
         auth.preload()
 
@@ -216,10 +231,12 @@ class LegacyMigrationTest {
         var failPing = true
 
         LocalSubsonicServer { req ->
-            val probeId = req.headers[BackendClientFactory.HEADER_PROFILE_ID.lowercase()]
-            if (probeId != null) {
-                observedProbes.add(probeId)
-                assertNotNull(probeRegistry.get(probeId))
+            // Internal X-Vusic-Profile-Id header must always be stripped before wire.
+            assertNull(req.headers[BackendClientFactory.HEADER_PROFILE_ID.lowercase()])
+            val activeProbe = probeRegistry.findByHost("127.0.0.1", req.serverPort)
+            if (activeProbe != null) {
+                observedProbes.add(activeProbe.id)
+                assertNotNull(probeRegistry.get(activeProbe.id))
             }
             if (req.path.endsWith("/ping.view")) {
                 if (failPing) {

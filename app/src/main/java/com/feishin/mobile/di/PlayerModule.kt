@@ -8,7 +8,9 @@ import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import com.feishin.mobile.core.common.CacheSizePolicy
 import com.feishin.mobile.data.cache.LiveLruCacheEvictor
-import com.feishin.mobile.data.remote.DynamicTrustManager
+import com.feishin.mobile.data.remote.CleartextGuardInterceptor
+import com.feishin.mobile.data.remote.ProfileAuthInterceptor
+import com.feishin.mobile.data.remote.ProfileTrustManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -56,18 +58,21 @@ object PlayerModule {
     }
 
     /**
-     * Streaming client used by the player. Stream URLs are already signed per
-     * request, so no auth interceptors are needed; the dynamic trust manager is
-     * still shared so the self-signed setting applies without a restart.
+     * Streaming client used by the player: enforces per-host TLS, cleartext guard,
+     * host-pinned auth (preserving pre-signed Subsonic stream URLs), and redirect guard.
      */
     @Provides @Singleton @Named("streaming")
-    fun provideStreamingClient(tm: DynamicTrustManager): OkHttpClient =
+    fun provideStreamingClient(
+        cleartextGuard: CleartextGuardInterceptor,
+        profileAuth: ProfileAuthInterceptor,
+        tm: ProfileTrustManager,
+    ): OkHttpClient =
         OkHttpClient.Builder()
             .sslSocketFactory(tm.sslContext().socketFactory, tm)
-            .hostnameVerifier { hostname, session ->
-                if (tm.allowSelfSigned) true
-                else okhttp3.internal.tls.OkHostnameVerifier.verify(hostname, session)
-            }
+            .hostnameVerifier(tm.hostnameVerifier())
+            .addInterceptor(cleartextGuard)
+            .addInterceptor(profileAuth)
+            .addNetworkInterceptor(profileAuth.redirectGuard())
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             // Stream auth params are single-use; never let OkHttp replay a request.

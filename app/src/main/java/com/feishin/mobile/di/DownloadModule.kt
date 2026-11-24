@@ -2,7 +2,9 @@ package com.feishin.mobile.di
 
 import android.content.Context
 import androidx.work.WorkManager
-import com.feishin.mobile.data.remote.DynamicTrustManager
+import com.feishin.mobile.data.remote.CleartextGuardInterceptor
+import com.feishin.mobile.data.remote.ProfileAuthInterceptor
+import com.feishin.mobile.data.remote.ProfileTrustManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -23,18 +25,21 @@ annotation class DownloadClient
 object DownloadModule {
 
     /**
-     * Transfer client: the download/stream URLs are already signed per request, so
-     * no auth interceptors are needed, but the shared trust manager keeps the
-     * self-signed setting working without a restart.
+     * Transfer client: enforces per-host TLS, cleartext guard, host-pinned auth
+     * (preserving pre-signed Subsonic download URLs), and redirect guard.
      */
     @Provides @Singleton @DownloadClient
-    fun provideDownloadClient(tm: DynamicTrustManager): OkHttpClient =
+    fun provideDownloadClient(
+        cleartextGuard: CleartextGuardInterceptor,
+        profileAuth: ProfileAuthInterceptor,
+        tm: ProfileTrustManager,
+    ): OkHttpClient =
         OkHttpClient.Builder()
             .sslSocketFactory(tm.sslContext().socketFactory, tm)
-            .hostnameVerifier { hostname, session ->
-                if (tm.allowSelfSigned) true
-                else okhttp3.internal.tls.OkHostnameVerifier.verify(hostname, session)
-            }
+            .hostnameVerifier(tm.hostnameVerifier())
+            .addInterceptor(cleartextGuard)
+            .addInterceptor(profileAuth)
+            .addNetworkInterceptor(profileAuth.redirectGuard())
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS) // a whole song/album may take a while
             .retryOnConnectionFailure(true)
