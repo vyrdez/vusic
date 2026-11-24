@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -45,7 +46,7 @@ class LibraryViewModel @Inject constructor(
     private val cachedTracks: CachedTrackStore,
     private val refresh: LibraryRefresh,
     savedStateHandle: SavedStateHandle,
-    private val creds: com.feishin.mobile.data.auth.CredentialsStore? = null,
+    private val auth: com.feishin.mobile.data.auth.AuthRepository? = null,
 ) : ViewModel() {
     private val handle: SavedStateHandle = savedStateHandle
 
@@ -87,9 +88,17 @@ class LibraryViewModel @Inject constructor(
 
     val settingsFlow = settings.flow
 
-    val serverUrl: StateFlow<String> = (creds?.state ?: MutableStateFlow(null))
-        .map { it?.serverUrl.orEmpty() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+    val serverUrl: StateFlow<String> = combine(
+        auth?.profiles ?: MutableStateFlow(emptyList()),
+        settings.flow.map { it.librarySourceFilter },
+    ) { profiles, filter ->
+        val matched = if (filter != "ALL" && filter != "DEVICE") {
+            profiles.firstOrNull { it.id == filter }
+        } else {
+            null
+        }
+        (matched ?: profiles.firstOrNull { it.enabled } ?: profiles.firstOrNull())?.url.orEmpty()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
     fun setLibraryViewMode(mode: String) = viewModelScope.launch {
         settings.setLibraryViewMode(mode)

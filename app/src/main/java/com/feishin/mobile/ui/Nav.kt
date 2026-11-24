@@ -155,7 +155,7 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     var pendingPlaylistDelete by remember { mutableStateOf<com.feishin.mobile.domain.model.Playlist?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val navScope = rememberCoroutineScope()
-    val username by main.auth.loginState.collectAsStateWithLifecycle()
+    val profiles by main.auth.loginState.collectAsStateWithLifecycle()
     val topBar = remember { TopBarController() }
 
     // Mini player visibility + drag offset, so the shared message host can
@@ -423,7 +423,12 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                                 onExplore = { tab -> nav.goToLibraryTab(tab) },
                                 onGenres = { nav.navigate(Routes.GENRES) },
                                 onActions = { actionsTarget = it },
-                                username = username?.username.orEmpty(),
+                                username = profiles.firstOrNull()?.let { profile ->
+                                    (profile.credentials as? com.feishin.mobile.domain.model.ProfileCredentials.Subsonic)?.username
+                                        ?: (profile.credentials as? com.feishin.mobile.domain.model.ProfileCredentials.Jellyfin)?.username
+                                        ?: (profile.credentials as? com.feishin.mobile.domain.model.ProfileCredentials.GoogleDrive)?.accountEmail
+                                        ?: profile.userId
+                                }.orEmpty(),
                             )
                         }
                         composable(

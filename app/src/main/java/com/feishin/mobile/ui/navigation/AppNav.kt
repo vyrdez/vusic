@@ -37,16 +37,18 @@ object AuthRoutes {
 fun AppNav(main: MainViewModel = hiltViewModel()) {
     val auth = main.auth
     val ready by auth.ready.collectAsStateWithLifecycle()
-    if (!ready) {
+    val settings by main.settings.flow.collectAsStateWithLifecycle(initialValue = main.settings.latestSettings)
+    if (!ready || settings == null) {
         Box(Modifier.fillMaxSize())
         return
     }
-    val creds by auth.loginState.collectAsStateWithLifecycle()
+    val profiles by auth.loginState.collectAsStateWithLifecycle()
+    val hasAccess = profiles.isNotEmpty() || settings?.deviceFilesStandalone == true
     val nav = rememberNavController()
-    val start = remember { if (creds != null) AuthRoutes.MAIN else AuthRoutes.LOGIN }
+    val start = remember { if (hasAccess) AuthRoutes.MAIN else AuthRoutes.LOGIN }
 
-    LaunchedEffect(creds) {
-        val target = if (creds != null) AuthRoutes.MAIN else AuthRoutes.LOGIN
+    LaunchedEffect(hasAccess) {
+        val target = if (hasAccess) AuthRoutes.MAIN else AuthRoutes.LOGIN
         if (nav.currentDestination?.route != target) {
             nav.navigate(target) {
                 popUpTo(0) { inclusive = true }

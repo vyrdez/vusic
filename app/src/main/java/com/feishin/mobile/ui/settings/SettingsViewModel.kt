@@ -112,8 +112,21 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /** Credentials for the Account section (server URL, username). */
-    val credentials: StateFlow<com.feishin.mobile.data.auth.Credentials?> = auth.loginState
+    val profiles: StateFlow<List<com.feishin.mobile.domain.model.ServerProfile>> = auth.profiles
+
+    /** Credentials compatibility shim for the Account section until P12.0-I. */
+    val credentials: StateFlow<com.feishin.mobile.data.auth.Credentials?> = auth.profiles
+        .map { list ->
+            list.firstOrNull()?.let { p ->
+                val sub = p.credentials as? com.feishin.mobile.domain.model.ProfileCredentials.Subsonic
+                com.feishin.mobile.data.auth.Credentials(
+                    serverUrl = p.url,
+                    username = sub?.username ?: p.userId,
+                    password = sub?.password.orEmpty(),
+                )
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _test = MutableStateFlow<TestState>(TestState.Idle)
     val test: StateFlow<TestState> = _test.asStateFlow()
@@ -264,6 +277,19 @@ class SettingsViewModel @Inject constructor(
     fun clearPendingActions() = viewModelScope.launch { offlineSync.clear() }
 
     fun setServerUrl(url: String) = viewModelScope.launch { auth.updateServerUrl(url) }
+
+    fun updateProfileUrl(profileId: String, url: String) = viewModelScope.launch {
+        val existing = auth.profiles.value.firstOrNull { it.id == profileId } ?: return@launch
+        auth.updateProfile(existing.copy(url = url))
+    }
+
+    fun removeProfile(profileId: String, keepDownloads: Boolean, onDone: () -> Unit = {}) = viewModelScope.launch {
+        if (!keepDownloads) runCatching { downloads.removeAll() }
+        cache.clear()
+        runCatching { downloads.clearCoverCache() }
+        auth.removeProfile(profileId, keepDownloads)
+        onDone()
+    }
 
     /** Logout, optionally keeping downloads on disk. */
     fun logout(keepDownloads: Boolean, onDone: () -> Unit) = viewModelScope.launch {

@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -148,6 +149,10 @@ class SettingsStore internal constructor(
         val miniPlayerBgStyle = stringPreferencesKey("mini_player_bg_style")
         val playerBgStyle = stringPreferencesKey("player_bg_style")
         val queueBgStyle = stringPreferencesKey("queue_bg_style")
+        // Multi-backend settings (P12.0-B)
+        val deviceFilesStandalone = booleanPreferencesKey("device_files_standalone")
+        val librarySourceFilter = stringPreferencesKey("library_source_filter")
+        val federatedTimeoutMs = longPreferencesKey("federated_timeout_ms")
     }
 
     data class Settings(
@@ -224,6 +229,10 @@ class SettingsStore internal constructor(
         val libraryLayouts: Map<String, LayoutMode> = emptyMap(),
         /** Per-playlist track order, keyed by playlist id. Never sent to the server. */
         val playlistSorts: Map<String, com.feishin.mobile.core.common.PlaylistSort> = emptyMap(),
+        // Multi-backend settings (P12.0-B)
+        val deviceFilesStandalone: Boolean = false,
+        val librarySourceFilter: String = "ALL",
+        val federatedTimeoutMs: Long = 4_000L,
     ) {
         /** Effective ReplayGain mode: the master switch overrides the picker. */
         val effectiveReplayGain: com.feishin.mobile.core.common.ReplayGainMode
@@ -328,6 +337,9 @@ class SettingsStore internal constructor(
                     val key = k.name.removePrefix(PLAYLIST_SORT_PREFIX)
                     (v as? String)?.let { raw -> key to com.feishin.mobile.core.common.PlaylistSort.parse(raw) }
                 }.toMap(),
+            deviceFilesStandalone = p[K.deviceFilesStandalone] ?: false,
+            librarySourceFilter = p[K.librarySourceFilter]?.takeIf { it.isNotBlank() } ?: "ALL",
+            federatedTimeoutMs = (p[K.federatedTimeoutMs] ?: 4_000L).coerceIn(2_000L, 10_000L),
         ).also { latestSettings = it }
     }
 
@@ -430,6 +442,9 @@ class SettingsStore internal constructor(
     suspend fun setShowDeviceFiles(v: Boolean) = edit { it[K.showDeviceFiles] = v }
     suspend fun setDeviceFilesMinDurationSec(v: Int) = edit { it[K.deviceFilesMinDurationSec] = v }
     suspend fun setLibraryViewMode(v: String) = edit { it[K.libraryViewMode] = v }
+    suspend fun setDeviceFilesStandalone(v: Boolean) = edit { it[K.deviceFilesStandalone] = v }
+    suspend fun setLibrarySourceFilter(v: String) = edit { it[K.librarySourceFilter] = v.ifBlank { "ALL" } }
+    suspend fun setFederatedTimeoutMs(v: Long) = edit { it[K.federatedTimeoutMs] = v.coerceIn(2_000L, 10_000L) }
 
     /** Per-tab sort choice, e.g. tab = "ALBUMS". */
     suspend fun setLibrarySort(tab: String, choice: com.feishin.mobile.core.common.SortChoice) =
