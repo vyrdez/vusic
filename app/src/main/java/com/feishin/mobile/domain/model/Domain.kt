@@ -22,6 +22,8 @@ data class Album(
     val year: Int?,
     val genre: String?,
     val starred: Boolean,
+    val sourceProfileId: String? = null,
+    val sourceLabel: String? = null,
 )
 
 @Serializable
@@ -65,6 +67,8 @@ data class Track(
     val localUri: String? = null,
     /** Modification timestamp in epoch seconds for local device files, 0 for server songs. */
     val localModifiedSec: Long = 0L,
+    val sourceProfileId: String? = null,
+    val sourceLabel: String? = null,
 ) {
     val isLocal: Boolean get() = !localUri.isNullOrBlank()
 }
