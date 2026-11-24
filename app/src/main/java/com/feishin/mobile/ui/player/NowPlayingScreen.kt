@@ -177,6 +177,7 @@ import com.feishin.mobile.core.ui.BlurSurfaceRole
 import com.feishin.mobile.core.ui.NowPlayingColors
 import com.feishin.mobile.core.ui.NowPlayingPalette
 import com.feishin.mobile.core.ui.PlayingColors
+import com.feishin.mobile.domain.model.BackendCapabilities
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.components.ActionTarget
@@ -817,13 +818,15 @@ fun NowPlayingScreen(
                         LaunchedEffect(current.id) {
                             scope.launch { favs.refresh() }
                         }
+                        val capabilities = remember(current.id) { repo.capabilitiesFor(current.id) }
                         NpChipsRow(
                             content = content,
                             starred = starred,
                             local = current.isLocal,
+                            capabilities = capabilities,
                             downloadState = downloadState,
                             onFavorite = {
-                                if (current.isLocal || starring) return@NpChipsRow
+                                if (current.isLocal || capabilities == BackendCapabilities.DEVICE_LOCAL || starring) return@NpChipsRow
                                 val next = !starred
                                 starred = next
                                 starring = true
@@ -1022,17 +1025,39 @@ private fun SongLyricsToggle(
     }
 }
 
+internal data class NowPlayingChipsUi(
+    val showFavorite: Boolean,
+    val showSaveToPlaylist: Boolean,
+    val showShare: Boolean,
+    val showDownload: Boolean,
+)
+
+internal fun resolveNowPlayingChips(
+    local: Boolean,
+    capabilities: BackendCapabilities,
+): NowPlayingChipsUi {
+    val isRemote = !local && capabilities != BackendCapabilities.DEVICE_LOCAL
+    return NowPlayingChipsUi(
+        showFavorite = isRemote,
+        showSaveToPlaylist = isRemote && capabilities.supportsServerPlaylists,
+        showShare = true,
+        showDownload = isRemote,
+    )
+}
+
 @Composable
 private fun NpChipsRow(
     content: Color,
     starred: Boolean,
     local: Boolean,
+    capabilities: BackendCapabilities,
     downloadState: com.feishin.mobile.data.db.DownloadEntity?,
     onFavorite: () -> Unit,
     onSave: () -> Unit,
     onShare: () -> Unit,
     onDownload: () -> Unit,
 ) {
+    val chipsUi = resolveNowPlayingChips(local = local, capabilities = capabilities)
     val dlStatus = downloadState?.statusEnum
     val downloadLabel = when (dlStatus) {
         com.feishin.mobile.data.db.DownloadStatus.COMPLETED -> "Downloaded"
@@ -1047,7 +1072,7 @@ private fun NpChipsRow(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
     ) {
-        if (!local) {
+        if (chipsUi.showFavorite) {
             NpChip(
                 label = if (starred) "Favorited" else "Favorite",
                 icon = if (starred) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -1055,10 +1080,14 @@ private fun NpChipsRow(
                 accent = if (starred) FavoriteRed else null,
                 onClick = onFavorite,
             )
+        }
+        if (chipsUi.showSaveToPlaylist) {
             NpChip("Save", Icons.Default.Save, content, onSave)
         }
-        NpChip("Share", Icons.Default.Share, content, onShare)
-        if (!local) {
+        if (chipsUi.showShare) {
+            NpChip("Share", Icons.Default.Share, content, onShare)
+        }
+        if (chipsUi.showDownload) {
             NpChip(
                 label = downloadLabel,
                 icon = if (dlStatus == com.feishin.mobile.data.db.DownloadStatus.COMPLETED) {

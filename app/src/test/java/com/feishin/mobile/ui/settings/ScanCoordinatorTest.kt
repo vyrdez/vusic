@@ -3,18 +3,25 @@ package com.feishin.mobile.ui.settings
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.network.SyncedLyrics
 import com.feishin.mobile.data.cache.LibraryRefresh
+import com.feishin.mobile.data.cache.MetadataCacheKeys
 import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.AlbumDetail
 import com.feishin.mobile.domain.model.Artist
 import com.feishin.mobile.domain.model.ArtistDetail
 import com.feishin.mobile.domain.model.ArtistInfo
+import com.feishin.mobile.domain.model.BackendCapabilities
+import com.feishin.mobile.domain.model.BackendType
 import com.feishin.mobile.domain.model.Genre
 import com.feishin.mobile.domain.model.Playlist
 import com.feishin.mobile.domain.model.PlaylistDetail
+import com.feishin.mobile.domain.model.ProfileCredentials
 import com.feishin.mobile.domain.model.SearchResults
 import com.feishin.mobile.domain.model.ServerInfo
+import com.feishin.mobile.domain.model.ServerProfile
 import com.feishin.mobile.domain.model.StarredCollection
 import com.feishin.mobile.domain.model.Track
+import com.feishin.mobile.domain.repo.BackendRegistry
+import com.feishin.mobile.domain.repo.MusicBackend
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.domain.repo.ScanStatus
 import com.feishin.mobile.ui.components.UiMessenger
@@ -345,5 +352,172 @@ class ScanCoordinatorTest {
 
         val offline = formatScanDescription(scanningZero, online = false)
         assertEquals("Unavailable offline", offline)
+    }
+
+    private class FakeScanBackend(
+        profileId: String,
+        name: String = profileId,
+    ) : MusicBackend {
+        override val profile = ServerProfile(
+            id = profileId,
+            name = name,
+            type = BackendType.NAVIDROME,
+            url = "https://$profileId.example.com",
+            credentials = ProfileCredentials.Subsonic("user", "pass"),
+        )
+        override val capabilities: BackendCapabilities = BackendCapabilities.forType(BackendType.NAVIDROME)
+
+        var startScanCalls = 0
+        var scanStatusCalls = 0
+        var startScanResult: Result<Unit> = Result.Ok(Unit)
+        val scanStatusSequence = mutableListOf<Result<ScanStatus>>()
+        var defaultScanStatus: Result<ScanStatus> = Result.Ok(ScanStatus(scanning = false, count = 0))
+
+        override suspend fun ping(): Result<Unit> = Result.Ok(Unit)
+        override suspend fun serverInfo(): Result<ServerInfo> = Result.Ok(ServerInfo())
+        override suspend fun startScan(): Result<Unit> {
+            startScanCalls++
+            return startScanResult
+        }
+        override suspend fun scanStatus(): Result<ScanStatus> {
+            scanStatusCalls++
+            return if (scanStatusSequence.isNotEmpty()) scanStatusSequence.removeAt(0) else defaultScanStatus
+        }
+        override suspend fun albumList(type: String, size: Int, offset: Int, genre: String?): Result<List<Album>> = Result.Ok(emptyList())
+        override suspend fun artists(): Result<List<Artist>> = Result.Ok(emptyList())
+        override suspend fun genres(): Result<List<Genre>> = Result.Ok(emptyList())
+        override suspend fun playlists(): Result<List<Playlist>> = Result.Ok(emptyList())
+        override suspend fun search(query: String, artistCount: Int, albumCount: Int, songCount: Int): Result<SearchResults> = Result.Ok(SearchResults())
+        override suspend fun album(id: String): Result<AlbumDetail> = Result.Err("stub")
+        override suspend fun artist(id: String): Result<ArtistDetail> = Result.Err("stub")
+        override suspend fun artistInfo(id: String): Result<ArtistInfo> = Result.Ok(ArtistInfo())
+        override suspend fun randomSongs(size: Int, genre: String?): Result<List<Track>> = Result.Ok(emptyList())
+        override suspend fun topSongs(artist: String, count: Int): Result<List<Track>> = Result.Ok(emptyList())
+        override suspend fun similarSongs(songId: String?, artistId: String?, count: Int): Result<List<Track>> = Result.Ok(emptyList())
+        override suspend fun playlist(id: String): Result<PlaylistDetail> = Result.Err("stub")
+        override suspend fun starred(): Result<StarredCollection> = Result.Ok(StarredCollection())
+        override suspend fun starTrack(id: String, starred: Boolean): Result<Unit> = Result.Ok(Unit)
+        override suspend fun starAlbum(id: String, starred: Boolean): Result<Unit> = Result.Ok(Unit)
+        override suspend fun starArtist(id: String, starred: Boolean): Result<Unit> = Result.Ok(Unit)
+        override suspend fun createPlaylist(name: String, trackIds: List<String>): Result<String> = Result.Ok("pl")
+        override suspend fun addToPlaylist(playlistId: String, trackIds: List<String>): Result<Unit> = Result.Ok(Unit)
+        override suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit> = Result.Ok(Unit)
+        override suspend fun deletePlaylist(id: String): Result<Unit> = Result.Ok(Unit)
+        override suspend fun scrobble(id: String, submission: Boolean): Result<Unit> = Result.Ok(Unit)
+        override suspend fun scrobbleAt(id: String, timeMs: Long, submission: Boolean): Result<Unit> = Result.Ok(Unit)
+        override suspend fun lyricsForTrack(id: String, artist: String, title: String): Result<SyncedLyrics> = Result.Err("stub")
+        override suspend fun lyrics(artist: String, title: String): Result<String> = Result.Ok("")
+        override fun streamUrl(track: Track, maxBitrate: Int, format: String): String = ""
+        override fun coverArtUrl(coverArtId: String?, size: Int): String? = null
+        override fun downloadUrl(track: Track): String = ""
+    }
+
+    private class FakeBackendRegistry(
+        private val items: List<MusicBackend>,
+    ) : BackendRegistry {
+        override fun all(): List<MusicBackend> = items
+        override fun enabled(): List<MusicBackend> = items.filter { it.profile.enabled }
+        override fun get(profileId: String): MusicBackend? = items.firstOrNull { it.profile.id == profileId }
+    }
+
+    @Test
+    fun testPerProfileScanIsolationAndLogicalRefreshInvalidation() = runTest {
+        val repo = FakeRepo()
+        val p1 = FakeScanBackend("p1")
+        val p2 = FakeScanBackend("p2")
+        p1.scanStatusSequence.addAll(
+            listOf(
+                Result.Ok(ScanStatus(scanning = true, count = 42)),
+                Result.Ok(ScanStatus(scanning = false, count = 100, folderCount = 5, lastScan = "2026-11-24T12:00:00Z")),
+            )
+        )
+        p2.scanStatusSequence.addAll(
+            listOf(
+                Result.Ok(ScanStatus(scanning = true, count = 200)),
+                Result.Ok(ScanStatus(scanning = true, count = 300)),
+                Result.Ok(ScanStatus(scanning = false, count = 500)),
+            )
+        )
+        val registry = FakeBackendRegistry(listOf(p1, p2))
+        val libraryRefresh = LibraryRefresh()
+        val refreshedKeys = mutableListOf<String>()
+        val collectJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            libraryRefresh.refreshed.toList(refreshedKeys)
+        }
+        val messenger = UiMessenger()
+        val testDispatcher = StandardTestDispatcher(testScheduler)
+        val scope = TestScope(testDispatcher)
+
+        val coordinator = ScanCoordinator(
+            repo = repo,
+            libraryRefresh = libraryRefresh,
+            messenger = messenger,
+            externalScope = scope,
+            delayMs = 1000L,
+            backends = registry,
+        )
+
+        coordinator.startScan("p1")
+        coordinator.startScan("p2")
+        scope.testScheduler.advanceTimeBy(1)
+
+        assertTrue(coordinator.profileStates.value["p1"] is ScanUiState.Scanning)
+        assertTrue(coordinator.profileStates.value["p2"] is ScanUiState.Scanning)
+        assertEquals(1, p1.startScanCalls)
+        assertEquals(1, p2.startScanCalls)
+        assertEquals(0, repo.startScanCalls)
+
+        // Poll 1: both scanning
+        scope.testScheduler.advanceTimeBy(1000L)
+        assertEquals(42, (coordinator.profileStates.value["p1"] as ScanUiState.Scanning).count)
+        assertEquals(200, (coordinator.profileStates.value["p2"] as ScanUiState.Scanning).count)
+
+        // Poll 2: p1 finishes while p2 keeps scanning independently
+        scope.testScheduler.advanceTimeBy(1000L)
+        assertTrue(coordinator.profileStates.value["p1"] is ScanUiState.Finished)
+        assertEquals(100, (coordinator.profileStates.value["p1"] as ScanUiState.Finished).count)
+        assertTrue(coordinator.profileStates.value["p2"] is ScanUiState.Scanning)
+        assertEquals(300, (coordinator.profileStates.value["p2"] as ScanUiState.Scanning).count)
+
+        assertTrue(refreshedKeys.contains(MetadataCacheKeys.ARTISTS))
+        assertTrue(refreshedKeys.contains(MetadataCacheKeys.PLAYLISTS))
+        assertTrue(refreshedKeys.contains("albums:alphabeticalByName:0"))
+
+        // Poll 3: p2 finishes
+        scope.testScheduler.advanceTimeBy(1000L)
+        assertTrue(coordinator.profileStates.value["p2"] is ScanUiState.Finished)
+        assertEquals(500, (coordinator.profileStates.value["p2"] as ScanUiState.Finished).count)
+        collectJob.cancel()
+    }
+
+    @Test
+    fun testPerProfileRefreshStatusAndUnknownProfileError() = runTest {
+        val repo = FakeRepo()
+        val p1 = FakeScanBackend("p1")
+        p1.defaultScanStatus = Result.Ok(ScanStatus(scanning = true, count = 75))
+        val registry = FakeBackendRegistry(listOf(p1))
+        val libraryRefresh = LibraryRefresh()
+        val messenger = UiMessenger()
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+
+        val coordinator = ScanCoordinator(
+            repo = repo,
+            libraryRefresh = libraryRefresh,
+            messenger = messenger,
+            externalScope = scope,
+            delayMs = 1000L,
+            backends = registry,
+        )
+
+        coordinator.refreshStatus("p1")
+        scope.testScheduler.advanceTimeBy(1)
+        assertTrue(coordinator.profileStates.value["p1"] is ScanUiState.Scanning)
+        assertEquals(75, (coordinator.profileStates.value["p1"] as ScanUiState.Scanning).count)
+
+        coordinator.startScan("missing")
+        scope.testScheduler.advanceTimeBy(1)
+        assertTrue(coordinator.profileStates.value["missing"] is ScanUiState.Error)
+        assertEquals("Server not found", (coordinator.profileStates.value["missing"] as ScanUiState.Error).message)
+        coordinator.cancelPolling()
     }
 }

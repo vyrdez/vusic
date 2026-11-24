@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.feishin.mobile.core.common.GlobalId
 import com.feishin.mobile.core.common.PlaylistDuplicates
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.data.favorites.FAVORITE_SONGS_PLAYLIST_ID
@@ -76,6 +77,7 @@ import com.feishin.mobile.data.settings.speedDialKey
 import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.AlbumDetail
 import com.feishin.mobile.domain.model.Artist
+import com.feishin.mobile.domain.model.BackendCapabilities
 import com.feishin.mobile.domain.model.Playlist
 import com.feishin.mobile.domain.model.PlaylistCover
 import com.feishin.mobile.domain.model.PlaylistDetail
@@ -129,6 +131,97 @@ fun EntityActionsSheet(
     }
 }
 
+internal const val MIXED_OR_UNSUPPORTED_PLAYLIST_MESSAGE =
+    "Playlists are scoped per server in 12.0; select tracks from one server."
+
+internal data class TrackCapabilitiesUi(
+    val canFavorite: Boolean,
+    val canSaveToPlaylist: Boolean,
+    val canStartRadio: Boolean,
+    val canDownload: Boolean,
+    val canNavigateAlbum: Boolean,
+    val canNavigateArtist: Boolean,
+    val canPin: Boolean,
+)
+
+internal fun resolveTrackCapabilities(
+    isLocal: Boolean,
+    caps: BackendCapabilities,
+    albumId: String?,
+    artistId: String?,
+): TrackCapabilitiesUi {
+    val isRemote = !isLocal && caps != BackendCapabilities.DEVICE_LOCAL
+    return TrackCapabilitiesUi(
+        canFavorite = isRemote,
+        canSaveToPlaylist = isRemote && caps.supportsServerPlaylists,
+        canStartRadio = isRemote && caps.supportsRadioMix,
+        canDownload = isRemote,
+        canNavigateAlbum = !isLocal && !albumId.isNullOrBlank(),
+        canNavigateArtist = !isLocal && !artistId.isNullOrBlank(),
+        canPin = isRemote,
+    )
+}
+
+internal data class PlaylistPickerFilterResult(
+    val playlists: List<Playlist>,
+    val owningProfileId: String?,
+    val canCreatePlaylist: Boolean,
+    val helperMessage: String? = null,
+)
+
+internal fun filterPlaylistsForTracks(
+    tracks: List<Track>,
+    playlists: List<Playlist>,
+    capabilitiesFor: (String) -> BackendCapabilities,
+): PlaylistPickerFilterResult {
+    if (tracks.isEmpty()) {
+        return PlaylistPickerFilterResult(
+            playlists = playlists,
+            owningProfileId = null,
+            canCreatePlaylist = true,
+        )
+    }
+
+    val anyUnsupported = tracks.any { track ->
+        track.isLocal ||
+            GlobalId.isDeviceLocal(track.id) ||
+            !capabilitiesFor(track.id).supportsServerPlaylists
+    }
+    if (anyUnsupported) {
+        return PlaylistPickerFilterResult(
+            playlists = emptyList(),
+            owningProfileId = null,
+            canCreatePlaylist = false,
+            helperMessage = MIXED_OR_UNSUPPORTED_PLAYLIST_MESSAGE,
+        )
+    }
+
+    val distinctProfiles = tracks.map { track ->
+        GlobalId.profileIdOrNull(track.id) ?: track.sourceProfileId?.takeIf { it.isNotBlank() }
+    }.distinct()
+
+    if (distinctProfiles.size > 1) {
+        return PlaylistPickerFilterResult(
+            playlists = emptyList(),
+            owningProfileId = null,
+            canCreatePlaylist = false,
+            helperMessage = MIXED_OR_UNSUPPORTED_PLAYLIST_MESSAGE,
+        )
+    }
+
+    val owningProfileId = distinctProfiles.single()
+    val filtered = if (owningProfileId != null) {
+        playlists.filter { GlobalId.profileIdOrNull(it.id) == owningProfileId }
+    } else {
+        playlists.filter { GlobalId.profileIdOrNull(it.id) == null }
+    }
+    return PlaylistPickerFilterResult(
+        playlists = filtered,
+        owningProfileId = owningProfileId,
+        canCreatePlaylist = true,
+    )
+}
+
 @Composable
 private fun SheetHeader(
     title: String,
@@ -137,12 +230,16 @@ private fun SheetHeader(
     starEnabled: Boolean,
     onStar: () -> Unit,
     onClose: () -> Unit,
+    sourceLabel: String? = null,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = VusicColors.SecondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (!sourceLabel.isNullOrBlank()) {
+                    Text(sourceLabel, style = MaterialTheme.typography.labelSmall, color = VusicColors.SecondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
             if (starEnabled) {
                 IconButton(onClick = onStar, modifier = Modifier.size(48.dp)) {
@@ -161,13 +258,16 @@ private fun ActionTiles(
     onPlayNext: () -> Unit,
     onSaveToPlaylist: () -> Unit,
     onShare: () -> Unit,
+    showSaveToPlaylist: Boolean = true,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ActionTile("Play next", Icons.AutoMirrored.Filled.PlaylistPlay, Modifier.weight(1f), onPlayNext)
-        ActionTile("Save to playlist", Icons.AutoMirrored.Filled.PlaylistAdd, Modifier.weight(1f), onSaveToPlaylist)
+        if (showSaveToPlaylist) {
+            ActionTile("Save to playlist", Icons.AutoMirrored.Filled.PlaylistAdd, Modifier.weight(1f), onSaveToPlaylist)
+        }
         ActionTile("Share", Icons.Default.Share, Modifier.weight(1f), onShare)
     }
 }
@@ -260,6 +360,8 @@ private fun TrackSheetContent(
     val pinned = pins?.pins?.contains(pinKey) == true
 
     val isLocal = track.isLocal
+    val caps = repo.capabilitiesFor(track.id)
+    val gating = resolveTrackCapabilities(isLocal, caps, track.albumId, track.artistId)
 
     fun closeAnd(block: () -> Unit) {
         onDismiss()
@@ -267,9 +369,9 @@ private fun TrackSheetContent(
     }
 
     SheetHeader(
-        title = track.title, subtitle = track.artist, starred = starred, starEnabled = !isLocal,
+        title = track.title, subtitle = track.artist, starred = starred, starEnabled = gating.canFavorite,
         onStar = {
-            if (isLocal || starring) return@SheetHeader
+            if (!gating.canFavorite || starring) return@SheetHeader
             val next = !starred
             starred = next
             starring = true
@@ -285,6 +387,7 @@ private fun TrackSheetContent(
             }
         },
         onClose = onDismiss,
+        sourceLabel = track.sourceLabel,
     )
     if (!isLocal) {
         ActionTiles(
@@ -298,14 +401,17 @@ private fun TrackSheetContent(
                 shareText(context, "${track.title} - ${track.artist}")
                 onDismiss()
             },
+            showSaveToPlaylist = gating.canSaveToPlaylist,
         )
-        SheetRow("Start radio", Icons.Default.Radio, onClick = {
-            // The seed starts instantly as item 1; the 20-song batch fills in
-            // behind it and endless appends keep it going.
-            player.startRadio(track) { messenger.show("Your library is empty") }
-            onDismiss()
-            onStartRadio()
-        })
+        if (gating.canStartRadio) {
+            SheetRow("Start radio", Icons.Default.Radio, onClick = {
+                // The seed starts instantly as item 1; the 20-song batch fills in
+                // behind it and endless appends keep it going.
+                player.startRadio(track) { messenger.show("Your library is empty") }
+                onDismiss()
+                onStartRadio()
+            })
+        }
     } else {
         SheetRow("Play next", Icons.AutoMirrored.Filled.PlaylistPlay, onClick = {
             player.playNext(track)
@@ -318,7 +424,7 @@ private fun TrackSheetContent(
         messenger.show("Added to queue: ${track.title}")
         onDismiss()
     })
-    if (!isLocal) {
+    if (gating.canFavorite) {
         SheetRow(if (starred) "Remove from library" else "Save to library",
             if (starred) Icons.Default.BookmarkAdded else Icons.Default.BookmarkAdd,
             onClick = {
@@ -337,16 +443,18 @@ private fun TrackSheetContent(
                     starring = false
                 }
             })
+    }
+    if (gating.canDownload) {
         DownloadTrackRow(track, downloads, messenger, scope)
     }
-    if (!isLocal && track.albumId?.isNotBlank() == true) {
-        SheetRow("Go to album", Icons.Default.Album, onClick = { closeAnd { onAlbum(track.albumId) } })
+    if (gating.canNavigateAlbum) {
+        SheetRow("Go to album", Icons.Default.Album, onClick = { closeAnd { onAlbum(track.albumId!!) } })
     }
-    if (!isLocal && track.artistId?.isNotBlank() == true) {
-        SheetRow("Go to artist", Icons.Default.Person, onClick = { closeAnd { onArtist(track.artistId) } })
+    if (gating.canNavigateArtist) {
+        SheetRow("Go to artist", Icons.Default.Person, onClick = { closeAnd { onArtist(track.artistId!!) } })
     }
     SheetRow("View song details", Icons.Default.Info, onClick = { showDetails = true })
-    if (!isLocal) {
+    if (gating.canPin) {
         SheetRow(if (pinned) "Unpin from Speed dial" else "Pin to Speed dial", Icons.Default.PushPin, onClick = {
             scope.launch {
                 settings.setPinned(pinKey, !pinned)
@@ -405,9 +513,13 @@ private fun AlbumSheetContent(
         block()
     }
 
+    val caps = repo.capabilitiesFor(album.id)
+    val isLocalAlbum = GlobalId.isDeviceLocal(album.id) || caps == BackendCapabilities.DEVICE_LOCAL
+
     SheetHeader(
-        title = album.name, subtitle = album.artist, starred = starred, starEnabled = true,
+        title = album.name, subtitle = album.artist, starred = starred, starEnabled = !isLocalAlbum,
         onStar = {
+            if (isLocalAlbum) return@SheetHeader
             val next = !starred
             starred = next
             scope.launch {
@@ -421,6 +533,7 @@ private fun AlbumSheetContent(
             }
         },
         onClose = onDismiss,
+        sourceLabel = album.sourceLabel,
     )
     ActionTiles(
         onPlayNext = {
@@ -435,6 +548,7 @@ private fun AlbumSheetContent(
             shareText(context, "${album.name} - ${album.artist}")
             onDismiss()
         },
+        showSaveToPlaylist = !isLocalAlbum && caps.supportsServerPlaylists,
     )
     SheetRow("Play", Icons.Default.PlayArrow, onClick = {
         if (tracks.isNotEmpty()) player.playAll(tracks, source = album.name)
@@ -449,31 +563,37 @@ private fun AlbumSheetContent(
         messenger.show("Added to queue: ${album.name}")
         onDismiss()
     })
-    SheetRow("Start radio", Icons.Default.Radio, onClick = {
-        // The album's first song is the seed and starts instantly.
-        scope.launch {
-            val seed = tracks.firstOrNull()
-                ?: (repo.album(album.id) as? Result.Ok)?.value?.tracks?.firstOrNull()
-            if (seed == null) {
-                messenger.show("No tracks found for ${album.name}")
-            } else {
-                player.startRadio(seed) { messenger.show("Your library is empty") }
-                onDismiss()
-                onStartRadio()
+    if (!isLocalAlbum && caps.supportsRadioMix) {
+        SheetRow("Start radio", Icons.Default.Radio, onClick = {
+            // The album's first song is the seed and starts instantly.
+            scope.launch {
+                val seed = tracks.firstOrNull()
+                    ?: (repo.album(album.id) as? Result.Ok)?.value?.tracks?.firstOrNull()
+                if (seed == null) {
+                    messenger.show("No tracks found for ${album.name}")
+                } else {
+                    player.startRadio(seed) { messenger.show("Your library is empty") }
+                    onDismiss()
+                    onStartRadio()
+                }
             }
-        }
-    })
-    DownloadAlbumRow(album, tracks, downloads, messenger, scope)
+        })
+    }
+    if (!isLocalAlbum) {
+        DownloadAlbumRow(album, tracks, downloads, messenger, scope)
+    }
     if (album.artistId?.isNotBlank() == true) {
         SheetRow("Go to artist", Icons.Default.Person, onClick = { closeAnd { onArtist(album.artistId) } })
     }
     SheetRow("View album details", Icons.Default.Info, onClick = { showDetails = true })
-    SheetRow(if (pinned) "Unpin from Speed dial" else "Pin to Speed dial", Icons.Default.PushPin, onClick = {
-        scope.launch {
-            settings.setPinned(pinKey, !pinned)
-            messenger.show(if (!pinned) "Pinned to Speed dial" else "Unpinned from Speed dial")
-        }
-    })
+    if (!isLocalAlbum) {
+        SheetRow(if (pinned) "Unpin from Speed dial" else "Pin to Speed dial", Icons.Default.PushPin, onClick = {
+            scope.launch {
+                settings.setPinned(pinKey, !pinned)
+                messenger.show(if (!pinned) "Pinned to Speed dial" else "Unpinned from Speed dial")
+            }
+        })
+    }
 
     if (showPicker) {
         PlaylistPickerSheet(tracks = tracks, title = album.name, onDismiss = { showPicker = false }, repo = repo, messenger = messenger, playlistEvents = playlistEvents)
@@ -548,9 +668,13 @@ private fun ArtistSheetContent(
         }
     }
 
+    val caps = repo.capabilitiesFor(artist.id)
+    val isLocalArtist = GlobalId.isDeviceLocal(artist.id) || caps == BackendCapabilities.DEVICE_LOCAL
+
     SheetHeader(
-        title = artist.name, subtitle = "${artist.albumCount} albums", starred = starred, starEnabled = true,
+        title = artist.name, subtitle = "${artist.albumCount} albums", starred = starred, starEnabled = !isLocalArtist,
         onStar = {
+            if (isLocalArtist) return@SheetHeader
             val next = !starred
             starred = next
             scope.launch {
@@ -590,23 +714,26 @@ private fun ArtistSheetContent(
             shareText(context, artist.name)
             onDismiss()
         },
+        showSaveToPlaylist = !isLocalArtist && caps.supportsServerPlaylists,
     )
     SheetRow("Play all", Icons.Default.PlayArrow, onClick = { withTracks { player.playAll(it, source = artist.name) } }, enabled = !gathering)
     SheetRow("Shuffle all", Icons.Default.Shuffle, onClick = { withTracks { player.playAll(it, shuffle = true, source = artist.name) } }, enabled = !gathering)
     SheetRow("Add all to queue", Icons.Default.QueueMusic, onClick = { withTracks { player.addAllToEnd(it) } }, enabled = !gathering)
-    SheetRow("Start radio", Icons.Default.Radio, onClick = {
-        // Seed with one of the artist's top songs; it starts instantly.
-        scope.launch {
-            val seed = (repo.topSongs(artist.name, 5) as? Result.Ok)?.value?.firstOrNull()
-            if (seed == null) {
-                messenger.show("No tracks found for ${artist.name}")
-            } else {
-                player.startRadio(seed) { messenger.show("Your library is empty") }
-                onDismiss()
-                onStartRadio()
+    if (!isLocalArtist && caps.supportsRadioMix) {
+        SheetRow("Start radio", Icons.Default.Radio, onClick = {
+            // Seed with one of the artist's top songs; it starts instantly.
+            scope.launch {
+                val seed = (repo.topSongs(artist.name, 5, GlobalId.profileIdOrNull(artist.id)) as? Result.Ok)?.value?.firstOrNull()
+                if (seed == null) {
+                    messenger.show("No tracks found for ${artist.name}")
+                } else {
+                    player.startRadio(seed) { messenger.show("Your library is empty") }
+                    onDismiss()
+                    onStartRadio()
+                }
             }
-        }
-    })
+        })
+    }
     if (showPicker) {
         val tracks = artistTracksForPlaylist ?: emptyList()
         PlaylistPickerSheet(
@@ -639,6 +766,8 @@ private fun PlaylistSheetContent(
     val isVirtual = playlist.id == FAVORITE_SONGS_PLAYLIST_ID
     val isCached = playlist.id == com.feishin.mobile.data.cache.CACHED_SONGS_PLAYLIST_ID
     val isBuiltIn = isVirtual || isCached
+    val caps = repo.capabilitiesFor(playlist.id)
+    val canEditServerPlaylist = !isBuiltIn && caps.supportsServerPlaylists
     val groupId = if (isVirtual) "favorites" else "playlist:${playlist.id}"
     val groupType = if (isVirtual) "favorites" else "playlist"
     val scope = rememberCoroutineScope()
@@ -673,6 +802,7 @@ private fun PlaylistSheetContent(
             shareText(context, playlist.name)
             onDismiss()
         },
+        showSaveToPlaylist = isBuiltIn || caps.supportsServerPlaylists,
     )
     SheetRow("Play", Icons.Default.PlayArrow, onClick = {
         if (tracks.isNotEmpty()) player.playAll(tracks, source = playlist.name)
@@ -747,10 +877,10 @@ private fun PlaylistSheetContent(
     if (showPicker) {
         PlaylistPickerSheet(tracks = tracks, title = playlist.name, onDismiss = { showPicker = false }, repo = repo, messenger = messenger, playlistEvents = playlistEvents)
     }
-    if (!isBuiltIn && onDelete != null) {
-        // Only a user-created playlist can be deleted; Favorites and Cached are
-        // views over other data, not playlists. The confirmation lives with the
-        // caller so it outlives this sheet closing.
+    if (canEditServerPlaylist && onDelete != null) {
+        // Only a user-created playlist on a playlist-capable backend can be deleted;
+        // Favorites and Cached are views over other data, not playlists. The confirmation
+        // lives with the caller so it outlives this sheet closing.
         SheetRow("Delete playlist", Icons.Default.Delete, onClick = {
             onDismiss()
             onDelete(playlist)
@@ -800,21 +930,38 @@ fun PlaylistPickerSheet(
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        val filterResult = remember(tracks, playlists) {
+            filterPlaylistsForTracks(tracks, playlists.orEmpty(), repo::capabilitiesFor)
+        }
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
             Text("Save to playlist", style = MaterialTheme.typography.titleLarge)
             Text(title, style = MaterialTheme.typography.bodyMedium, color = VusicColors.SecondaryText, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(12.dp))
-            SheetRow("New playlist", Icons.Default.Add, onClick = { showNew = true })
+            SheetRow(
+                label = "New playlist",
+                icon = Icons.Default.Add,
+                onClick = { showNew = true },
+                enabled = filterResult.canCreatePlaylist,
+                trailing = if (!filterResult.canCreatePlaylist) "Unavailable" else null,
+            )
+            filterResult.helperMessage?.let { msg ->
+                Text(
+                    text = msg,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VusicColors.SecondaryText,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            }
             val list = playlists
-            if (list == null) {
+            if (list == null && filterResult.helperMessage == null) {
                 Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-            } else if (list.isEmpty()) {
+            } else if (filterResult.helperMessage == null && filterResult.playlists.isEmpty()) {
                 Text("No playlists yet — create one above.", color = VusicColors.SecondaryText, modifier = Modifier.padding(vertical = 12.dp))
-            } else {
+            } else if (filterResult.playlists.isNotEmpty()) {
                 LazyColumn(Modifier.fillMaxWidth()) {
-                    items(list, key = { it.id }, contentType = { "item" }) { p ->
+                    items(filterResult.playlists, key = { it.id }, contentType = { "item" }) { p ->
                         Row(
                             Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -899,6 +1046,9 @@ fun PlaylistPickerSheet(
     }
 
     if (showNew) {
+        val targetProfileId = remember(tracks, playlists) {
+            filterPlaylistsForTracks(tracks, playlists.orEmpty(), repo::capabilitiesFor).owningProfileId
+        }
         var name by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showNew = false },
@@ -919,7 +1069,7 @@ fun PlaylistPickerSheet(
                         // Same ordering rule as performAdd(): dismiss only after
                         // the work is done, since dismissing cancels this scope.
                         scope.launch {
-                            when (val res = repo.createPlaylist(trimmed, tracks.map { it.id })) {
+                            when (val res = repo.createPlaylist(trimmed, tracks.map { it.id }, targetProfileId)) {
                                 is Result.Ok -> {
                                     messenger.show("Created playlist $trimmed")
                                     // The event carries the server id, not the

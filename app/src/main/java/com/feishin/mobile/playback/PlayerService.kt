@@ -183,8 +183,8 @@ class PlayerService : MediaLibraryService() {
                 for (oldId in old) {
                     if (oldId != id) retriedMediaIds.remove(oldId)
                 }
-                // "Now playing" scrobble + reset the submission rule for the new track (never for local files).
-                if (!isLocal(mediaItem)) {
+                // "Now playing" scrobble + reset the submission rule for the new track (only when backend supports scrobbling).
+                if (repo.capabilitiesFor(id).supportsScrobbling) {
                     scope.launch { repo.scrobble(id, submission = false) }
                 }
                 startTicker()
@@ -195,7 +195,7 @@ class PlayerService : MediaLibraryService() {
                 if (playbackState == Player.STATE_ENDED) {
                     val item = player?.currentMediaItem
                     val id = item?.mediaId
-                    if (id != null && !isLocal(item) && scrobblePolicy.onTrackEnded(id, player?.duration ?: 0L)) {
+                    if (id != null && repo.capabilitiesFor(id).supportsScrobbling && scrobblePolicy.onTrackEnded(id, player?.duration ?: 0L)) {
                         scope.launch { repo.scrobble(id, submission = true) }
                     }
                 }
@@ -398,7 +398,7 @@ class PlayerService : MediaLibraryService() {
                 val p = player ?: break
                 val item = p.currentMediaItem
                 val id = item?.mediaId
-                if (id != null && !isLocal(item) && p.isPlaying) {
+                if (id != null && repo.capabilitiesFor(id).supportsScrobbling && p.isPlaying) {
                     val submit = scrobblePolicy.onProgress(
                         id = id,
                         positionMs = p.currentPosition,

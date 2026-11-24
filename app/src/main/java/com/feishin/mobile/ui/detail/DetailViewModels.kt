@@ -9,6 +9,7 @@ import com.feishin.mobile.domain.model.ArtistInfo
 import com.feishin.mobile.domain.model.PlaylistDetail
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
+import com.feishin.mobile.core.common.GlobalId
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.data.favorites.FAVORITE_SONGS_PLAYLIST_ID
@@ -130,7 +131,7 @@ class ArtistDetailViewModel @Inject constructor(
     fun loadExtras(artistName: String) {
         viewModelScope.launch {
             _info.value = (repo.artistInfo(id) as? Result.Ok)?.value
-            _topSongs.value = when (val r = repo.topSongs(artistName, 10)) {
+            _topSongs.value = when (val r = repo.topSongs(artistName, 10, GlobalId.profileIdOrNull(id))) {
                 is Result.Ok -> if (r.value.isEmpty()) UiState.Empty else UiState.Data(r.value)
                 is Result.Err -> UiState.Empty
             }

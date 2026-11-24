@@ -3,6 +3,7 @@ package com.feishin.mobile.ui.settings
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.data.cache.LibraryRefresh
 import com.feishin.mobile.data.cache.MetadataCacheKeys
+import com.feishin.mobile.domain.repo.BackendRegistry
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.domain.repo.ScanStatus
 import com.feishin.mobile.ui.components.UiMessenger
@@ -23,6 +24,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -160,12 +162,14 @@ class ScanCoordinator(
     private val delayMs: Long = DEFAULT_POLL_INTERVAL_MS,
     private val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
     private val ticker: (suspend (Long) -> Unit)? = null,
+    private val backends: BackendRegistry? = null,
 ) {
     @Inject
     constructor(
         repo: MusicDataRepository,
         libraryRefresh: LibraryRefresh,
         messenger: UiMessenger,
+        backends: BackendRegistry,
     ) : this(
         repo = repo,
         libraryRefresh = libraryRefresh,
@@ -174,63 +178,143 @@ class ScanCoordinator(
         delayMs = DEFAULT_POLL_INTERVAL_MS,
         timeoutMs = DEFAULT_TIMEOUT_MS,
         ticker = null,
+        backends = backends,
     )
     private val scope = externalScope ?: CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val _state = MutableStateFlow<ScanUiState>(ScanUiState.Idle())
     val state: StateFlow<ScanUiState> = _state.asStateFlow()
 
-    private var pollingJob: Job? = null
+    private val _profileStates = MutableStateFlow<Map<String, ScanUiState>>(emptyMap())
+    val profileStates: StateFlow<Map<String, ScanUiState>> = _profileStates.asStateFlow()
+
+    private val pollingJobs = mutableMapOf<String, Job>()
+
+    private fun primaryScanProfileId(): String? =
+        backends?.enabled()?.firstOrNull { it.capabilities.supportsLibraryScan }?.profile?.id
+
+    private fun currentStateFor(profileId: String?): ScanUiState =
+        if (profileId == null) _state.value else _profileStates.value[profileId] ?: ScanUiState.Idle()
+
+    private fun updateStateFor(
+        profileId: String?,
+        next: ScanUiState,
+        passiveRefresh: Boolean = false,
+    ) {
+        if (profileId != null) {
+            _profileStates.update { it + (profileId to next) }
+        }
+        if (profileId == null || !passiveRefresh ||
+            (_state.value !is ScanUiState.Scanning && _state.value !is ScanUiState.Finished)
+        ) {
+            _state.value = next
+        }
+    }
+
+    private suspend fun executeStartScan(profileId: String?): Result<Unit> = when {
+        profileId == null -> repo.startScan()
+        backends != null -> backends.get(profileId)?.startScan() ?: Result.Err("Server not found")
+        else -> repo.startScan(profileId)
+    }
+
+    private suspend fun executeScanStatus(profileId: String?): Result<ScanStatus> = when {
+        profileId == null -> repo.scanStatus()
+        backends != null -> backends.get(profileId)?.scanStatus() ?: Result.Err("Server not found")
+        else -> repo.scanStatus(profileId)
+    }
 
     fun startScan() {
-        if (_state.value is ScanUiState.Scanning) return
-        val prev = _state.value
+        val targetId = primaryScanProfileId()
+        if (targetId != null) startScan(targetId) else startScanInternal(null)
+    }
+
+    fun startScan(profileId: String) {
+        startScanInternal(profileId)
+    }
+
+    private fun startScanInternal(profileId: String?) {
+        val prev = currentStateFor(profileId)
+        if (prev is ScanUiState.Scanning) return
+        if (profileId != null && backends != null && backends.get(profileId) == null) {
+            val err = "Server not found"
+            updateStateFor(
+                profileId,
+                ScanUiState.Error(
+                    message = err,
+                    count = prev.count,
+                    folderCount = prev.folderCount,
+                    lastScan = prev.lastScan,
+                ),
+            )
+            messenger.show(err)
+            return
+        }
         scope.launch {
-            when (val res = repo.startScan()) {
+            when (val res = executeStartScan(profileId)) {
                 is Result.Err -> {
                     val err = mapScanError(res.cause, res.message)
-                    _state.value = ScanUiState.Error(
-                        message = err,
-                        count = prev.count,
-                        folderCount = prev.folderCount,
-                        lastScan = prev.lastScan,
+                    updateStateFor(
+                        profileId,
+                        ScanUiState.Error(
+                            message = err,
+                            count = prev.count,
+                            folderCount = prev.folderCount,
+                            lastScan = prev.lastScan,
+                        ),
                     )
                     messenger.show(err)
                 }
                 is Result.Ok -> {
-                    _state.value = ScanUiState.Scanning(
-                        count = 0,
-                        folderCount = null,
-                        lastScan = prev.lastScan,
+                    updateStateFor(
+                        profileId,
+                        ScanUiState.Scanning(
+                            count = 0,
+                            folderCount = null,
+                            lastScan = prev.lastScan,
+                        ),
                     )
-                    startPolling()
+                    startPolling(profileId)
                 }
             }
         }
     }
 
     fun refreshStatus() {
-        if (_state.value is ScanUiState.Scanning) return
+        val targetId = primaryScanProfileId()
+        if (targetId != null) refreshStatus(targetId) else refreshStatusInternal(null)
+    }
+
+    fun refreshStatus(profileId: String) {
+        refreshStatusInternal(profileId)
+    }
+
+    private fun refreshStatusInternal(profileId: String?) {
+        if (currentStateFor(profileId) is ScanUiState.Scanning) return
         scope.launch {
-            when (val res = repo.scanStatus()) {
+            when (val res = executeScanStatus(profileId)) {
                 is Result.Ok -> {
                     val s = res.value
+                    val cur = currentStateFor(profileId)
                     if (s.scanning) {
-                        _state.value = ScanUiState.Scanning(
-                            count = s.count,
-                            folderCount = s.folderCount,
-                            lastScan = s.lastScan ?: _state.value.lastScan,
-                        )
-                        startPolling()
-                    } else {
-                        val cur = _state.value
-                        if (cur !is ScanUiState.Finished) {
-                            _state.value = ScanUiState.Idle(
+                        updateStateFor(
+                            profileId,
+                            ScanUiState.Scanning(
                                 count = s.count,
                                 folderCount = s.folderCount,
                                 lastScan = s.lastScan ?: cur.lastScan,
-                            )
-                        }
+                            ),
+                        )
+                        startPolling(profileId)
+                    } else if (cur !is ScanUiState.Finished) {
+                        updateStateFor(
+                            profileId,
+                            ScanUiState.Idle(
+                                count = s.count,
+                                folderCount = s.folderCount,
+                                lastScan = s.lastScan ?: cur.lastScan,
+                            ),
+                            passiveRefresh = true,
+                        )
                     }
                 }
                 is Result.Err -> {
@@ -240,19 +324,23 @@ class ScanCoordinator(
         }
     }
 
-    private fun startPolling() {
-        pollingJob?.cancel()
-        pollingJob = scope.launch {
+    private fun startPolling(profileId: String?) {
+        val jobKey = profileId ?: DEFAULT_JOB_KEY
+        val job = scope.launch {
             var elapsedMs = 0L
             var consecutiveFailures = 0
             while (isActive) {
+                val cur = currentStateFor(profileId)
                 if (elapsedMs >= timeoutMs) {
                     val msg = "Library scan timed out"
-                    _state.value = ScanUiState.Error(
-                        message = msg,
-                        count = _state.value.count,
-                        folderCount = _state.value.folderCount,
-                        lastScan = _state.value.lastScan,
+                    updateStateFor(
+                        profileId,
+                        ScanUiState.Error(
+                            message = msg,
+                            count = cur.count,
+                            folderCount = cur.folderCount,
+                            lastScan = cur.lastScan,
+                        ),
                     )
                     messenger.show(msg)
                     break
@@ -265,38 +353,49 @@ class ScanCoordinator(
                 }
                 elapsedMs += delayMs
 
-                when (val res = repo.scanStatus()) {
+                when (val res = executeScanStatus(profileId)) {
                     is Result.Ok -> {
                         consecutiveFailures = 0
                         val s = res.value
+                        val latest = currentStateFor(profileId)
                         if (s.scanning) {
-                            _state.value = ScanUiState.Scanning(
-                                count = s.count,
-                                folderCount = s.folderCount,
-                                lastScan = s.lastScan ?: _state.value.lastScan,
+                            updateStateFor(
+                                profileId,
+                                ScanUiState.Scanning(
+                                    count = s.count,
+                                    folderCount = s.folderCount,
+                                    lastScan = s.lastScan ?: latest.lastScan,
+                                ),
                             )
                         } else {
-                            _state.value = ScanUiState.Finished(
-                                count = s.count,
-                                folderCount = s.folderCount,
-                                lastScan = s.lastScan ?: _state.value.lastScan,
+                            updateStateFor(
+                                profileId,
+                                ScanUiState.Finished(
+                                    count = s.count,
+                                    folderCount = s.folderCount,
+                                    lastScan = s.lastScan ?: latest.lastScan,
+                                ),
                             )
                             libraryRefresh.invalidateAll()
                             libraryRefresh.emitRefreshed(MetadataCacheKeys.ARTISTS)
                             libraryRefresh.emitRefreshed(MetadataCacheKeys.PLAYLISTS)
-                            libraryRefresh.emitRefreshed("albums:alphabeticalByName:0")
+                            libraryRefresh.emitRefreshed(MetadataCacheKeys.albums("alphabeticalByName", 0))
                             break
                         }
                     }
                     is Result.Err -> {
                         consecutiveFailures++
                         if (consecutiveFailures >= 3) {
+                            val latest = currentStateFor(profileId)
                             val msg = mapScanError(res.cause, res.message)
-                            _state.value = ScanUiState.Error(
-                                message = msg,
-                                count = _state.value.count,
-                                folderCount = _state.value.folderCount,
-                                lastScan = _state.value.lastScan,
+                            updateStateFor(
+                                profileId,
+                                ScanUiState.Error(
+                                    message = msg,
+                                    count = latest.count,
+                                    folderCount = latest.folderCount,
+                                    lastScan = latest.lastScan,
+                                ),
                             )
                             messenger.show(msg)
                             break
@@ -305,14 +404,26 @@ class ScanCoordinator(
                 }
             }
         }
+        synchronized(pollingJobs) {
+            pollingJobs.put(jobKey, job)?.cancel()
+        }
+    }
+
+    fun cancelPolling(profileId: String) {
+        synchronized(pollingJobs) {
+            pollingJobs.remove(profileId)?.cancel()
+        }
     }
 
     fun cancelPolling() {
-        pollingJob?.cancel()
-        pollingJob = null
+        synchronized(pollingJobs) {
+            pollingJobs.values.forEach { it.cancel() }
+            pollingJobs.clear()
+        }
     }
 
     companion object {
+        private const val DEFAULT_JOB_KEY = "__default__"
         const val DEFAULT_POLL_INTERVAL_MS = 1500L
         const val DEFAULT_TIMEOUT_MS = 15 * 60 * 1000L
     }
