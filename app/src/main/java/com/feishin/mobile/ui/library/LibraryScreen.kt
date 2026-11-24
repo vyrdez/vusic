@@ -9,7 +9,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -83,7 +85,10 @@ import com.feishin.mobile.core.common.UiState
 import com.feishin.mobile.data.cache.CACHED_SONGS_PLAYLIST_ID
 import com.feishin.mobile.data.favorites.FAVORITE_SONGS_PLAYLIST_ID
 import com.feishin.mobile.data.settings.LayoutMode
+import com.feishin.mobile.domain.model.BackendType
 import com.feishin.mobile.domain.model.PlaylistCover
+import com.feishin.mobile.domain.model.ProfileCredentials
+import com.feishin.mobile.domain.model.ServerProfile
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.playback.PlayerManager
 import com.feishin.mobile.ui.EmptyBox
@@ -102,6 +107,53 @@ import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.components.rememberSavableGridState
 import com.feishin.mobile.ui.components.rememberSavableListState
 import com.feishin.mobile.ui.theme.VusicSpacing
+
+private fun backendTypeLabel(type: BackendType): String = when (type) {
+    BackendType.NAVIDROME -> "Navidrome"
+    BackendType.OPENSUBSONIC -> "OpenSubsonic"
+    BackendType.JELLYFIN -> "Jellyfin"
+    BackendType.GOOGLE_DRIVE -> "Google Drive"
+}
+
+private fun backendTypeLabel(rawType: String): String =
+    BackendType.entries.firstOrNull { it.name.equals(rawType, ignoreCase = true) }
+        ?.let(::backendTypeLabel)
+        ?: rawType
+
+private fun profileUsernameLabel(profile: ServerProfile): String = when (val c = profile.credentials) {
+    is ProfileCredentials.Subsonic -> c.username
+    is ProfileCredentials.Jellyfin -> c.username
+    is ProfileCredentials.GoogleDrive -> c.accountEmail
+}
+
+private fun resolveLibraryTitle(
+    sourceFilter: String,
+    isDeviceMode: Boolean,
+    showDeviceFiles: Boolean,
+    profiles: List<ServerProfile>,
+    enabledProfiles: List<ServerProfile>,
+): String {
+    if (isDeviceMode) return "Device files"
+    val filter = sourceFilter.trim()
+    return when {
+        filter.isBlank() || filter.equals("ALL", ignoreCase = true) -> {
+            if (enabledProfiles.size > 1 || (showDeviceFiles && profiles.isNotEmpty())) {
+                "All sources"
+            } else {
+                "Library"
+            }
+        }
+        filter.startsWith("TYPE:", ignoreCase = true) ->
+            backendTypeLabel(filter.substringAfter(":").trim())
+        filter.startsWith("PROFILE:", ignoreCase = true) -> {
+            val pid = filter.substringAfter(":").trim()
+            profiles.firstOrNull { it.id == pid }?.name?.takeIf { it.isNotBlank() } ?: "Library"
+        }
+        else -> {
+            profiles.firstOrNull { it.id == filter }?.name?.takeIf { it.isNotBlank() } ?: "Library"
+        }
+    }
+}
 
 private fun tabLabel(t: LibraryTab) = when (t) {
     LibraryTab.PLAYLISTS -> "Playlists"
@@ -144,9 +196,22 @@ fun LibraryScreen(
     val query = queries[tab].orEmpty()
 
     val settings by vm.settingsFlow.collectAsStateWithLifecycle(initialValue = null)
+    val profiles by vm.profiles.collectAsStateWithLifecycle()
+    val sourceFilter by vm.librarySourceFilter.collectAsStateWithLifecycle()
+    val healthState by vm.healthState.collectAsStateWithLifecycle()
     val showDeviceFiles = settings?.showDeviceFiles == true
-    val isDeviceMode = showDeviceFiles && settings?.libraryViewMode == "DEVICE"
-    val currentTitle = if (isDeviceMode) "Device files" else "Library"
+    val enabledProfiles = remember(profiles) { profiles.filter { it.enabled } }
+    val canSwitchSource = showDeviceFiles || profiles.isNotEmpty()
+    val isDeviceMode = showDeviceFiles && sourceFilter.equals("DEVICE", ignoreCase = true)
+    val currentTitle = remember(sourceFilter, isDeviceMode, showDeviceFiles, profiles, enabledProfiles) {
+        resolveLibraryTitle(
+            sourceFilter = sourceFilter,
+            isDeviceMode = isDeviceMode,
+            showDeviceFiles = showDeviceFiles,
+            profiles = profiles,
+            enabledProfiles = enabledProfiles,
+        )
+    }
     var showViewMySheet by remember { mutableStateOf(false) }
 
     // The nav arg is authoritative only the first time each value is seen
@@ -161,49 +226,55 @@ fun LibraryScreen(
                 .padding(start = VusicSpacing.ScreenHorizontal, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = if (showDeviceFiles) {
-                    Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable { showViewMySheet = true }
-                        .padding(vertical = 4.dp, horizontal = 4.dp)
-                } else Modifier,
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterStart,
             ) {
-                Text(
-                    currentTitle,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = VusicColors.Accent,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.semantics { heading() },
-                )
-                if (showDeviceFiles) {
-                    Spacer(Modifier.width(8.dp))
-                    val chevronRotation by animateFloatAsState(
-                        targetValue = if (showViewMySheet) 180f else 0f,
-                        animationSpec = tween(250),
-                        label = "chevron",
-                    )
-                    Box(
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = if (canSwitchSource) {
                         Modifier
-                            .size(26.dp)
-                            .clip(CircleShape)
-                            .background(VusicColors.SurfaceHigh),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Switch library source",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier
-                                .size(18.dp)
-                                .graphicsLayer { rotationZ = chevronRotation },
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { showViewMySheet = true }
+                            .padding(vertical = 4.dp, horizontal = 4.dp)
+                    } else Modifier,
+                ) {
+                    Text(
+                        currentTitle,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = VusicColors.Accent,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .semantics { heading() },
+                    )
+                    if (canSwitchSource) {
+                        Spacer(Modifier.width(8.dp))
+                        val chevronRotation by animateFloatAsState(
+                            targetValue = if (showViewMySheet) 180f else 0f,
+                            animationSpec = tween(250),
+                            label = "chevron",
                         )
+                        Box(
+                            Modifier
+                                .size(26.dp)
+                                .clip(CircleShape)
+                                .background(VusicColors.SurfaceHigh),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Switch library source",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .graphicsLayer { rotationZ = chevronRotation },
+                            )
+                        }
                     }
                 }
             }
-            Spacer(Modifier.weight(1f))
             if (!isDeviceMode) {
                 IconButton(onClick = { searchOpen = !searchOpen }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.Search, contentDescription = "Search library")
@@ -640,8 +711,20 @@ fun LibraryScreen(
     }
 
     if (showViewMySheet) {
-        val serverUrl by vm.serverUrl.collectAsStateWithLifecycle()
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val selectFilter: (String) -> Unit = { key ->
+            vm.setLibrarySourceFilter(key)
+            scope.launch { sheetState.hide() }.invokeOnCompletion { showViewMySheet = false }
+        }
+        val distinctTypes = remember(enabledProfiles) {
+            enabledProfiles.map { it.type }.distinct()
+        }
+        val allSubtitle = when (enabledProfiles.size) {
+            0 -> "No active remote servers"
+            1 -> "1 active server · ${enabledProfiles.single().name}"
+            else -> "${enabledProfiles.size} active servers"
+        }
+
         ModalBottomSheet(
             onDismissRequest = { showViewMySheet = false },
             sheetState = sheetState,
@@ -651,6 +734,7 @@ fun LibraryScreen(
             Column(
                 Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp)
                     .padding(bottom = 32.dp),
             ) {
@@ -660,77 +744,106 @@ fun LibraryScreen(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(bottom = 16.dp),
                 )
-                val serverSubtitle = serverUrl.takeIf { it.isNotBlank() } ?: "Server music"
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            vm.setLibraryViewMode("SERVER")
-                            scope.launch { sheetState.hide() }.invokeOnCompletion { showViewMySheet = false }
-                        }
-                        .padding(vertical = 12.dp, horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "Library",
-                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                            color = if (!isDeviceMode) com.feishin.mobile.ui.theme.VusicColors.Accent else MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            serverSubtitle,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        )
-                    }
-                    if (!isDeviceMode) {
-                        Icon(
-                            Icons.Default.Check,
-                            contentDescription = "Active",
-                            tint = com.feishin.mobile.ui.theme.VusicColors.Accent,
-                            modifier = Modifier.size(24.dp),
+                ViewMySourceRow(
+                    title = "All sources",
+                    subtitle = allSubtitle,
+                    selected = !isDeviceMode && sourceFilter.equals("ALL", ignoreCase = true),
+                    onClick = { selectFilter("ALL") },
+                )
+
+                if (distinctTypes.size > 1) {
+                    distinctTypes.forEach { type ->
+                        Spacer(Modifier.height(6.dp))
+                        val count = enabledProfiles.count { it.type == type }
+                        val typeKey = "TYPE:${type.name}"
+                        ViewMySourceRow(
+                            title = backendTypeLabel(type),
+                            subtitle = "$count ${if (count == 1) "server" else "servers"}",
+                            selected = !isDeviceMode && sourceFilter.equals(typeKey, ignoreCase = true),
+                            onClick = { selectFilter(typeKey) },
                         )
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            vm.setLibraryViewMode("DEVICE")
-                            scope.launch { sheetState.hide() }.invokeOnCompletion { showViewMySheet = false }
-                        }
-                        .padding(vertical = 12.dp, horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "Device files",
-                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                            color = if (isDeviceMode) com.feishin.mobile.ui.theme.VusicColors.Accent else MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            "Music stored on this device",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = com.feishin.mobile.ui.theme.VusicColors.SecondaryText,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        )
+
+                enabledProfiles.forEach { profile ->
+                    Spacer(Modifier.height(6.dp))
+                    val profileKey = "PROFILE:${profile.id}"
+                    val user = profileUsernameLabel(profile)
+                    val subtitleParts = buildList {
+                        add(backendTypeLabel(profile.type))
+                        if (user.isNotBlank()) add(user)
+                        if (profile.url.isNotBlank()) add(profile.url)
                     }
-                    if (isDeviceMode) {
-                        Icon(
-                            Icons.Default.Check,
-                            contentDescription = "Active",
-                            tint = com.feishin.mobile.ui.theme.VusicColors.Accent,
-                            modifier = Modifier.size(24.dp),
-                        )
+                    val degraded = healthState.profiles[profile.id]?.degraded == true
+                    val subtitle = if (degraded) {
+                        "${subtitleParts.joinToString(" · ")} · Degraded"
+                    } else {
+                        subtitleParts.joinToString(" · ")
                     }
+                    val isSelected = !isDeviceMode && (
+                        sourceFilter.equals(profileKey, ignoreCase = true) ||
+                            sourceFilter == profile.id
+                        )
+                    ViewMySourceRow(
+                        title = profile.name,
+                        subtitle = subtitle,
+                        selected = isSelected,
+                        onClick = { selectFilter(profileKey) },
+                    )
+                }
+
+                if (showDeviceFiles) {
+                    Spacer(Modifier.height(6.dp))
+                    ViewMySourceRow(
+                        title = "Device files",
+                        subtitle = "Music stored on this device",
+                        selected = isDeviceMode,
+                        onClick = { selectFilter("DEVICE") },
+                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ViewMySourceRow(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp, horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = if (selected) VusicColors.Accent else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = VusicColors.SecondaryText,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (selected) {
+            Icon(
+                Icons.Default.Check,
+                contentDescription = "Active",
+                tint = VusicColors.Accent,
+                modifier = Modifier.size(24.dp),
+            )
         }
     }
 }

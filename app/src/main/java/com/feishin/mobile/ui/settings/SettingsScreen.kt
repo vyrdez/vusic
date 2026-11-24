@@ -1,14 +1,20 @@
 package com.feishin.mobile.ui.settings
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import com.feishin.mobile.core.common.DeviceFilesFilter
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
@@ -19,11 +25,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Remove
@@ -43,6 +53,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -58,12 +69,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.feishin.mobile.BuildConfig
 import com.feishin.mobile.core.common.CacheSizePolicy
 import com.feishin.mobile.core.common.QualityPolicy
 import com.feishin.mobile.core.common.ReplayGainMode
+import com.feishin.mobile.domain.model.BackendCapabilities
+import com.feishin.mobile.domain.model.BackendType
+import com.feishin.mobile.domain.model.ProfileCredentials
+import com.feishin.mobile.domain.model.ServerInfo
+import com.feishin.mobile.domain.model.ServerProfile
+import com.feishin.mobile.domain.repo.ProfileHealth
+import com.feishin.mobile.ui.login.LoginScreen
+import com.feishin.mobile.ui.theme.LocalVusicDark
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.VusicControlColors
 import com.feishin.mobile.ui.theme.VusicControlDefaults
@@ -73,6 +98,8 @@ import com.feishin.mobile.data.settings.LayoutMode
 import com.feishin.mobile.ui.components.LocalMiniClearance
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.data.settings.ThemeMode
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyColumnState
 
 private enum class SettingsRoute {
     HOME, SERVER, APPEARANCE, SOUND, CONNECTIVITY, STORAGE, ABOUT
@@ -123,7 +150,11 @@ fun SettingsScreen(
     ) { r ->
         when (r) {
             SettingsRoute.HOME -> SettingsHome(vm, onOpen = { go(it) })
-            SettingsRoute.SERVER -> SubScreen("Server & Account", onBack = { go(SettingsRoute.HOME) }) {
+            SettingsRoute.SERVER -> SubScreen(
+                title = "Server & Account",
+                onBack = { go(SettingsRoute.HOME) },
+                scrollable = false,
+            ) {
                 ServerAccountScreen(vm, onLogout)
             }
             SettingsRoute.APPEARANCE -> SubScreen("Appearance & Layout", onBack = { go(SettingsRoute.HOME) }) {
@@ -146,7 +177,12 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SubScreen(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {
+private fun SubScreen(
+    title: String,
+    onBack: () -> Unit,
+    scrollable: Boolean = true,
+    content: @Composable () -> Unit,
+) {
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 12.dp),
@@ -157,13 +193,22 @@ private fun SubScreen(title: String, onBack: () -> Unit, content: @Composable ()
             }
             Text(title, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
         }
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(bottom = LocalMiniClearance.current),
-        ) {
-            content()
-            Spacer(Modifier.height(48.dp))
+        if (scrollable) {
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = LocalMiniClearance.current),
+            ) {
+                content()
+                Spacer(Modifier.height(48.dp))
+            }
+        } else {
+            Box(
+                Modifier.fillMaxSize()
+                    .padding(horizontal = 16.dp),
+            ) {
+                content()
+            }
         }
     }
 }
@@ -174,8 +219,28 @@ private fun SettingsHome(
     onOpen: (SettingsRoute) -> Unit,
 ) {
     val settings by vm.store.flow.collectAsStateWithLifecycle(initialValue = null)
-    val online by vm.network.isOnline.collectAsStateWithLifecycle()
+    val profiles by vm.profiles.collectAsStateWithLifecycle()
+    val online by vm.isOnline.collectAsStateWithLifecycle()
     val s = settings
+    val serverSummary = remember(profiles, s?.deviceFilesStandalone) {
+        when {
+            profiles.isEmpty() ->
+                if (s?.deviceFilesStandalone == true) "Device files only" else "Not signed in"
+            profiles.size == 1 -> {
+                val p = profiles.single()
+                val user = profileUsername(p).ifBlank { p.name }
+                "$user · ${p.url}"
+            }
+            else -> {
+                val active = profiles.filter { it.enabled }.ifEmpty { profiles }
+                val labels = active.take(3).joinToString(", ") {
+                    it.name.ifBlank { backendLabel(it.type) }
+                }
+                val suffix = if (active.size > 3) ", +${active.size - 3}" else ""
+                "${profiles.size} servers · $labels$suffix"
+            }
+        }
+    }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .padding(bottom = LocalMiniClearance.current),
@@ -191,7 +256,7 @@ private fun SettingsHome(
             SettingsHomeCard(
                 icon = Icons.Default.AccountCircle,
                 title = "Server & Account",
-                summary = vm.credentials.collectAsStateWithLifecycle().value?.let { "${it.username} · ${it.serverUrl}" } ?: "Not signed in",
+                summary = serverSummary,
                 onClick = { onOpen(SettingsRoute.SERVER) },
             )
             SettingsHomeCard(
@@ -266,108 +331,532 @@ private fun OfflineChip() {
 
 // ---------- Server & Account ----------
 
+private fun backendLabel(type: BackendType): String = when (type) {
+    BackendType.NAVIDROME -> "Navidrome"
+    BackendType.OPENSUBSONIC -> "OpenSubsonic"
+    BackendType.JELLYFIN -> "Jellyfin"
+    BackendType.GOOGLE_DRIVE -> "Google Drive"
+}
+
+private fun profileUsername(profile: ServerProfile): String = when (val c = profile.credentials) {
+    is ProfileCredentials.Subsonic -> c.username
+    is ProfileCredentials.Jellyfin -> c.username
+    is ProfileCredentials.GoogleDrive -> c.accountEmail
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
-    val creds by vm.credentials.collectAsStateWithLifecycle()
-    val test by vm.test.collectAsStateWithLifecycle()
-    val online by vm.network.isOnline.collectAsStateWithLifecycle()
-    val info by vm.serverInfo.collectAsStateWithLifecycle()
-    val scanState by vm.scanState.collectAsStateWithLifecycle()
+    val profiles by vm.profiles.collectAsStateWithLifecycle()
+    val testStates by vm.profileTestStates.collectAsStateWithLifecycle()
+    val profileServerInfos by vm.profileServerInfos.collectAsStateWithLifecycle()
+    val profileScanStates by vm.profileScanStates.collectAsStateWithLifecycle()
+    val healthState by vm.healthState.collectAsStateWithLifecycle()
+    val online by vm.isOnline.collectAsStateWithLifecycle()
     val counts by vm.libraryCounts.collectAsStateWithLifecycle()
-    var showLogout by androidx.compose.runtime.remember { mutableStateOf(false) }
-    var keepDownloads by androidx.compose.runtime.remember { mutableStateOf(true) }
-    var serverUrl by androidx.compose.runtime.remember(creds?.serverUrl) {
-        mutableStateOf(creds?.serverUrl.orEmpty())
+
+    var showAddBackend by rememberSaveable { mutableStateOf(false) }
+    var pendingRemoveProfile by remember { mutableStateOf<ServerProfile?>(null) }
+
+    var displayProfiles by remember(profiles) { mutableStateOf(profiles) }
+    val listState = rememberLazyListState()
+    val haptics = LocalHapticFeedback.current
+    val reorderState = rememberReorderableLazyColumnState(listState) { from, to ->
+        val fromIdx = displayProfiles.indexOfFirst { it.id == from.key }
+        val toIdx = displayProfiles.indexOfFirst { it.id == to.key }
+        if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx) {
+            val mutable = displayProfiles.toMutableList()
+            val item = mutable.removeAt(fromIdx)
+            mutable.add(toIdx, item)
+            displayProfiles = mutable
+        }
     }
 
     LaunchedEffect(Unit) { vm.refreshServerInfo() }
 
-    SettingsSection("SERVER")
-    SettingsCard {
-        InfoRow("Type", info?.product ?: "…")
-        InfoRow("API version", info?.apiVersion ?: "…")
-        if (!info?.extensions.isNullOrEmpty()) {
-            InfoRow("Extensions", info!!.extensions.take(4).joinToString(", "))
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(bottom = LocalMiniClearance.current + 48.dp),
+    ) {
+        item(key = "header") {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(Modifier.align(Alignment.CenterVertically)) {
+                    SettingsSection("SERVER PROFILES")
+                }
+                SettingsActionButton(
+                    label = "+ Add backend",
+                    onClick = { showAddBackend = true },
+                    modifier = Modifier.align(Alignment.CenterVertically),
+                )
+            }
         }
-        InfoRow("Server URL", creds?.serverUrl ?: "—")
-    }
-    var editing by androidx.compose.runtime.remember { mutableStateOf(false) }
-    if (!editing) {
-        ActionRow("Change server URL", creds?.serverUrl ?: "", buttonLabel = "Edit", onClick = { editing = true })
-    } else {
-        OutlinedTextField(
-            value = serverUrl, onValueChange = { serverUrl = it },
-            label = { Text("Server URL") }, singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        )
-        // Outlined pair, not borderless text buttons: same style as every row.
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SettingsActionButton(
-                label = "Save & test",
-                onClick = {
-                    editing = false
-                    vm.setServerUrl(serverUrl)
-                    vm.testConnection()
-                },
-            )
-            SettingsActionButton(label = "Cancel", onClick = { editing = false })
+
+        if (displayProfiles.isEmpty()) {
+            item(key = "empty_profiles") {
+                SettingsCard {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                        Text(
+                            "No remote servers configured",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Using device files only. Add a Navidrome or OpenSubsonic server to stream your remote library.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = VusicColors.SecondaryText,
+                        )
+                    }
+                }
+            }
+        }
+
+        itemsIndexed(
+            items = displayProfiles,
+            key = { _, profile -> profile.id },
+        ) { index, profile ->
+            ReorderableItem(reorderState, key = profile.id) { isDragging ->
+                val dragModifier = Modifier.draggableHandle(
+                    onDragStarted = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    },
+                    onDragStopped = {
+                        vm.reorderProfiles(displayProfiles.map { it.id })
+                    },
+                )
+                ServerProfileCard(
+                    profile = profile,
+                    rank = index + 1,
+                    canMoveUp = index > 0,
+                    canMoveDown = index < displayProfiles.lastIndex,
+                    isDragging = isDragging,
+                    dragHandleModifier = dragModifier,
+                    serverInfo = profileServerInfos[profile.id],
+                    testState = testStates[profile.id] ?: TestState.Idle,
+                    health = healthState.profiles[profile.id],
+                    scanState = profileScanStates[profile.id] ?: ScanUiState.Idle(),
+                    online = online,
+                    onMoveUp = { vm.moveProfile(profile.id, -1) },
+                    onMoveDown = { vm.moveProfile(profile.id, 1) },
+                    onToggleEnabled = { vm.setProfileEnabled(profile.id, it) },
+                    onSaveEdit = { updated ->
+                        vm.updateProfile(updated)
+                        vm.testProfileConnection(updated)
+                    },
+                    onTestConnection = { vm.testProfileConnection(profile) },
+                    onScan = { vm.startScan(profile.id) },
+                    onRequestRemove = { pendingRemoveProfile = profile },
+                )
+            }
+        }
+
+        item(key = "library_and_account") {
+            Column(Modifier.fillMaxWidth()) {
+                SettingsSection("LIBRARY")
+                SettingsCard {
+                    InfoRow("Artists", counts.artists.toString(), showDivider = true)
+                    InfoRow("Albums", counts.albums.toString(), showDivider = true)
+                    InfoRow("Playlists", counts.playlists.toString(), showDivider = true)
+                    InfoRow("Downloaded songs", counts.downloaded.toString())
+                }
+
+                SettingsSection("ACCOUNT")
+                SettingsCard {
+                    InfoRow("Active servers", "${profiles.count { it.enabled }} / ${profiles.size}", showDivider = true)
+                    InfoRow("Device", vm.deviceName)
+                }
+            }
         }
     }
-    when (val t = test) {
-        is TestState.Ok -> Text("Connection OK", color = VusicColors.OnAccent, style = MaterialTheme.typography.bodySmall)
-        is TestState.Failed -> Text("Failed: ${t.message}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        else -> Unit
-    }
 
-    SettingsSection("LIBRARY")
-    SettingsCard {
-        InfoRow("Artists", counts.artists.toString())
-        InfoRow("Albums", counts.albums.toString())
-        InfoRow("Playlists", counts.playlists.toString())
-        InfoRow("Downloaded songs", counts.downloaded.toString())
-    }
-    ScanLibraryRow(
-        state = scanState,
-        online = online,
-        onScan = { vm.startScan() },
-    )
-
-    SettingsSection("ACCOUNT")
-    SettingsCard {
-        InfoRow("Username", creds?.username ?: "—")
-        InfoRow("Device", vm.deviceName)
-    }
-    Spacer(Modifier.height(12.dp))
-    // Destructive, so red — but a row-style wrap-content button like every
-    // other action, with the confirm dialog.
-    SettingsActionButton(label = "Log out", danger = true, onClick = { showLogout = true })
-
-    if (showLogout) {
+    pendingRemoveProfile?.let { target ->
+        var keepDownloads by remember(target.id) { mutableStateOf(true) }
         AlertDialog(
-            onDismissRequest = { showLogout = false },
-            title = { Text("Log out?") },
+            onDismissRequest = { pendingRemoveProfile = null },
+            title = { Text("Remove ${target.name}?") },
             text = {
                 Column {
-                    Text("Your credentials, cached library data and caches will be cleared.")
+                    Text("Credentials and cached library metadata for this server will be removed.")
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Keep downloaded music", modifier = Modifier.weight(1f))
+                        Text(
+                            "Keep downloaded music",
+                            modifier = Modifier.weight(1f).padding(end = 8.dp),
+                        )
                         Switch(
                             checked = keepDownloads,
                             onCheckedChange = { keepDownloads = it },
-                            colors = com.feishin.mobile.ui.theme.VusicControlDefaults.switchColors(),
+                            colors = VusicControlDefaults.switchColors(),
                         )
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    showLogout = false
-                    vm.logout(keepDownloads) { onLogout() }
-                }) { Text("Log out") }
+                TextButton(
+                    onClick = {
+                        pendingRemoveProfile = null
+                        vm.removeProfile(target.id, keepDownloads) { onLogout() }
+                    },
+                ) { Text("Remove", color = DangerRed) }
             },
-            dismissButton = { TextButton(onClick = { showLogout = false }) { Text("Cancel") } },
+            dismissButton = {
+                TextButton(onClick = { pendingRemoveProfile = null }) { Text("Cancel") }
+            },
         )
+    }
+
+    if (showAddBackend) {
+        Dialog(
+            onDismissRequest = { showAddBackend = false },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false,
+            ),
+        ) {
+            LoginScreen(
+                messenger = vm.uiMessenger,
+                addMode = true,
+                onAdded = {
+                    showAddBackend = false
+                    vm.refreshServerInfo()
+                },
+                onCancel = { showAddBackend = false },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ServerProfileCard(
+    profile: ServerProfile,
+    rank: Int,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    isDragging: Boolean,
+    dragHandleModifier: Modifier,
+    serverInfo: ServerInfo?,
+    testState: TestState,
+    health: ProfileHealth?,
+    scanState: ScanUiState,
+    online: Boolean,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onToggleEnabled: (Boolean) -> Unit,
+    onSaveEdit: (ServerProfile) -> Unit,
+    onTestConnection: () -> Unit,
+    onScan: () -> Unit,
+    onRequestRemove: () -> Unit,
+) {
+    var editing by rememberSaveable(profile.id) { mutableStateOf(false) }
+    var editName by remember(profile.id, profile.name) { mutableStateOf(profile.name) }
+    var editUrl by remember(profile.id, profile.url) { mutableStateOf(profile.url) }
+    var editSelfSigned by remember(profile.id, profile.allowSelfSigned) {
+        mutableStateOf(profile.allowSelfSigned)
+    }
+    var editCleartext by remember(profile.id, profile.allowCleartext) {
+        mutableStateOf(profile.allowCleartext)
+    }
+
+    val dark = LocalVusicDark.current
+    val okColor = if (dark) Color(0xFF81C784) else Color(0xFF1B5E20)
+    val cardShape = RoundedCornerShape(12.dp)
+    val borderColor = when {
+        isDragging -> MaterialTheme.colorScheme.primary
+        health?.degraded == true -> VusicColors.Warning.copy(alpha = 0.7f)
+        else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    }
+    val borderWidth = if (isDragging) 1.5.dp else 1.dp
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(cardShape)
+            .background(VusicColors.SurfaceHigh)
+            .border(BorderStroke(borderWidth, borderColor), cardShape)
+            .padding(VusicSpacing.CardPadding),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FlowRow(
+                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                ) {
+                    Text(
+                        "#$rank",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                ) {
+                    Text(
+                        backendLabel(profile.type),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = onMoveUp,
+                    enabled = canMoveUp && !editing,
+                    modifier = Modifier.size(34.dp),
+                ) {
+                    Icon(
+                        Icons.Default.KeyboardArrowUp,
+                        contentDescription = "Move ${profile.name} up",
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                IconButton(
+                    onClick = onMoveDown,
+                    enabled = canMoveDown && !editing,
+                    modifier = Modifier.size(34.dp),
+                ) {
+                    Icon(
+                        Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Move ${profile.name} down",
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .then(dragHandleModifier),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Default.DragHandle,
+                        contentDescription = "Drag to reorder ${profile.name}",
+                        tint = VusicColors.SecondaryText,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Spacer(Modifier.width(4.dp))
+                Switch(
+                    checked = profile.enabled,
+                    onCheckedChange = onToggleEnabled,
+                    colors = VusicControlDefaults.switchColors(),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = profile.name,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = profile.url,
+            style = MaterialTheme.typography.bodySmall,
+            color = VusicColors.SecondaryText,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        val userLabel = profileUsername(profile)
+        if (userLabel.isNotBlank()) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "User: $userLabel",
+                style = MaterialTheme.typography.bodySmall,
+                color = VusicColors.SecondaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (serverInfo != null) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "${serverInfo.product} · API ${serverInfo.apiVersion}",
+                style = MaterialTheme.typography.bodySmall,
+                color = VusicColors.SecondaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        val extensions = profile.openSubsonicExtensions.rawNames
+        if (extensions.isNotEmpty()) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Extensions: ${extensions.joinToString(", ")}",
+                style = MaterialTheme.typography.bodySmall,
+                color = VusicColors.SecondaryText,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        Spacer(Modifier.height(6.dp))
+        when (testState) {
+            is TestState.Testing -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        "Testing connection…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VusicColors.SecondaryText,
+                    )
+                }
+            }
+            is TestState.Ok -> Text(
+                "Connection OK",
+                style = MaterialTheme.typography.bodySmall,
+                color = okColor,
+            )
+            is TestState.Failed -> Text(
+                "Failed: ${testState.message}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            TestState.Idle -> {
+                when {
+                    health?.degraded == true -> Text(
+                        "Degraded: ${health.lastError ?: "unreachable"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VusicColors.Warning,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    !profile.enabled -> Text(
+                        "Disabled",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VusicColors.SecondaryText,
+                    )
+                    health?.degraded == false -> Text(
+                        "Healthy",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = okColor,
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        if (!editing) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SettingsActionButton(
+                    label = "Edit",
+                    onClick = {
+                        editName = profile.name
+                        editUrl = profile.url
+                        editSelfSigned = profile.allowSelfSigned
+                        editCleartext = profile.allowCleartext
+                        editing = true
+                    },
+                )
+                SettingsActionButton(
+                    label = "Test connection",
+                    enabled = testState !is TestState.Testing,
+                    onClick = onTestConnection,
+                )
+                SettingsActionButton(
+                    label = "Remove",
+                    danger = true,
+                    onClick = onRequestRemove,
+                )
+            }
+        } else {
+            OutlinedTextField(
+                value = editName,
+                onValueChange = { editName = it },
+                label = { Text("Server name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            )
+            OutlinedTextField(
+                value = editUrl,
+                onValueChange = { editUrl = it },
+                label = { Text("Server URL") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+            )
+            SwitchRow(
+                label = "Allow self-signed certificate",
+                value = editSelfSigned,
+                onSet = { editSelfSigned = it },
+                showDivider = true,
+            )
+            SwitchRow(
+                label = "Allow cleartext HTTP",
+                value = editCleartext,
+                onSet = { editCleartext = it },
+            )
+            Spacer(Modifier.height(8.dp))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SettingsActionButton(
+                    label = "Save & test",
+                    enabled = editUrl.isNotBlank(),
+                    onClick = {
+                        editing = false
+                        onSaveEdit(
+                            profile.copy(
+                                name = editName.trim().ifBlank { profile.name },
+                                url = editUrl.trim(),
+                                allowSelfSigned = editSelfSigned,
+                                allowCleartext = editCleartext,
+                            ),
+                        )
+                    },
+                )
+                SettingsActionButton(
+                    label = "Cancel",
+                    onClick = { editing = false },
+                )
+            }
+        }
+
+        if (BackendCapabilities.forType(profile.type).supportsLibraryScan) {
+            Spacer(Modifier.height(8.dp))
+            SettingsDivider()
+            ScanLibraryRow(
+                state = scanState,
+                online = online && profile.enabled,
+                onScan = onScan,
+            )
+        }
     }
 }
 
@@ -922,7 +1411,7 @@ private fun BitrateChoiceRow(label: String, br: Int, fmt: String, onSet: (Int, S
 @Composable
 private fun ConnectivityScreen(vm: SettingsViewModel) {
     val settings by vm.store.flow.collectAsStateWithLifecycle(initialValue = null)
-    val online by vm.network.isOnline.collectAsStateWithLifecycle()
+    val online by vm.isOnline.collectAsStateWithLifecycle()
     val s = settings ?: return
     SettingsSection("OFFLINE")
     SettingsCard {

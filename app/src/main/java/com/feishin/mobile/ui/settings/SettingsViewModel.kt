@@ -14,6 +14,7 @@ import androidx.lifecycle.viewModelScope
 import com.feishin.mobile.BuildConfig
 import com.feishin.mobile.core.common.CacheSizePolicy
 import com.feishin.mobile.core.common.ReplayGainMode
+import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.data.auth.AuthRepository
 import com.feishin.mobile.data.cache.CachedTrackStore
 import com.feishin.mobile.data.cache.MetadataCache
@@ -24,9 +25,13 @@ import com.feishin.mobile.data.settings.BackgroundStyle
 import com.feishin.mobile.data.settings.LayoutMode
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.data.settings.ThemeMode
-import com.feishin.mobile.domain.repo.ScanStatus
+import com.feishin.mobile.domain.model.BackendCapabilities
+import com.feishin.mobile.domain.model.ProfileCredentials
 import com.feishin.mobile.domain.model.ServerInfo
+import com.feishin.mobile.domain.model.ServerProfile
+import com.feishin.mobile.domain.repo.FederatedHealthState
 import com.feishin.mobile.domain.repo.MusicDataRepository
+import com.feishin.mobile.domain.repo.ScanStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -37,8 +42,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -72,35 +79,116 @@ data class StorageStats(
     val queuedDownloads: Int = 0,
 )
 
-@HiltViewModel
-class SettingsViewModel @Inject constructor(
-    val store: SettingsStore,
-    private val repo: MusicDataRepository,
-    private val auth: AuthRepository,
+private class SettingsOptionalDeps(
     val downloads: DownloadRepository,
     val cache: MetadataCache,
     val offlineSync: OfflineSyncStore,
     val network: NetworkMonitor,
-    private val cachedTracks: CachedTrackStore,
-    private val streamCache: androidx.media3.datasource.cache.SimpleCache,
-    private val cacheEvictor: com.feishin.mobile.data.cache.LiveLruCacheEvictor,
-    private val downloadScheduler: com.feishin.mobile.data.download.DownloadScheduler,
-    private val imageLoader: coil.ImageLoader,
-    private val lyricsRepo: com.feishin.mobile.data.repo.LyricsRepository,
-    @ApplicationContext private val context: Context,
+    val cachedTracks: CachedTrackStore,
+    val streamCache: androidx.media3.datasource.cache.SimpleCache,
+    val cacheEvictor: com.feishin.mobile.data.cache.LiveLruCacheEvictor,
+    val downloadScheduler: com.feishin.mobile.data.download.DownloadScheduler,
+    val imageLoader: coil.ImageLoader,
+    val lyricsRepo: com.feishin.mobile.data.repo.LyricsRepository,
+    val context: Context,
+)
+
+@HiltViewModel
+class SettingsViewModel private constructor(
+    val store: SettingsStore,
+    private val repo: MusicDataRepository,
+    private val auth: AuthRepository,
+    deps: SettingsOptionalDeps?,
     val scanCoordinator: ScanCoordinator? = null,
     val libraryRefresh: com.feishin.mobile.data.cache.LibraryRefresh? = null,
     val messenger: com.feishin.mobile.ui.components.UiMessenger? = null,
 ) : ViewModel() {
 
+    val downloads: DownloadRepository? = deps?.downloads
+    val cache: MetadataCache? = deps?.cache
+    val offlineSync: OfflineSyncStore? = deps?.offlineSync
+    val network: NetworkMonitor? = deps?.network
+    private val cachedTracks: CachedTrackStore? = deps?.cachedTracks
+    private val streamCache: androidx.media3.datasource.cache.SimpleCache? = deps?.streamCache
+    private val cacheEvictor: com.feishin.mobile.data.cache.LiveLruCacheEvictor? = deps?.cacheEvictor
+    private val downloadScheduler: com.feishin.mobile.data.download.DownloadScheduler? = deps?.downloadScheduler
+    private val imageLoader: coil.ImageLoader? = deps?.imageLoader
+    private val lyricsRepo: com.feishin.mobile.data.repo.LyricsRepository? = deps?.lyricsRepo
+    private val context: Context? = deps?.context
+
+    @Inject
+    constructor(
+        store: SettingsStore,
+        repo: MusicDataRepository,
+        auth: AuthRepository,
+        downloads: DownloadRepository,
+        cache: MetadataCache,
+        offlineSync: OfflineSyncStore,
+        network: NetworkMonitor,
+        cachedTracks: CachedTrackStore,
+        streamCache: androidx.media3.datasource.cache.SimpleCache,
+        cacheEvictor: com.feishin.mobile.data.cache.LiveLruCacheEvictor,
+        downloadScheduler: com.feishin.mobile.data.download.DownloadScheduler,
+        imageLoader: coil.ImageLoader,
+        lyricsRepo: com.feishin.mobile.data.repo.LyricsRepository,
+        @ApplicationContext context: Context,
+        scanCoordinator: ScanCoordinator? = null,
+        libraryRefresh: com.feishin.mobile.data.cache.LibraryRefresh? = null,
+        messenger: com.feishin.mobile.ui.components.UiMessenger? = null,
+    ) : this(
+        store = store,
+        repo = repo,
+        auth = auth,
+        deps = SettingsOptionalDeps(
+            downloads = downloads,
+            cache = cache,
+            offlineSync = offlineSync,
+            network = network,
+            cachedTracks = cachedTracks,
+            streamCache = streamCache,
+            cacheEvictor = cacheEvictor,
+            downloadScheduler = downloadScheduler,
+            imageLoader = imageLoader,
+            lyricsRepo = lyricsRepo,
+            context = context,
+        ),
+        scanCoordinator = scanCoordinator,
+        libraryRefresh = libraryRefresh,
+        messenger = messenger,
+    )
+
+    internal constructor(
+        store: SettingsStore,
+        repo: MusicDataRepository,
+        auth: AuthRepository,
+        scanCoordinator: ScanCoordinator? = null,
+        libraryRefresh: com.feishin.mobile.data.cache.LibraryRefresh? = null,
+        messenger: com.feishin.mobile.ui.components.UiMessenger? = null,
+    ) : this(
+        store = store,
+        repo = repo,
+        auth = auth,
+        deps = null,
+        scanCoordinator = scanCoordinator,
+        libraryRefresh = libraryRefresh,
+        messenger = messenger,
+    )
+
+    val isOnline: StateFlow<Boolean> = network?.isOnline ?: MutableStateFlow(true)
+
+    val uiMessenger: com.feishin.mobile.ui.components.UiMessenger =
+        messenger ?: com.feishin.mobile.ui.components.UiMessenger()
+
     val coordinator: ScanCoordinator = scanCoordinator ?: ScanCoordinator(
         repo = repo,
         libraryRefresh = libraryRefresh ?: com.feishin.mobile.data.cache.LibraryRefresh(),
-        messenger = messenger ?: com.feishin.mobile.ui.components.UiMessenger(),
+        messenger = uiMessenger,
         externalScope = viewModelScope,
     )
 
     val scanState: StateFlow<ScanUiState> = coordinator.state
+    val profileScanStates: StateFlow<Map<String, ScanUiState>> = coordinator.profileStates
+    val healthState: StateFlow<FederatedHealthState> = repo.healthState
 
     init {
         viewModelScope.launch {
@@ -110,9 +198,16 @@ class SettingsViewModel @Inject constructor(
                 }
             }
         }
+        viewModelScope.launch {
+            coordinator.profileStates.collect { map ->
+                if (map.values.any { it is ScanUiState.Finished }) {
+                    refreshLibraryCounts()
+                }
+            }
+        }
     }
 
-    val profiles: StateFlow<List<com.feishin.mobile.domain.model.ServerProfile>> = auth.profiles
+    val profiles: StateFlow<List<ServerProfile>> = auth.profiles
 
     /** Credentials compatibility shim for the Account section until P12.0-I. */
     val credentials: StateFlow<com.feishin.mobile.data.auth.Credentials?> = auth.profiles
@@ -131,6 +226,12 @@ class SettingsViewModel @Inject constructor(
     private val _test = MutableStateFlow<TestState>(TestState.Idle)
     val test: StateFlow<TestState> = _test.asStateFlow()
 
+    private val _profileTestStates = MutableStateFlow<Map<String, TestState>>(emptyMap())
+    val profileTestStates: StateFlow<Map<String, TestState>> = _profileTestStates.asStateFlow()
+
+    private val _profileServerInfos = MutableStateFlow<Map<String, ServerInfo>>(emptyMap())
+    val profileServerInfos: StateFlow<Map<String, ServerInfo>> = _profileServerInfos.asStateFlow()
+
     fun setTheme(m: ThemeMode) = viewModelScope.launch { store.setTheme(m) }
     fun setWifi(br: Int, fmt: String) = viewModelScope.launch { store.setWifi(br, fmt) }
     fun setMobile(br: Int, fmt: String) = viewModelScope.launch { store.setMobile(br, fmt) }
@@ -140,7 +241,7 @@ class SettingsViewModel @Inject constructor(
     fun setCache(v: Int) = viewModelScope.launch {
         store.setCacheSizeMb(v)
         // Live: a smaller limit trims the cache right away.
-        withContext(Dispatchers.IO) { runCatching { cacheEvictor.trimNow() } }
+        withContext(Dispatchers.IO) { runCatching { cacheEvictor?.trimNow() } }
         refreshStorageStats()
     }
 
@@ -151,7 +252,7 @@ class SettingsViewModel @Inject constructor(
         // space immediately by clearing, growing needs a restart (the UI offers
         // a "Restart now" button rather than silent text).
         if (v < previous) {
-            withContext(Dispatchers.IO) { runCatching { imageLoader.diskCache?.clear() } }
+            withContext(Dispatchers.IO) { runCatching { imageLoader?.diskCache?.clear() } }
             _imageCacheRestartPending.value = false
         } else if (v > previous) {
             _imageCacheRestartPending.value = true
@@ -165,9 +266,10 @@ class SettingsViewModel @Inject constructor(
 
     /** Relaunch the app process so a pending cache size takes effect. */
     fun restartApp() {
-        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        val ctx = context ?: return
+        val intent = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
         intent?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        context.startActivity(intent)
+        ctx.startActivity(intent)
         android.os.Process.killProcess(android.os.Process.myPid())
     }
     fun setCrossfade(v: Boolean) = viewModelScope.launch { store.setCrossfade(v) }
@@ -189,7 +291,7 @@ class SettingsViewModel @Inject constructor(
      */
     fun setDownloadOverMobileData(v: Boolean) = viewModelScope.launch {
         store.setDownloadWifiOnly(!v)
-        runCatching { downloadScheduler.reEvaluate() }
+        runCatching { downloadScheduler?.reEvaluate() }
     }
     /**
      * "Auto-cache over mobile data". The prefetcher re-reads the setting on
@@ -233,14 +335,15 @@ class SettingsViewModel @Inject constructor(
     fun setLyricsPreferWordByWord(v: Boolean) = viewModelScope.launch { store.setLyricsPreferWordByWord(v) }
     fun setLyricsRomanizeAutomatically(v: Boolean) = viewModelScope.launch { store.setLyricsRomanizeAutomatically(v) }
     fun resetLyricsProviders() = viewModelScope.launch { store.resetLyricsProviders() }
-    fun clearLyricsCache() = viewModelScope.launch { lyricsRepo.clearCache() }
+    fun clearLyricsCache() = viewModelScope.launch { lyricsRepo?.clearCache() }
     fun setShowDeviceFiles(v: Boolean) = viewModelScope.launch { store.setShowDeviceFiles(v) }
     fun setDeviceFilesMinDurationSec(v: Int) = viewModelScope.launch { store.setDeviceFilesMinDurationSec(v) }
     fun setLibraryViewMode(v: String) = viewModelScope.launch { store.setLibraryViewMode(v) }
 
     /** Device total storage for the slider maxima (StatFs on the data dir). */
     fun deviceMaxBytes(): Long = com.feishin.mobile.core.common.StorageLimits.deviceMaxBytes {
-        val stat = StatFs(context.filesDir.absolutePath)
+        val path = context?.filesDir?.absolutePath ?: "/"
+        val stat = StatFs(path)
         stat.totalBytes
     }
     fun setLibraryLayout(tab: String, v: LayoutMode) = viewModelScope.launch { store.setLibraryLayout(tab, v) }
@@ -261,41 +364,131 @@ class SettingsViewModel @Inject constructor(
     }
 
     /** Clears the library metadata cache (screens fall back to the network). */
-    fun clearMetadataCache() = viewModelScope.launch { cache.clear() }
+    fun clearMetadataCache() = viewModelScope.launch { cache?.clear() }
 
     fun clearImageCache() = viewModelScope.launch {
-        withContext(Dispatchers.IO) { runCatching { imageLoader.diskCache?.clear() } }
-        downloads.clearCoverCache()
+        withContext(Dispatchers.IO) { runCatching { imageLoader?.diskCache?.clear() } }
+        downloads?.clearCoverCache()
         refreshStorageStats()
     }
 
     fun deleteAllDownloads() = viewModelScope.launch {
-        downloads.removeAll()
+        downloads?.removeAll()
         refreshStorageStats()
     }
 
-    fun clearPendingActions() = viewModelScope.launch { offlineSync.clear() }
+    fun clearPendingActions() = viewModelScope.launch { offlineSync?.clear() }
 
     fun setServerUrl(url: String) = viewModelScope.launch { auth.updateServerUrl(url) }
+
+    fun setProfileEnabled(profileId: String, enabled: Boolean) = viewModelScope.launch {
+        auth.setProfileEnabled(profileId, enabled)
+        libraryRefresh?.invalidateAll()
+        refreshLibraryCounts()
+    }
+
+    fun reorderProfiles(orderedIds: List<String>) = viewModelScope.launch {
+        auth.reorderProfiles(orderedIds)
+        libraryRefresh?.invalidateAll()
+    }
+
+    fun moveProfile(profileId: String, delta: Int) = viewModelScope.launch {
+        val current = auth.profiles.value
+        val idx = current.indexOfFirst { it.id == profileId }
+        if (idx < 0) return@launch
+        val target = (idx + delta).coerceIn(0, current.lastIndex)
+        if (target == idx) return@launch
+        val ids = current.map { it.id }.toMutableList()
+        val moved = ids.removeAt(idx)
+        ids.add(target, moved)
+        auth.reorderProfiles(ids)
+        libraryRefresh?.invalidateAll()
+    }
+
+    fun updateProfile(profile: ServerProfile) = viewModelScope.launch {
+        auth.updateProfile(profile)
+        libraryRefresh?.invalidateAll()
+        refreshProfileInfo(profile.id)
+        refreshLibraryCounts()
+    }
+
+    fun testProfileConnection(profile: ServerProfile) {
+        _profileTestStates.update { it + (profile.id to TestState.Testing) }
+        viewModelScope.launch {
+            val sub = profile.credentials as? ProfileCredentials.Subsonic
+            if (sub != null) {
+                when (
+                    val res = auth.probeSubsonic(
+                        serverUrl = profile.url,
+                        username = sub.username,
+                        password = sub.password,
+                        allowSelfSigned = profile.allowSelfSigned,
+                        allowCleartext = profile.allowCleartext,
+                    )
+                ) {
+                    is Result.Ok -> {
+                        val ext = res.value.openSubsonicExtensions
+                        if (ext != profile.openSubsonicExtensions) {
+                            auth.updateProfile(profile.copy(openSubsonicExtensions = ext))
+                        }
+                        refreshProfileInfo(profile.id)
+                        _profileTestStates.update { it + (profile.id to TestState.Ok) }
+                    }
+                    is Result.Err -> {
+                        _profileTestStates.update { it + (profile.id to TestState.Failed(res.message)) }
+                    }
+                }
+            } else {
+                when (val r = repo.ping(profile.id)) {
+                    is Result.Ok -> {
+                        refreshProfileInfo(profile.id)
+                        _profileTestStates.update { it + (profile.id to TestState.Ok) }
+                    }
+                    is Result.Err -> {
+                        _profileTestStates.update { it + (profile.id to TestState.Failed(r.message)) }
+                    }
+                }
+            }
+        }
+    }
+
+    fun startScan(profileId: String) {
+        coordinator.startScan(profileId)
+    }
+
+    fun refreshScanStatus(profileId: String) {
+        coordinator.refreshStatus(profileId)
+    }
 
     fun updateProfileUrl(profileId: String, url: String) = viewModelScope.launch {
         val existing = auth.profiles.value.firstOrNull { it.id == profileId } ?: return@launch
         auth.updateProfile(existing.copy(url = url))
     }
 
-    fun removeProfile(profileId: String, keepDownloads: Boolean, onDone: () -> Unit = {}) = viewModelScope.launch {
-        if (!keepDownloads) runCatching { downloads.removeAll() }
-        cache.clear()
-        runCatching { downloads.clearCoverCache() }
+    fun removeProfile(profileId: String, keepDownloads: Boolean, onAllRemoved: () -> Unit = {}) = viewModelScope.launch {
+        val currentSettings = runCatching { store.settingsNow() }.getOrNull() ?: store.latestSettings
+        val activeFilter = currentSettings?.librarySourceFilter
+        if (activeFilter == "PROFILE:$profileId" || activeFilter == profileId) {
+            store.setLibrarySourceFilter("ALL")
+        }
         auth.removeProfile(profileId, keepDownloads)
-        onDone()
+        _profileTestStates.update { it - profileId }
+        _profileServerInfos.update { it - profileId }
+        refreshLibraryCounts()
+        refreshStorageStats()
+        if (auth.profiles.value.isEmpty()) {
+            val standalone = currentSettings?.deviceFilesStandalone ?: false
+            if (!standalone) {
+                onAllRemoved()
+            }
+        }
     }
 
     /** Logout, optionally keeping downloads on disk. */
     fun logout(keepDownloads: Boolean, onDone: () -> Unit) = viewModelScope.launch {
-        if (!keepDownloads) runCatching { downloads.removeAll() }
-        cache.clear()
-        runCatching { downloads.clearCoverCache() }
+        if (!keepDownloads) runCatching { downloads?.removeAll() }
+        cache?.clear()
+        runCatching { downloads?.clearCoverCache() }
         onDone()
     }
 
@@ -320,10 +513,23 @@ class SettingsViewModel @Inject constructor(
 
     fun refreshServerInfo() {
         viewModelScope.launch {
-            _serverInfo.value = (repo.serverInfo() as? com.feishin.mobile.core.common.Result.Ok)?.value
+            _serverInfo.value = (repo.serverInfo() as? Result.Ok)?.value
             refreshScanStatus()
+            auth.profiles.value.forEach { profile ->
+                if (profile.enabled) {
+                    refreshProfileInfo(profile.id)
+                    if (BackendCapabilities.forType(profile.type).supportsLibraryScan) {
+                        coordinator.refreshStatus(profile.id)
+                    }
+                }
+            }
             refreshLibraryCounts()
         }
+    }
+
+    private suspend fun refreshProfileInfo(profileId: String) {
+        val info = (repo.serverInfo(profileId) as? Result.Ok)?.value ?: return
+        _profileServerInfos.update { it + (profileId to info) }
     }
 
     fun startScan() {
@@ -338,7 +544,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val artists = (repo.artists() as? com.feishin.mobile.core.common.Result.Ok)?.value.orEmpty()
             val playlists = (repo.playlists() as? com.feishin.mobile.core.common.Result.Ok)?.value.orEmpty()
-            val downloaded = downloads.completedIds().size
+            val downloaded = downloads?.completedIds()?.size ?: 0
             _libraryCounts.value = LibraryCounts(
                 artists = artists.size,
                 albums = artists.sumOf { it.albumCount },
@@ -354,23 +560,26 @@ class SettingsViewModel @Inject constructor(
     val storageStats: StateFlow<StorageStats?> = _storage.asStateFlow()
 
     fun refreshStorageStats() {
+        val dl = downloads ?: return
+        val ct = cachedTracks ?: return
+        val ctx = context ?: return
         viewModelScope.launch {
             val stats = withContext(Dispatchers.IO) {
-                val done = downloads.completedTracks()
+                val done = dl.completedTracks()
                 StorageStats(
                     downloadBytes = done.fold(0L) { acc, e -> acc + e.sizeBytes },
                     downloadSongs = done.size,
-                    coverBytes = downloads.coverCacheBytes(),
-                    streamCacheBytes = runCatching { streamCache.cacheSpace }.getOrDefault(0L),
-                    imageCacheBytes = dirSize(File(context.cacheDir, "coil")),
-                    cachedSongs = cachedTracks.count(),
-                    cachedBytes = cachedTracks.all().fold(0L) { acc, e -> acc + e.sizeBytes },
+                    coverBytes = dl.coverCacheBytes(),
+                    streamCacheBytes = runCatching { streamCache?.cacheSpace ?: 0L }.getOrDefault(0L),
+                    imageCacheBytes = dirSize(File(ctx.cacheDir, "coil")),
+                    cachedSongs = ct.count(),
+                    cachedBytes = ct.all().fold(0L) { acc, e -> acc + e.sizeBytes },
                     freeBytes = runCatching {
-                        val stat = StatFs(context.filesDir.absolutePath)
+                        val stat = StatFs(ctx.filesDir.absolutePath)
                         stat.availableBlocksLong * stat.blockSizeLong
                     }.getOrDefault(0L),
-                    activeDownloads = downloads.activeCount(),
-                    queuedDownloads = downloads.queuedCount(),
+                    activeDownloads = dl.activeCount(),
+                    queuedDownloads = dl.queuedCount(),
                 )
             }
             _storage.value = stats
@@ -386,23 +595,25 @@ class SettingsViewModel @Inject constructor(
 
     /** Clears the streamed-song cache and drops the Cached collection rows. */
     fun clearSongCache() = viewModelScope.launch {
-        withContext(Dispatchers.IO) { cachedTracks.clearSongCache() }
+        withContext(Dispatchers.IO) { cachedTracks?.clearSongCache() }
         refreshStorageStats()
     }
 
     /** Battery exemption state + the system request row. */
     fun batteryExempted(): Boolean {
-        val pm = context.getSystemService(PowerManager::class.java) ?: return true
-        return pm.isIgnoringBatteryOptimizations(context.packageName)
+        val ctx = context ?: return true
+        val pm = ctx.getSystemService(PowerManager::class.java) ?: return true
+        return pm.isIgnoringBatteryOptimizations(ctx.packageName)
     }
 
     fun requestBatteryExemption() {
+        val ctx = context ?: return
         runCatching {
             val intent = Intent(
                 Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                android.net.Uri.parse("package:${context.packageName}"),
+                android.net.Uri.parse("package:${ctx.packageName}"),
             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
+            ctx.startActivity(intent)
         }
     }
 

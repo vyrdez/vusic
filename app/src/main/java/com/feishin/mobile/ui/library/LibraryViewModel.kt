@@ -7,8 +7,10 @@ import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.Artist
 import com.feishin.mobile.domain.model.Genre
 import com.feishin.mobile.domain.model.Playlist
+import com.feishin.mobile.domain.model.ServerProfile
 import com.feishin.mobile.domain.model.StarredCollection
 import com.feishin.mobile.domain.model.Track
+import com.feishin.mobile.domain.repo.FederatedHealthState
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.core.common.LibrarySorts
 import com.feishin.mobile.core.common.LibraryOrdering
@@ -88,20 +90,53 @@ class LibraryViewModel @Inject constructor(
 
     val settingsFlow = settings.flow
 
+    val profiles: StateFlow<List<ServerProfile>> =
+        auth?.profiles ?: MutableStateFlow(emptyList())
+
+    val librarySourceFilter: StateFlow<String> = settings.flow
+        .map { it.librarySourceFilter }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            settings.latestSettings?.librarySourceFilter ?: "ALL",
+        )
+
+    val healthState: StateFlow<FederatedHealthState> = repo.healthState
+
     val serverUrl: StateFlow<String> = combine(
-        auth?.profiles ?: MutableStateFlow(emptyList()),
+        profiles,
         settings.flow.map { it.librarySourceFilter },
-    ) { profiles, filter ->
+    ) { profileList, filter ->
         val matched = if (filter != "ALL" && filter != "DEVICE") {
-            profiles.firstOrNull { it.id == filter }
+            val pid = if (filter.startsWith("PROFILE:", ignoreCase = true)) {
+                filter.substringAfter(":").trim()
+            } else {
+                filter
+            }
+            profileList.firstOrNull { it.id == pid }
         } else {
             null
         }
-        (matched ?: profiles.firstOrNull { it.enabled } ?: profiles.firstOrNull())?.url.orEmpty()
+        (matched ?: profileList.firstOrNull { it.enabled } ?: profileList.firstOrNull())?.url.orEmpty()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
     fun setLibraryViewMode(mode: String) = viewModelScope.launch {
         settings.setLibraryViewMode(mode)
+    }
+
+    fun setLibrarySourceFilter(filterKey: String) {
+        val normalized = filterKey.trim().ifBlank { "ALL" }
+        viewModelScope.launch {
+            settings.setLibrarySourceFilter(normalized)
+            settings.setLibraryViewMode(
+                if (normalized.equals("DEVICE", ignoreCase = true)) "DEVICE" else "SERVER",
+            )
+            if (!normalized.equals("DEVICE", ignoreCase = true)) {
+                lastObservedSourceFilter = normalized
+                loadAll()
+                refresh.emitRefreshed(KEY_SOURCE_FILTER_RELOAD)
+            }
+        }
     }
 
     /** Cached songs for the pinned Cached collection row. */
@@ -170,9 +205,11 @@ class LibraryViewModel @Inject constructor(
     private var albumOffset = 0
     private val albumAccum = mutableListOf<Album>()
     private var albumEnd = false
+    private var lastObservedSourceFilter: String? = null
 
     companion object {
         const val KEY_TAB = "selected_tab"
+        const val KEY_SOURCE_FILTER_RELOAD = "__source_filter_reload__"
     }
 
     init {
@@ -225,6 +262,28 @@ class LibraryViewModel @Inject constructor(
                 val changed = next.filter { (tab, choice) -> _sorts.value[tab] != choice }.keys
                 _sorts.value = next
                 if (changed.isNotEmpty()) reapplySorts(changed)
+
+                val filter = s.librarySourceFilter
+                if (lastObservedSourceFilter == null) {
+                    lastObservedSourceFilter = filter
+                } else if (lastObservedSourceFilter != filter) {
+                    lastObservedSourceFilter = filter
+                    if (!filter.equals("DEVICE", ignoreCase = true)) {
+                        loadAll()
+                    }
+                }
+            }
+        }
+        auth?.let { authRepo ->
+            viewModelScope.launch {
+                var first = true
+                authRepo.profiles.collect {
+                    if (first) {
+                        first = false
+                    } else if (!librarySourceFilter.value.equals("DEVICE", ignoreCase = true)) {
+                        loadAll()
+                    }
+                }
             }
         }
     }
