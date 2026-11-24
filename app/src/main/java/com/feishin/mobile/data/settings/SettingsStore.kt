@@ -348,7 +348,7 @@ class SettingsStore internal constructor(
         const val LAYOUT_PREFIX = "library_layout_"
         const val PLAYLIST_SORT_PREFIX = "playlist_sort_"
         val RADIO_BATCH_OPTIONS = listOf(10, 20, 30, 50)
-        val DEFAULT_LYRICS_PROVIDER_ORDER = listOf("BETTER_LYRICS", "LRCLIB", "PAXSENIX", "KUGOU", "LOCAL_DATA")
+        val DEFAULT_LYRICS_PROVIDER_ORDER = listOf("LOCAL_DATA", "BETTER_LYRICS", "LRCLIB", "PAXSENIX", "KUGOU")
         val DEFAULT_LYRICS_PROVIDER_ENABLED = setOf("LRCLIB", "BETTER_LYRICS", "KUGOU", "LOCAL_DATA")
 
         fun parseLyricsTextSizePercent(raw: String): Int {

@@ -1,7 +1,11 @@
 package com.feishin.mobile.data.remote
 
 import com.feishin.mobile.data.model.SubsonicEnvelope
+import okhttp3.ResponseBody
+import retrofit2.http.Field
+import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
+import retrofit2.http.POST
 import retrofit2.http.Query
 
 interface SubsonicApi {
@@ -62,6 +66,15 @@ interface SubsonicApi {
         @Query("name") name: String? = null,
         @Query("songIdToAdd") songIdToAdd: List<String>? = null,
         @Query("songIndexToRemove") songIndexToRemove: List<Int>? = null,
+    ): SubsonicEnvelope
+
+    @FormUrlEncoded
+    @POST("updatePlaylist.view")
+    suspend fun updatePlaylistPost(
+        @Field("playlistId") playlistId: String,
+        @Field("name") name: String? = null,
+        @Field("songIdToAdd") songIdToAdd: List<String>? = null,
+        @Field("songIndexToRemove") songIndexToRemove: List<Int>? = null,
     ): SubsonicEnvelope
 
     @GET("deletePlaylist.view")
@@ -133,4 +146,10 @@ interface SubsonicApi {
 
     @GET("getOpenSubsonicExtensions.view")
     suspend fun getOpenSubsonicExtensions(): SubsonicEnvelope
+
+    @GET("getSong.view")
+    suspend fun getSong(@Query("id") id: String): SubsonicEnvelope
+
+    @GET("getSong.view")
+    suspend fun getSongRaw(@Query("id") id: String): ResponseBody
 }

@@ -8,6 +8,7 @@ import com.feishin.mobile.core.common.VLog
 import com.feishin.mobile.core.network.CoverArtUrlProvider
 import com.feishin.mobile.core.network.SubsonicAuth
 import com.feishin.mobile.core.network.SyncedLyrics
+import com.feishin.mobile.data.auth.ProfileStore
 import com.feishin.mobile.data.cache.LibraryRefresh
 import com.feishin.mobile.data.cache.MetadataCache
 import com.feishin.mobile.data.cache.MetadataCacheKeys
@@ -18,6 +19,7 @@ import com.feishin.mobile.data.mapper.toDomain
 import com.feishin.mobile.data.model.ArtistInfo2Dto
 import com.feishin.mobile.data.network.NetworkMonitor
 import com.feishin.mobile.data.remote.SubsonicApi
+import com.feishin.mobile.data.repo.NavidromeLyricsProvider
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.AlbumDetail
@@ -26,6 +28,7 @@ import com.feishin.mobile.domain.model.ArtistDetail
 import com.feishin.mobile.domain.model.ArtistInfo
 import com.feishin.mobile.domain.model.BackendCapabilities
 import com.feishin.mobile.domain.model.Genre
+import com.feishin.mobile.domain.model.OpenSubsonicExtensions
 import com.feishin.mobile.domain.model.Playlist
 import com.feishin.mobile.domain.model.PlaylistDetail
 import com.feishin.mobile.domain.model.ProfileCredentials
@@ -36,6 +39,7 @@ import com.feishin.mobile.domain.model.StarredCollection
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicBackend
 import com.feishin.mobile.domain.repo.ScanStatus
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +47,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Single-server Subsonic / Navidrome / OpenSubsonic [MusicBackend] adapter.
@@ -56,23 +63,55 @@ class SubsonicBackend(
     private val api: SubsonicApi,
     private val cache: MetadataCache,
     private val refresh: LibraryRefresh,
-    private val network: NetworkMonitor,
+    private val network: NetworkMonitor?,
     private val settings: SettingsStore,
     private val offlineSync: dagger.Lazy<OfflineSyncStore>,
     private val playlistEvents: dagger.Lazy<PlaylistEvents>,
     private val cacheScope: CoroutineScope,
+    private val profileStore: ProfileStore? = null,
 ) : MusicBackend {
 
     override val capabilities: BackendCapabilities = BackendCapabilities.forType(profile.type)
+
+    @Volatile
+    private var discoveredExtensions: OpenSubsonicExtensions? = null
+    private val extensionsProbed = AtomicBoolean(false)
+
+    private fun currentProfile(): ServerProfile = profileStore?.byId(profile.id) ?: profile
+
+    private fun currentExtensions(): OpenSubsonicExtensions =
+        profileStore?.byId(profile.id)?.openSubsonicExtensions
+            ?: discoveredExtensions
+            ?: profile.openSubsonicExtensions
+
+    private suspend fun discoverAndPersistExtensions(): OpenSubsonicExtensions {
+        val extensions = NavidromeLyricsProvider.fetchExtensionsTolerant(api)
+        discoveredExtensions = extensions
+        extensionsProbed.set(true)
+        if (profileStore != null) {
+            val live = profileStore.byId(profile.id) ?: profile
+            profileStore.upsert(live.copy(openSubsonicExtensions = extensions))
+        }
+        return extensions
+    }
+
+    private suspend fun ensureExtensionsDiscovered(): OpenSubsonicExtensions {
+        val current = currentExtensions()
+        if (current.rawNames.isNotEmpty() || !extensionsProbed.compareAndSet(false, true)) {
+            return current
+        }
+        return discoverAndPersistExtensions()
+    }
 
     private val subsonicCreds: ProfileCredentials.Subsonic
         get() = profile.credentials as? ProfileCredentials.Subsonic
             ?: throw IllegalStateException("Profile ${profile.id} does not hold Subsonic credentials")
 
     private suspend fun offline(): Boolean {
+        val online = network?.isOnline?.value ?: true
         val s = runCatching { settings.settingsNow() }.getOrDefault(null) ?: return true
-        val auto = s.autoOffline && !network.isOnline.value
-        return s.offlineMode || auto || !network.isOnline.value
+        val auto = s.autoOffline && !online
+        return s.offlineMode || auto || !online
     }
 
     private fun scopedKey(logicalKey: String): String =
@@ -236,7 +275,12 @@ class SubsonicBackend(
 
     override suspend fun ping(): Result<Unit> = call {
         val r = api.ping().response
-        unwrap(r.status, r.error?.message) { }
+        if (r.status == "ok") {
+            discoverAndPersistExtensions()
+            Result.Ok(Unit)
+        } else {
+            unwrap(r.status, r.error?.message) { }
+        }
     }
 
     override suspend fun albumList(type: String, size: Int, offset: Int, genre: String?): Result<List<Album>> =
@@ -395,11 +439,44 @@ class SubsonicBackend(
     }
 
     override suspend fun similarSongs(songId: String?, artistId: String?, count: Int): Result<List<Track>> = call {
-        val seed = (songId ?: artistId)?.let { GlobalId.rawId(it) }
+        val rawSongId = songId?.let { GlobalId.rawId(it) }
+        val rawArtistId = artistId?.let { GlobalId.rawId(it) }
+        val seed = rawSongId ?: rawArtistId
         val r = runCatching { api.getSimilarSongs2(seed, count).response }.getOrNull()
-            ?: return@call Result.Err("Similar songs not available")
-        unwrap(r.status, r.error?.message) { r.similarSongs2?.song.orEmpty().map { it.toDomain().scoped() } }
+        if (r != null) {
+            if (r.status != "ok") {
+                return@call unwrap(r.status, r.error?.message) { emptyList() }
+            }
+            val similar = r.similarSongs2?.song.orEmpty()
+            if (similar.isNotEmpty()) {
+                return@call Result.Ok(similar.map { it.toDomain().scoped() })
+            }
+        }
+
+        val resolvedGenre = if (rawSongId != null) resolveSongGenre(rawSongId) else null
+        if (!resolvedGenre.isNullOrBlank()) {
+            val genreResp = runCatching { api.getRandomSongs(size = count, genre = resolvedGenre).response }.getOrNull()
+            if (genreResp != null && genreResp.status == "ok") {
+                val byGenre = genreResp.randomSongs?.song.orEmpty()
+                if (byGenre.isNotEmpty()) {
+                    return@call Result.Ok(byGenre.map { it.toDomain().scoped() })
+                }
+            }
+        }
+
+        val rand = api.getRandomSongs(size = count, genre = null).response
+        unwrap(rand.status, rand.error?.message) {
+            rand.randomSongs?.song.orEmpty().map { it.toDomain().scoped() }
+        }
     }
+
+    private suspend fun resolveSongGenre(rawSongId: String): String? = runCatching {
+        val body = api.getSongRaw(rawSongId).use { it.string() }
+        val root = Json.parseToJsonElement(body).jsonObject
+        val resp = root["subsonic-response"]?.jsonObject ?: return@runCatching null
+        if (resp["status"]?.jsonPrimitive?.content != "ok") return@runCatching null
+        resp["song"]?.jsonObject?.get("genre")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+    }.getOrNull()
 
     override suspend fun playlist(id: String): Result<PlaylistDetail> {
         val globalId = scopeId(id)
@@ -484,8 +561,13 @@ class SubsonicBackend(
     }
 
     override suspend fun addToPlaylist(playlistId: String, trackIds: List<String>): Result<Unit> = call {
+        val ext = ensureExtensionsDiscovered()
         val rawPlaylistId = GlobalId.rawId(playlistId)
         val rawTrackIds = trackIds.map { GlobalId.rawId(it) }
+        if (ext.formPost) {
+            val r = api.updatePlaylistPost(rawPlaylistId, songIdToAdd = rawTrackIds).response
+            return@call unwrap(r.status, r.error?.message) { }
+        }
         for (batch in PlaylistBatch.chunks(rawTrackIds)) {
             val r = api.updatePlaylist(rawPlaylistId, songIdToAdd = batch).response
             when (val res = unwrap(r.status, r.error?.message) { }) {
@@ -549,7 +631,13 @@ class SubsonicBackend(
     }
 
     override suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit> = call {
-        val r = api.updatePlaylist(GlobalId.rawId(playlistId), songIndexToRemove = indexes).response
+        val ext = ensureExtensionsDiscovered()
+        val rawPlaylistId = GlobalId.rawId(playlistId)
+        val r = if (ext.formPost) {
+            api.updatePlaylistPost(rawPlaylistId, songIndexToRemove = indexes).response
+        } else {
+            api.updatePlaylist(rawPlaylistId, songIndexToRemove = indexes).response
+        }
         unwrap(r.status, r.error?.message) { }
     }
 
@@ -579,23 +667,33 @@ class SubsonicBackend(
         unwrap(r.status, r.error?.message) { r.lyrics?.value ?: "" }
     }
 
-    override suspend fun lyricsForTrack(id: String, artist: String, title: String): Result<SyncedLyrics> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val rawId = GlobalId.rawId(id)
-                val structured = runCatching { api.getLyricsBySongId(rawId).response }.getOrNull()
-                val synced = structured?.lyricsList?.syncedLyrics
-                if (synced != null && synced.line.isNotEmpty()) {
-                    return@runCatching Result.Ok(
-                        SyncedLyrics.parse(synced.line.map { it.start to it.value }, synced.offset),
-                    )
+    override suspend fun lyricsForTrack(id: String, artist: String, title: String): Result<SyncedLyrics> {
+        val live = currentProfile()
+        val res = NavidromeLyricsProvider.fetchLyrics(
+            api = api,
+            rawSongId = GlobalId.rawId(id),
+            title = title,
+            artist = artist,
+            profile = live,
+            profilePersister = { updated ->
+                discoveredExtensions = updated.openSubsonicExtensions
+                extensionsProbed.set(true)
+                profileStore?.upsert(updated)
+            },
+        )
+        return when (res) {
+            is Result.Ok -> {
+                val l = res.value
+                val synced = when {
+                    l.isSynced -> SyncedLyrics.parse(l.lines.map { it.startMs to it.text }, l.offsetMs)
+                    l.isPlain -> SyncedLyrics.plain(l.plainText.ifBlank { l.lines.joinToString("\n") { it.text } })
+                    else -> SyncedLyrics.EMPTY
                 }
-                val plain = structured?.lyricsList?.plainLyrics?.value
-                    ?: structured?.lyrics?.value
-                    ?: api.getLyrics(artist, title).response.lyrics?.value
-                Result.Ok(SyncedLyrics.plain(plain.orEmpty()))
-            }.getOrElse { Result.Err(it.message ?: "lyrics unavailable", it) }
+                Result.Ok(synced)
+            }
+            is Result.Err -> res
         }
+    }
 
     override fun streamUrl(track: Track, maxBitrate: Int, format: String): String {
         val c = subsonicCreds
