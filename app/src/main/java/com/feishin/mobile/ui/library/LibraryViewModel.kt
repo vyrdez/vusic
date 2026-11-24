@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 enum class LibraryTab { PLAYLISTS, DOWNLOADS, ALBUMS, ARTISTS, SONGS, FAVORITES }
@@ -132,8 +133,9 @@ class LibraryViewModel @Inject constructor(
                 if (normalized.equals("DEVICE", ignoreCase = true)) "DEVICE" else "SERVER",
             )
             if (!normalized.equals("DEVICE", ignoreCase = true)) {
+                val changed = lastObservedSourceFilter != normalized
                 lastObservedSourceFilter = normalized
-                loadAll()
+                if (changed) loadAll()
                 refresh.emitRefreshed(KEY_SOURCE_FILTER_RELOAD)
             }
         }
@@ -205,6 +207,13 @@ class LibraryViewModel @Inject constructor(
     private var albumOffset = 0
     private val albumAccum = mutableListOf<Album>()
     private var albumEnd = false
+    private var albumJob: Job? = null
+    private var albumLoadGen = 0L
+    private var artistsJob: Job? = null
+    private var genresJob: Job? = null
+    private var playlistsJob: Job? = null
+    private var favsJob: Job? = null
+    private var songsJob: Job? = null
     private var lastObservedSourceFilter: String? = null
 
     companion object {
@@ -355,39 +364,66 @@ class LibraryViewModel @Inject constructor(
      * instant; album paging is never thrown away for a first-page refresh.
      */
     private fun reloadFor(key: String) {
+        val logicalKey = when {
+            key.startsWith("albums:") ||
+                key.startsWith("songs:") ||
+                key == MetadataCacheKeys.ARTISTS ||
+                key == MetadataCacheKeys.GENRES ||
+                key == MetadataCacheKeys.PLAYLISTS ||
+                key == MetadataCacheKeys.STARRED -> key
+            ':' in key -> key.substringAfter(':')
+            else -> key
+        }
         when {
-            key.startsWith("albums:") -> if (albumAccum.size <= 100) loadAlbums(reset = true, silent = true)
-            key == MetadataCacheKeys.ARTISTS -> loadArtists(silent = true)
-            key == MetadataCacheKeys.GENRES -> refreshGenres(silent = true)
-            key == MetadataCacheKeys.PLAYLISTS -> loadPlaylists(silent = true)
-            key == MetadataCacheKeys.STARRED -> loadFavs(silent = true)
-            key.startsWith("songs:") -> loadSongs(silent = true)
+            logicalKey.startsWith("albums:") -> if (albumAccum.size <= 100) loadAlbums(reset = true, silent = true)
+            logicalKey == MetadataCacheKeys.ARTISTS -> loadArtists(silent = true)
+            logicalKey == MetadataCacheKeys.GENRES -> refreshGenres(silent = true)
+            logicalKey == MetadataCacheKeys.PLAYLISTS -> loadPlaylists(silent = true)
+            logicalKey == MetadataCacheKeys.STARRED -> loadFavs(silent = true)
+            logicalKey.startsWith("songs:") -> loadSongs(silent = true)
         }
     }
 
     fun loadAlbums(reset: Boolean = false, silent: Boolean = false) {
         if (reset) {
-            albumOffset = 0; albumAccum.clear(); albumEnd = false
+            albumJob?.cancel()
+            albumOffset = 0
+            albumAccum.clear()
+            albumEnd = false
+        } else if (albumEnd || albumJob?.isActive == true) {
+            return
         }
-        if (albumEnd) return
-        viewModelScope.launch {
+        val gen = if (reset) ++albumLoadGen else albumLoadGen
+        albumJob = viewModelScope.launch {
             if (reset && !silent) _albums.value = UiState.Loading
             when (val r = repo.albumList("alphabeticalByName", 100, albumOffset)) {
                 is Result.Ok -> {
-                    if (r.value.isEmpty()) albumEnd = true
-                    albumOffset += r.value.size
-                    albumAccum.addAll(r.value)
+                    if (gen != albumLoadGen || !isActive) return@launch
+                    if (r.value.isEmpty()) {
+                        albumEnd = true
+                    } else {
+                        albumOffset += r.value.size
+                        val seen = albumAccum.mapTo(HashSet(albumAccum.size)) { it.id }
+                        for (album in r.value) {
+                            if (seen.add(album.id)) {
+                                albumAccum.add(album)
+                            }
+                        }
+                    }
                     applyAlbumSort()
                 }
-                is Result.Err -> if (albumAccum.isEmpty() && _albums.value !is UiState.Data) {
-                    _albums.value = UiState.Error(r.message)
+                is Result.Err -> {
+                    if (gen != albumLoadGen || !isActive) return@launch
+                    if (albumAccum.isEmpty() && _albums.value !is UiState.Data) {
+                        _albums.value = UiState.Error(r.message)
+                    }
                 }
             }
         }
     }
 
     private fun applyAlbumSort() {
-        val sorted = LibraryOrdering.sortAlbums(albumAccum, sortFor(LibraryTab.ALBUMS))
+        val sorted = LibraryOrdering.sortAlbums(albumAccum.distinctBy { it.id }, sortFor(LibraryTab.ALBUMS))
         _albums.value = if (sorted.isEmpty()) UiState.Empty else UiState.Data(sorted)
     }
 
@@ -404,68 +440,94 @@ class LibraryViewModel @Inject constructor(
             // was replaced by "no albums" and the message was lost.
             val current = (_albums.value as? UiState.Data)?.value
             if (current != null) {
-                _albums.value = UiState.Data(LibraryOrdering.sortAlbums(current, sortFor(LibraryTab.ALBUMS)))
+                _albums.value = UiState.Data(
+                    LibraryOrdering.sortAlbums(current.distinctBy { it.id }, sortFor(LibraryTab.ALBUMS)),
+                )
             }
         }
         if (LibraryTab.ARTISTS in changed) {
             val current = (_artists.value as? UiState.Data)?.value
             if (current != null) {
-                _artists.value = UiState.Data(LibraryOrdering.sortArtists(current, sortFor(LibraryTab.ARTISTS)))
+                _artists.value = UiState.Data(
+                    LibraryOrdering.sortArtists(current.distinctBy { it.id }, sortFor(LibraryTab.ARTISTS)),
+                )
             }
         }
         if (LibraryTab.SONGS in changed) {
             val current = (_songs.value as? UiState.Data)?.value
             if (current != null) {
-                _songs.value = UiState.Data(LibraryOrdering.sortSongs(current, sortFor(LibraryTab.SONGS)))
+                _songs.value = UiState.Data(
+                    LibraryOrdering.sortSongs(current.distinctBy { it.id }, sortFor(LibraryTab.SONGS)),
+                )
             }
         }
         if (LibraryTab.PLAYLISTS in changed) {
             val current = (_playlists.value as? UiState.Data)?.value
             if (current != null) {
-                _playlists.value = UiState.Data(LibraryOrdering.sortPlaylists(current, sortFor(LibraryTab.PLAYLISTS)))
+                _playlists.value = UiState.Data(
+                    LibraryOrdering.sortPlaylists(current.distinctBy { it.id }, sortFor(LibraryTab.PLAYLISTS)),
+                )
             }
         }
     }
 
     private fun loadArtists(silent: Boolean = false) {
-        viewModelScope.launch {
+        artistsJob?.cancel()
+        artistsJob = viewModelScope.launch {
             if (!silent) _artists.value = UiState.Loading
-            _artists.value = when (val r = repo.artists()) {
+            val r = repo.artists()
+            if (!isActive) return@launch
+            _artists.value = when (r) {
                 is Result.Ok -> if (r.value.isEmpty()) UiState.Empty
-                else UiState.Data(LibraryOrdering.sortArtists(r.value, sortFor(LibraryTab.ARTISTS)))
+                else UiState.Data(LibraryOrdering.sortArtists(r.value.distinctBy { it.id }, sortFor(LibraryTab.ARTISTS)))
                 is Result.Err -> if (_artists.value is UiState.Data) _artists.value else UiState.Error(r.message)
             }
         }
     }
 
     fun refreshGenres(silent: Boolean = false) {
-        viewModelScope.launch {
+        genresJob?.cancel()
+        genresJob = viewModelScope.launch {
             if (!silent) _genres.value = UiState.Loading
-            _genres.value = when (val r = repo.genres()) {
-                is Result.Ok -> if (r.value.isEmpty()) UiState.Empty else UiState.Data(r.value)
+            val r = repo.genres()
+            if (!isActive) return@launch
+            _genres.value = when (r) {
+                is Result.Ok -> if (r.value.isEmpty()) UiState.Empty else UiState.Data(r.value.distinctBy { it.name })
                 is Result.Err -> if (_genres.value is UiState.Data) _genres.value else UiState.Error(r.message)
             }
         }
     }
 
     fun loadPlaylists(silent: Boolean = false) {
-        viewModelScope.launch {
+        playlistsJob?.cancel()
+        playlistsJob = viewModelScope.launch {
             if (!silent) _playlists.value = UiState.Loading
-            _playlists.value = when (val r = repo.playlists()) {
+            val r = repo.playlists()
+            if (!isActive) return@launch
+            _playlists.value = when (r) {
                 is Result.Ok -> if (r.value.isEmpty()) UiState.Empty
-                else UiState.Data(LibraryOrdering.sortPlaylists(r.value, sortFor(LibraryTab.PLAYLISTS)))
+                else UiState.Data(LibraryOrdering.sortPlaylists(r.value.distinctBy { it.id }, sortFor(LibraryTab.PLAYLISTS)))
                 is Result.Err -> if (_playlists.value is UiState.Data) _playlists.value else UiState.Error(r.message)
             }
         }
     }
 
     private fun loadFavs(silent: Boolean = false) {
-        viewModelScope.launch {
+        favsJob?.cancel()
+        favsJob = viewModelScope.launch {
             if (!silent) _favs.value = UiState.Loading
-            _favs.value = when (val r = repo.starred()) {
+            val r = repo.starred()
+            if (!isActive) return@launch
+            _favs.value = when (r) {
                 is Result.Ok -> {
                     val v = r.value
-                    if (v.artists.isEmpty() && v.albums.isEmpty() && v.tracks.isEmpty()) UiState.Empty else UiState.Data(v)
+                    val unique = v.copy(
+                        artists = v.artists.distinctBy { it.id },
+                        albums = v.albums.distinctBy { it.id },
+                        tracks = v.tracks.distinctBy { it.id },
+                    )
+                    if (unique.artists.isEmpty() && unique.albums.isEmpty() && unique.tracks.isEmpty()) UiState.Empty
+                    else UiState.Data(unique)
                 }
                 is Result.Err -> if (_favs.value is UiState.Data) _favs.value else UiState.Error(r.message)
             }
@@ -473,11 +535,14 @@ class LibraryViewModel @Inject constructor(
     }
 
     private fun loadSongs(silent: Boolean = false) {
-        viewModelScope.launch {
+        songsJob?.cancel()
+        songsJob = viewModelScope.launch {
             if (!silent) _songs.value = UiState.Loading
-            _songs.value = when (val r = repo.randomSongs(500)) {
+            val r = repo.randomSongs(500)
+            if (!isActive) return@launch
+            _songs.value = when (r) {
                 is Result.Ok -> if (r.value.isEmpty()) UiState.Empty
-                else UiState.Data(LibraryOrdering.sortSongs(r.value, sortFor(LibraryTab.SONGS)))
+                else UiState.Data(LibraryOrdering.sortSongs(r.value.distinctBy { it.id }, sortFor(LibraryTab.SONGS)))
                 is Result.Err -> if (_songs.value is UiState.Data) _songs.value else UiState.Error(r.message)
             }
         }

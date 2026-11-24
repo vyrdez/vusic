@@ -72,6 +72,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
@@ -342,18 +343,23 @@ fun LibraryScreen(
                         is UiState.Error -> ErrorState(message = s.message, onRetry = { vm.loadAlbums(true) })
                         is UiState.Empty -> EmptyState(if (query.isBlank()) "No albums" else "No albums match \"$query\"")
                         is UiState.Data -> {
-                            val shown = com.feishin.mobile.core.common.LibraryOrdering.filterAlbums(s.value, query)
+                            val shown = remember(s.value, query) {
+                                com.feishin.mobile.core.common.LibraryOrdering
+                                    .filterAlbums(s.value, query)
+                                    .distinctBy { it.id }
+                            }
                             if (shown.isEmpty()) {
                                 EmptyState("No albums match \"$query\"")
                             } else if (grid) {
                                 val gridState = rememberSavableGridState()
+                                val shownSize by rememberUpdatedState(shown.size)
                                 val atEnd by remember {
                                     derivedStateOf {
                                         gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
-                                            ?.let { it >= shown.size - 6 } == true
+                                            ?.let { it >= shownSize - 6 } == true
                                     }
                                 }
-                                LaunchedEffect(atEnd, shown.size) { if (atEnd) vm.loadAlbums() }
+                                LaunchedEffect(atEnd, shownSize) { if (atEnd) vm.loadAlbums() }
                                 LazyVerticalGrid(GridCells.Fixed(2), Modifier.fillMaxSize(), state = gridState, contentPadding = PaddingValues(8.dp, 8.dp, 8.dp, VusicSpacing.ContentBottom + LocalMiniClearance.current)) {
                                     items(shown, key = { it.id }, contentType = { "item" }) { a ->
                                         AlbumCard(a, repo.coverArtUrl(a.coverArt, 300), onClick = { onAlbum(a.id) })
@@ -361,13 +367,14 @@ fun LibraryScreen(
                                 }
                             } else {
                                 val listState = rememberSavableListState()
+                                val shownSize by rememberUpdatedState(shown.size)
                                 val atEnd by remember {
                                     derivedStateOf {
                                         listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
-                                            ?.let { it >= shown.size - 6 } == true
+                                            ?.let { it >= shownSize - 6 } == true
                                     }
                                 }
-                                LaunchedEffect(atEnd, shown.size) { if (atEnd) vm.loadAlbums() }
+                                LaunchedEffect(atEnd, shownSize) { if (atEnd) vm.loadAlbums() }
                                 LazyColumn(
                                     Modifier.fillMaxSize(),
                                     state = listState,

@@ -57,6 +57,7 @@ import java.net.ServerSocket
 import java.net.SocketException
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
@@ -386,10 +387,102 @@ class MultiProfileUiViewModelTest {
         collectJob.cancel()
     }
 
+    @Test
+    fun libraryViewModel_concurrentResetAndPagination_neverDuplicatesAlbumIds() = runBlocking {
+        val settings = newSettings()
+        val p1 = sampleProfile("p1", "Home Navidrome", BackendType.NAVIDROME, priority = 0)
+        val p2 = sampleProfile("p2", "Studio Gonic", BackendType.OPENSUBSONIC, priority = 1)
+        val harness = newAuthHarness(settings, listOf(p1, p2))
+        val refresh = LibraryRefresh()
+
+        val p2Album = Album("p2:al2", "OpenSubsonic Album", "Art2", null, null, 1, 60, 0, 2024, "Jazz", false, "p2", "Studio Gonic")
+        val p2AlbumB = Album("p2:al3", "OpenSubsonic Second", "Art3", null, null, 1, 60, 0, 2024, "Jazz", false, "p2", "Studio Gonic")
+
+        val call1Started = CompletableDeferred<Unit>()
+        val call1Gate = CompletableDeferred<Unit>()
+        val call2Started = CompletableDeferred<Unit>()
+        val call2Gate = CompletableDeferred<Unit>()
+        val stage = AtomicInteger(0)
+
+        val repo = FakeMultiProfileRepo(settings) { offset, filter ->
+            when (stage.get()) {
+                0 -> {
+                    stage.compareAndSet(0, 1)
+                    call1Started.complete(Unit)
+                    call1Gate.await()
+                    null // fall back to default ALL list (p1:al1, p2:al2)
+                }
+                1 -> {
+                    if (filter == "PROFILE:p2" && offset == 0) {
+                        stage.compareAndSet(1, 2)
+                        call2Started.complete(Unit)
+                        call2Gate.await()
+                        listOf(p2Album, p2Album)
+                    } else {
+                        null
+                    }
+                }
+                2 -> {
+                    if (offset > 0) listOf(p2Album, p2AlbumB) else listOf(p2Album, p2AlbumB)
+                }
+                else -> listOf(p2Album, p2AlbumB)
+            }
+        }
+
+        val vm = track(
+            LibraryViewModel(
+                repo = repo,
+                playlistEvents = PlaylistEvents(),
+                settings = settings,
+                cachedTracks = CachedTrackStore(FakeCachedTrackDao(), FakeCacheBytes()),
+                refresh = refresh,
+                savedStateHandle = SavedStateHandle(),
+                auth = harness.auth,
+            ),
+        )
+
+        call1Started.await()
+        assertEquals(1, repo.albumCalls.get())
+
+        // Overlapping pagination while initial reset=true load is still in flight must be ignored.
+        vm.loadAlbums(reset = false)
+        assertEquals(1, repo.albumCalls.get())
+
+        // Switching source filter cancels the in-flight reset and bumps generation.
+        vm.setLibrarySourceFilter("PROFILE:p2")
+        awaitCondition { call2Started.isCompleted }
+
+        // Even if the stale call resolves first, it must not pollute or duplicate the new list.
+        call1Gate.complete(Unit)
+        call2Gate.complete(Unit)
+
+        awaitCondition {
+            val list = (vm.albums.value as? UiState.Data)?.value ?: return@awaitCondition false
+            list.map { it.id } == listOf("p2:al2")
+        }
+
+        // Next page containing an overlapping album ID must deduplicate cleanly.
+        vm.loadAlbums(reset = false)
+        awaitCondition {
+            val list = (vm.albums.value as? UiState.Data)?.value ?: return@awaitCondition false
+            list.map { it.id } == listOf("p2:al2", "p2:al3")
+        }
+        val pagedIds = (vm.albums.value as UiState.Data).value.map { it.id }
+        assertEquals(pagedIds.distinct(), pagedIds)
+
+        // Scoped cache key refresh triggers a clean reset reload with no duplicates.
+        val callsBeforeScopedReload = repo.albumCalls.get()
+        refresh.emitRefreshed("p2:albums:alphabeticalByName:0")
+        awaitCondition { repo.albumCalls.get() > callsBeforeScopedReload }
+        val finalIds = (vm.albums.value as UiState.Data).value.map { it.id }
+        assertEquals(listOf("p2:al2", "p2:al3"), finalIds)
+    }
+
     // ---------- Local Test Fakes ----------
 
     private class FakeMultiProfileRepo(
         private val settings: SettingsStore? = null,
+        private val onAlbumList: (suspend (offset: Int, filter: String) -> List<Album>?)? = null,
     ) : MusicDataRepository {
         val albumCalls = AtomicInteger(0)
         private val p1Album = Album("p1:al1", "Navidrome Album", "Art1", null, null, 1, 60, 0, 2024, "Rock", false, "p1", "Home Navidrome")
@@ -408,6 +501,8 @@ class MultiProfileUiViewModelTest {
         override suspend fun albumList(type: String, size: Int, offset: Int, genre: String?): Result<List<Album>> {
             albumCalls.incrementAndGet()
             val filter = settings?.latestSettings?.librarySourceFilter ?: "ALL"
+            val custom = onAlbumList?.invoke(offset, filter)
+            if (custom != null) return Result.Ok(custom)
             val list = when {
                 filter == "PROFILE:p2" || filter == "TYPE:OPENSUBSONIC" -> listOf(p2Album)
                 filter == "PROFILE:p1" || filter == "TYPE:NAVIDROME" -> listOf(p1Album)
