@@ -41,6 +41,7 @@ import com.feishin.mobile.core.common.PlaybackSource
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.common.StableCacheKey
 import com.feishin.mobile.core.network.CoverCacheKey
+import com.feishin.mobile.data.auth.ProfileStore
 import com.feishin.mobile.data.cache.CACHED_SONGS_PLAYLIST_ID
 import com.feishin.mobile.data.cache.CachedTrackStore
 import com.feishin.mobile.data.cache.toTrack
@@ -85,6 +86,7 @@ import kotlinx.coroutines.withContext
 class PlayerService : MediaLibraryService() {
 
     @Inject lateinit var repo: MusicDataRepository
+    @Inject lateinit var profileStore: ProfileStore
     @Inject lateinit var settings: SettingsStore
     @Inject lateinit var downloads: DownloadRepository
     @Inject lateinit var favorites: FavoritesStore
@@ -121,6 +123,7 @@ class PlayerService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
         VLog.d(TAG, "service onCreate")
+        scope.launch { runCatching { profileStore.preloadIfNeeded() } }
         // Brand the playback notification with the Vusic note. Media3 would
         // otherwise post its own generic small icon; the shape must match the
         // app icon, and it must be a flat silhouette for the status bar.
@@ -366,6 +369,7 @@ class PlayerService : MediaLibraryService() {
         if (key == lastWidgetKey) return
         lastWidgetKey = key
         scope.launch(Dispatchers.IO) {
+            runCatching { profileStore.preloadIfNeeded() }
             val saved = com.feishin.mobile.widget.WidgetStateStore(this@PlayerService).load()
             val state = if (track == null || count == 0) {
                 com.feishin.mobile.widget.WidgetState.empty()
@@ -500,6 +504,7 @@ class PlayerService : MediaLibraryService() {
         queueIdHint: Long = -1L,
         forceNetwork: Boolean = false,
     ): MediaItem? {
+        runCatching { profileStore.preloadIfNeeded() }
         val deviceUri = track.localUri
         val local = if (deviceUri == null && !forceNetwork) downloads.localFile(track.id) else null
         val uriStr = deviceUri ?: if (local != null) {
@@ -762,6 +767,7 @@ class PlayerService : MediaLibraryService() {
     private fun rememberTracksFromItemsUnused() = Unit
 
     private suspend fun childrenOf(parentId: String): List<MediaItem> {
+        runCatching { profileStore.preloadIfNeeded() }
         if (parentId == AutoBrowse.ROOT_ID) {
             return AutoBrowse.rootTabs().map { folder(it.id, it.title) }
         }

@@ -396,4 +396,31 @@ class FederatedMusicRepositoryTest {
         assertNull(repo.get("p2"))
         assertEquals(listOf("p1"), repo.all().map { it.profile.id })
     }
+
+    @Test
+    fun `awaits profilePreloader and serves albumList when StateFlow starts empty`() = runTest {
+        val p1 = profile("p1")
+        val album1 = sampleAlbum("p1", "al1", "Headless Album")
+        val b1 = FakeBackend(profile = p1, albums = listOf(album1))
+        val profiles = MutableStateFlow<List<ServerProfile>>(emptyList())
+        var preloaderCalls = 0
+        val repo = FederatedMusicRepository(
+            profilesFlow = profiles,
+            backendFactory = { _, _ -> b1 },
+            settingsProvider = { SettingsStore.Settings() },
+            refresh = LibraryRefresh(),
+            scope = backgroundScope,
+            profilePreloader = {
+                preloaderCalls += 1
+                delay(10)
+                profiles.value = listOf(p1)
+            },
+        )
+
+        val result = repo.albumList("alphabeticalByName", 20, 0)
+        assertTrue(result is Result.Ok)
+        assertEquals(listOf(album1), (result as Result.Ok).value)
+        assertTrue(preloaderCalls >= 1)
+        assertEquals(listOf("p1"), repo.enabled().map { it.profile.id })
+    }
 }

@@ -59,6 +59,7 @@ class ProfileStore private constructor(
     private val prefs: SharedPreferences by lazy { prefsProvider() }
     private val preloadMutex = Mutex()
     private val writeLock = Any()
+    @Volatile private var preloaded = false
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -75,12 +76,33 @@ class ProfileStore private constructor(
     /** Idempotent disk read + deterministic one-shot legacy migration on IO. */
     suspend fun preload() = withContext(Dispatchers.IO) {
         preloadMutex.withLock {
-            val stored = readStoredProfiles()
-            val legacyMigrated = prefs.getBoolean(KEY_LEGACY_MIGRATED, false)
-            if (!legacyMigrated && stored.isEmpty()) {
-                migrateLegacyIfNeeded()
-            } else {
-                setMemoryState(sortProfiles(stored))
+            preloadLocked(skipIfPreloaded = false)
+        }
+    }
+
+    /** Fast-path no-op once preloaded or written; otherwise runs [preload] under [preloadMutex]. */
+    suspend fun preloadIfNeeded() {
+        if (preloaded) return
+        withContext(Dispatchers.IO) {
+            preloadMutex.withLock {
+                if (!preloaded) {
+                    preloadLocked(skipIfPreloaded = true)
+                }
+            }
+        }
+    }
+
+    private suspend fun preloadLocked(skipIfPreloaded: Boolean) {
+        val stored = readStoredProfiles()
+        val legacyMigrated = prefs.getBoolean(KEY_LEGACY_MIGRATED, false)
+        if (!legacyMigrated && stored.isEmpty()) {
+            migrateLegacyIfNeeded(skipIfPreloaded)
+        } else {
+            synchronized(writeLock) {
+                if (!skipIfPreloaded || !preloaded) {
+                    setMemoryState(sortProfiles(stored))
+                    preloaded = true
+                }
             }
         }
     }
@@ -93,11 +115,13 @@ class ProfileStore private constructor(
             .commit()
         if (committed) {
             setMemoryState(sorted)
+            preloaded = true
         }
         committed
     }
 
     fun upsert(profile: ServerProfile): Boolean = synchronized(writeLock) {
+        ensureMemoryLoadedForWrite()
         val current = _profiles.value.toMutableList()
         val idx = current.indexOfFirst { it.id == profile.id }
         if (idx >= 0) current[idx] = profile else current.add(profile)
@@ -105,6 +129,7 @@ class ProfileStore private constructor(
     }
 
     fun setEnabled(profileId: String, enabled: Boolean): Boolean = synchronized(writeLock) {
+        ensureMemoryLoadedForWrite()
         val updated = _profiles.value.map {
             if (it.id == profileId) it.copy(enabled = enabled) else it
         }
@@ -112,6 +137,7 @@ class ProfileStore private constructor(
     }
 
     fun reorder(orderedIds: List<String>): Boolean = synchronized(writeLock) {
+        ensureMemoryLoadedForWrite()
         val byId = _profiles.value.associateBy { it.id }
         val reordered = mutableListOf<ServerProfile>()
         orderedIds.forEachIndexed { index, id ->
@@ -125,6 +151,7 @@ class ProfileStore private constructor(
     }
 
     fun remove(profileId: String): Boolean = synchronized(writeLock) {
+        ensureMemoryLoadedForWrite()
         saveAll(_profiles.value.filterNot { it.id == profileId })
     }
 
@@ -134,6 +161,15 @@ class ProfileStore private constructor(
             .putBoolean(KEY_LEGACY_MIGRATED, true)
             .commit()
         setMemoryState(emptyList())
+        preloaded = true
+    }
+
+    private fun ensureMemoryLoadedForWrite() {
+        if (preloaded) return
+        val stored = readStoredProfiles()
+        if (stored.isNotEmpty()) {
+            setMemoryState(sortProfiles(stored))
+        }
     }
 
     fun byId(profileId: String): ServerProfile? = _profiles.value.firstOrNull { it.id == profileId }
@@ -155,11 +191,16 @@ class ProfileStore private constructor(
 
     fun nextPriority(): Int = (_profiles.value.maxOfOrNull { it.priority } ?: -1) + 1
 
-    private suspend fun migrateLegacyIfNeeded() {
+    private suspend fun migrateLegacyIfNeeded(skipIfPreloaded: Boolean) {
         val legacy = readLegacyCredentials()
         if (legacy == null) {
-            prefs.edit().putBoolean(KEY_LEGACY_MIGRATED, true).commit()
-            setMemoryState(emptyList())
+            synchronized(writeLock) {
+                if (!skipIfPreloaded || !preloaded) {
+                    prefs.edit().putBoolean(KEY_LEGACY_MIGRATED, true).commit()
+                    setMemoryState(emptyList())
+                    preloaded = true
+                }
+            }
             return
         }
 
@@ -184,13 +225,22 @@ class ProfileStore private constructor(
         val list = listOf(migrated)
         val encoded = json.encodeToString(list)
         val committed = synchronized(writeLock) {
-            prefs.edit()
-                .putString(KEY_PROFILES_JSON, encoded)
-                .putBoolean(KEY_LEGACY_MIGRATED, true)
-                .commit()
+            if (skipIfPreloaded && preloaded) {
+                false
+            } else {
+                prefs.edit()
+                    .putString(KEY_PROFILES_JSON, encoded)
+                    .putBoolean(KEY_LEGACY_MIGRATED, true)
+                    .commit()
+                    .also { ok ->
+                        if (ok) {
+                            setMemoryState(list)
+                            preloaded = true
+                        }
+                    }
+            }
         }
         if (committed) {
-            setMemoryState(list)
             clearLegacyCredentials()
         }
     }

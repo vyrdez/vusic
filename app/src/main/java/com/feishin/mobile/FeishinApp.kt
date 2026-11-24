@@ -27,6 +27,7 @@ class FeishinApp : Application(), ImageLoaderFactory, Configuration.Provider {
     interface WarmupEntry {
         fun okHttp(): okhttp3.OkHttpClient
         fun cache(): androidx.media3.datasource.cache.SimpleCache
+        fun profileStore(): com.feishin.mobile.data.auth.ProfileStore
     }
 
     // Lazy: ImageLoader construction does a blocking DataStore read for the
@@ -92,6 +93,7 @@ class FeishinApp : Application(), ImageLoaderFactory, Configuration.Provider {
                 // Cache first: PlayerManager (needed at first composition)
                 // demands it before any network call needs OkHttp.
                 entry.cache()
+                runCatching { entry.profileStore().preloadIfNeeded() }
                 entry.okHttp()
             }
         }

@@ -73,6 +73,7 @@ class FederatedMusicRepository internal constructor(
     private val refresh: LibraryRefresh,
     private val cachedTracks: dagger.Lazy<CachedTrackStore>? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashGuard.handler),
+    private val profilePreloader: (suspend () -> Unit)? = null,
 ) : MusicDataRepository, BackendRegistry {
 
     @Inject
@@ -101,6 +102,7 @@ class FederatedMusicRepository internal constructor(
         refresh = refresh,
         cachedTracks = cachedTracks,
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashGuard.handler),
+        profilePreloader = profileStore::preloadIfNeeded,
     )
 
     private val registryLock = Any()
@@ -116,8 +118,11 @@ class FederatedMusicRepository internal constructor(
     override val healthState: StateFlow<FederatedHealthState> = _healthState.asStateFlow()
 
     init {
-        syncBackends(profilesFlow.value)
+        if (profilePreloader == null) {
+            syncBackends(profilesFlow.value)
+        }
         scope.launch {
+            ensureLoaded()
             profilesFlow.collect { list -> syncBackends(list) }
         }
     }
@@ -159,6 +164,11 @@ class FederatedMusicRepository internal constructor(
         if (lastSyncedProfiles !== current) {
             syncBackends(current)
         }
+    }
+
+    private suspend fun ensureLoaded() {
+        profilePreloader?.invoke()
+        ensureSynced()
     }
 
     override fun all(): List<MusicBackend> {
@@ -315,6 +325,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun ping(): Result<Unit> {
+        ensureLoaded()
         val settings = readSettings()
         val targets = enabled()
         if (targets.isEmpty()) return Result.Err("Not logged in")
@@ -331,6 +342,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun ping(profileId: String): Result<Unit> {
+        ensureLoaded()
         val backend = get(profileId) ?: return Result.Err("Server not found")
         val res = backend.ping()
         when (res) {
@@ -341,6 +353,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun albumList(type: String, size: Int, offset: Int, genre: String?): Result<List<Album>> {
+        ensureLoaded()
         val settings = readSettings()
         val targets = matchingBackends(settings)
         if (targets.isEmpty()) return Result.Ok(emptyList())
@@ -390,6 +403,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun artists(): Result<List<Artist>> {
+        ensureLoaded()
         val settings = readSettings()
         val targets = matchingBackends(settings)
         if (targets.isEmpty()) return Result.Ok(emptyList())
@@ -413,6 +427,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun genres(): Result<List<Genre>> {
+        ensureLoaded()
         val settings = readSettings()
         val targets = matchingBackends(settings)
         if (targets.isEmpty()) return Result.Ok(emptyList())
@@ -450,6 +465,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun playlists(): Result<List<Playlist>> {
+        ensureLoaded()
         val settings = readSettings()
         val targets = matchingBackends(settings)
         if (targets.isEmpty()) return Result.Ok(emptyList())
@@ -476,6 +492,7 @@ class FederatedMusicRepository internal constructor(
         albumCount: Int,
         songCount: Int,
     ): Result<SearchResults> {
+        ensureLoaded()
         val settings = readSettings()
         val targets = matchingBackends(settings)
         if (targets.isEmpty()) return Result.Ok(SearchResults())
@@ -509,47 +526,60 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun serverInfo(): Result<ServerInfo> {
+        ensureLoaded()
         val primary = enabled().firstOrNull() ?: return Result.Err("Not logged in")
         return primary.serverInfo()
     }
 
-    override suspend fun serverInfo(profileId: String): Result<ServerInfo> =
-        get(profileId)?.serverInfo() ?: Result.Err("Server not found")
+    override suspend fun serverInfo(profileId: String): Result<ServerInfo> {
+        ensureLoaded()
+        return get(profileId)?.serverInfo() ?: Result.Err("Server not found")
+    }
 
     override suspend fun startScan(): Result<Unit> {
+        ensureLoaded()
         val target = enabled().firstOrNull { it.capabilities.supportsLibraryScan }
             ?: return Result.Err("No scannable server configured")
         return target.startScan()
     }
 
-    override suspend fun startScan(profileId: String): Result<Unit> =
-        get(profileId)?.startScan() ?: Result.Err("Server not found")
+    override suspend fun startScan(profileId: String): Result<Unit> {
+        ensureLoaded()
+        return get(profileId)?.startScan() ?: Result.Err("Server not found")
+    }
 
     override suspend fun scanStatus(): Result<ScanStatus> {
+        ensureLoaded()
         val target = enabled().firstOrNull { it.capabilities.supportsLibraryScan }
             ?: return Result.Err("No scannable server configured")
         return target.scanStatus()
     }
 
-    override suspend fun scanStatus(profileId: String): Result<ScanStatus> =
-        get(profileId)?.scanStatus() ?: Result.Err("Server not found")
+    override suspend fun scanStatus(profileId: String): Result<ScanStatus> {
+        ensureLoaded()
+        return get(profileId)?.scanStatus() ?: Result.Err("Server not found")
+    }
 
     override suspend fun album(id: String): Result<AlbumDetail> {
+        ensureLoaded()
         val backend = resolveBackend(id) ?: return Result.Err("Server unavailable")
         return backend.album(id)
     }
 
     override suspend fun artist(id: String): Result<ArtistDetail> {
+        ensureLoaded()
         val backend = resolveBackend(id) ?: return Result.Err("Server unavailable")
         return backend.artist(id)
     }
 
     override suspend fun artistInfo(id: String): Result<ArtistInfo> {
+        ensureLoaded()
         val backend = resolveBackend(id) ?: return Result.Err("Artist info not available")
         return backend.artistInfo(id)
     }
 
     override suspend fun randomSongs(size: Int, genre: String?): Result<List<Track>> {
+        ensureLoaded()
         val settings = readSettings()
         val targets = matchingBackends(settings)
         if (targets.isEmpty()) return Result.Ok(emptyList())
@@ -574,6 +604,7 @@ class FederatedMusicRepository internal constructor(
         topSongs(artist, count, preferredProfileId = null)
 
     override suspend fun topSongs(artist: String, count: Int, preferredProfileId: String?): Result<List<Track>> {
+        ensureLoaded()
         val settings = readSettings()
         val baseTargets = matchingBackends(settings)
         val targets = if (preferredProfileId != null) {
@@ -616,6 +647,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun similarSongs(songId: String?, artistId: String?, count: Int): Result<List<Track>> {
+        ensureLoaded()
         val seedId = songId ?: artistId
         val seedProfileId = seedId?.let { GlobalId.profileIdOrNull(it) }
         if (seedProfileId != null) {
@@ -646,6 +678,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun playlist(id: String): Result<PlaylistDetail> {
+        ensureLoaded()
         if (id == FAVORITE_SONGS_PLAYLIST_ID) {
             return when (val r = starred()) {
                 is Result.Ok -> {
@@ -680,11 +713,13 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun cachedPlaylist(id: String): PlaylistDetail? {
+        ensureLoaded()
         if (id in GlobalId.VIRTUAL_IDS) return null
         return resolveBackend(id)?.cachedPlaylist(id)
     }
 
     override suspend fun starred(): Result<StarredCollection> {
+        ensureLoaded()
         val settings = readSettings()
         val targets = matchingBackends(settings)
         if (targets.isEmpty()) return Result.Ok(StarredCollection())
@@ -719,6 +754,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun starTrack(id: String, starred: Boolean): Result<Unit> {
+        ensureLoaded()
         if (GlobalId.isDeviceLocal(id)) return Result.Ok(Unit)
         val backend = resolveBackend(id) ?: return Result.Err("Server unavailable")
         val res = backend.starTrack(id, starred)
@@ -727,6 +763,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun starAlbum(id: String, starred: Boolean): Result<Unit> {
+        ensureLoaded()
         if (GlobalId.isDeviceLocal(id)) return Result.Ok(Unit)
         val backend = resolveBackend(id) ?: return Result.Err("Server unavailable")
         val res = backend.starAlbum(id, starred)
@@ -738,6 +775,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun starArtist(id: String, starred: Boolean): Result<Unit> {
+        ensureLoaded()
         if (GlobalId.isDeviceLocal(id)) return Result.Ok(Unit)
         val backend = resolveBackend(id) ?: return Result.Err("Server unavailable")
         val res = backend.starArtist(id, starred)
@@ -756,6 +794,7 @@ class FederatedMusicRepository internal constructor(
         trackIds: List<String>,
         profileId: String?,
     ): Result<String> {
+        ensureLoaded()
         val target = when {
             profileId != null -> get(profileId)
             else -> {
@@ -779,6 +818,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun addToPlaylist(playlistId: String, trackIds: List<String>): Result<Unit> {
+        ensureLoaded()
         val backend = resolveBackend(playlistId) ?: return Result.Err("Server unavailable")
         val compatible = trackIds.filter { tid ->
             if (GlobalId.isDeviceLocal(tid)) return@filter false
@@ -799,6 +839,7 @@ class FederatedMusicRepository internal constructor(
         playlistName: String,
         onRollback: (() -> Unit)?,
     ): Result<Unit> {
+        ensureLoaded()
         val backend = resolveBackend(playlistId) ?: return Result.Err("Server unavailable")
         val compatible = tracks.filter { track ->
             if (track.isLocal || GlobalId.isDeviceLocal(track.id)) return@filter false
@@ -809,6 +850,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit> {
+        ensureLoaded()
         val backend = resolveBackend(playlistId) ?: return Result.Err("Server unavailable")
         val res = backend.removeFromPlaylist(playlistId, indexes)
         if (res is Result.Ok) {
@@ -819,6 +861,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun deletePlaylist(id: String): Result<Unit> {
+        ensureLoaded()
         val backend = resolveBackend(id) ?: return Result.Err("Server unavailable")
         val res = backend.deletePlaylist(id)
         if (res is Result.Ok) {
@@ -828,6 +871,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun scrobble(id: String, submission: Boolean): Result<Unit> {
+        ensureLoaded()
         if (GlobalId.isDeviceLocal(id)) return Result.Ok(Unit)
         val backend = resolveBackend(id) ?: return Result.Err("Server unavailable")
         if (!backend.capabilities.supportsScrobbling) return Result.Ok(Unit)
@@ -835,6 +879,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun scrobbleAt(id: String, timeMs: Long, submission: Boolean): Result<Unit> {
+        ensureLoaded()
         if (GlobalId.isDeviceLocal(id)) return Result.Ok(Unit)
         val backend = resolveBackend(id) ?: return Result.Err("Server unavailable")
         if (!backend.capabilities.supportsScrobbling) return Result.Ok(Unit)
@@ -842,6 +887,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun lyricsForTrack(id: String, artist: String, title: String): Result<SyncedLyrics> {
+        ensureLoaded()
         if (GlobalId.isDeviceLocal(id)) return Result.Ok(SyncedLyrics.EMPTY)
         val backend = resolveBackend(id) ?: return Result.Ok(SyncedLyrics.EMPTY)
         if (!backend.capabilities.supportsServerLyrics) return Result.Ok(SyncedLyrics.EMPTY)
@@ -849,6 +895,7 @@ class FederatedMusicRepository internal constructor(
     }
 
     override suspend fun lyrics(artist: String, title: String): Result<String> {
+        ensureLoaded()
         val settings = readSettings()
         val targets = matchingBackends(settings).filter { it.capabilities.supportsServerLyrics }
         if (targets.isEmpty()) return Result.Ok("")
