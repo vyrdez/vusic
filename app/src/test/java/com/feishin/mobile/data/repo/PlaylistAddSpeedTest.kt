@@ -33,6 +33,9 @@ class PlaylistAddSpeedTest {
         override suspend fun remove(key: String) {
             storage.remove(key)
         }
+        override suspend fun deleteByPrefix(prefix: String) {
+            storage.keys.removeIf { it.startsWith(prefix) }
+        }
         override suspend fun clear() {
             storage.clear()
         }

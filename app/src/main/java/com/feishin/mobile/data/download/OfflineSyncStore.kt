@@ -1,5 +1,6 @@
 package com.feishin.mobile.data.download
 
+import com.feishin.mobile.core.common.GlobalId
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.data.db.PendingActionDao
 import com.feishin.mobile.data.db.PendingActionEntity
@@ -14,8 +15,8 @@ enum class PendingActionType { SCROBBLE, STAR, UNSTAR, STAR_ALBUM, UNSTAR_ALBUM,
 
 /**
  * Queues server writes (scrobbles, stars) that happened while offline and replays
- * them in order once the network returns, keeping the original timestamp so
- * scrobble history lands on the right day.
+ * them per profile in order once the network returns, keeping the original
+ * timestamp so scrobble history lands on the right day.
  */
 @Singleton
 class OfflineSyncStore @Inject constructor(
@@ -27,56 +28,67 @@ class OfflineSyncStore @Inject constructor(
     val hasPending: Flow<Boolean> = dao.observeCount().map { it > 0 }
 
     suspend fun queueScrobble(songId: String, submission: Boolean, timeMs: Long = System.currentTimeMillis()) {
+        if (GlobalId.isDeviceLocal(songId)) return
         dao.insert(
             PendingActionEntity(
                 type = PendingActionType.SCROBBLE.name,
                 targetId = songId,
                 submission = submission,
                 timeMs = timeMs,
+                profileId = profileIdFor(songId),
             ),
         )
     }
 
     suspend fun queueStar(songId: String, starred: Boolean) {
+        if (GlobalId.isDeviceLocal(songId)) return
         dao.insert(
             PendingActionEntity(
                 type = if (starred) PendingActionType.STAR.name else PendingActionType.UNSTAR.name,
                 targetId = songId,
                 timeMs = System.currentTimeMillis(),
+                profileId = profileIdFor(songId),
             ),
         )
     }
 
     suspend fun queueStarAlbum(albumId: String, starred: Boolean) {
+        if (GlobalId.isDeviceLocal(albumId)) return
         dao.insert(
             PendingActionEntity(
                 type = if (starred) PendingActionType.STAR_ALBUM.name else PendingActionType.UNSTAR_ALBUM.name,
                 targetId = albumId,
+                profileId = profileIdFor(albumId),
             ),
         )
     }
 
     suspend fun queueStarArtist(artistId: String, starred: Boolean) {
+        if (GlobalId.isDeviceLocal(artistId)) return
         dao.insert(
             PendingActionEntity(
                 type = if (starred) PendingActionType.STAR_ARTIST.name else PendingActionType.UNSTAR_ARTIST.name,
                 targetId = artistId,
+                profileId = profileIdFor(artistId),
             ),
         )
     }
 
     /**
-     * Replays everything in timestamp order. Stops at the first failure so the
-     * queue stays ordered and nothing is lost; the caller retries later.
-     * @return the number of actions successfully replayed.
+     * Replays pending actions independently per profile in timestamp/id order.
+     * A failure on one profile pauses only that profile's queue so remaining
+     * online profiles continue draining cleanly.
+     * @return the number of actions successfully replayed across all profiles.
      */
     suspend fun flush(): Int {
         var done = 0
-        for (action in dao.all()) {
-            val ok = replay(action)
-            if (!ok) break
-            dao.delete(action.id)
-            done++
+        for (profileId in dao.distinctProfileIds()) {
+            for (action in dao.pendingForProfile(profileId)) {
+                val ok = replay(action)
+                if (!ok) break
+                dao.delete(action.id)
+                done++
+            }
         }
         return done
     }
@@ -95,5 +107,13 @@ class OfflineSyncStore @Inject constructor(
         return result is Result.Ok
     }
 
+    suspend fun clearForProfile(profileId: String) = dao.deleteByProfile(profileId)
+
     suspend fun clear() = dao.clear()
+
+    private fun profileIdFor(id: String): String = GlobalId.profileIdOrNull(id) ?: DEFAULT_PROFILE_ID
+
+    companion object {
+        const val DEFAULT_PROFILE_ID = "p1"
+    }
 }

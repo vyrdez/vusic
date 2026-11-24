@@ -1,5 +1,6 @@
 package com.feishin.mobile.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Index
@@ -18,7 +19,10 @@ enum class DownloadStatus { QUEUED, DOWNLOADING, COMPLETED, FAILED, PAUSED }
  * with no network at all, plus the transfer state so downloads resume after a
  * process kill.
  */
-@Entity(tableName = "downloads", indices = [Index("groupId"), Index("status")])
+@Entity(
+    tableName = "downloads",
+    indices = [Index("groupId"), Index("status"), Index("profileId")],
+)
 data class DownloadEntity(
     @PrimaryKey val songId: String,
     val title: String,
@@ -49,6 +53,7 @@ data class DownloadEntity(
     val groupId: String? = null,
     val enqueuedAt: Long = System.currentTimeMillis(),
     val completedAt: Long? = null,
+    @ColumnInfo(defaultValue = "p1") val profileId: String = "p1",
 ) {
     val statusEnum: DownloadStatus
         get() = runCatching { DownloadStatus.valueOf(status) }.getOrDefault(DownloadStatus.QUEUED)
@@ -58,7 +63,10 @@ data class DownloadEntity(
 }
 
 /** A collection the user asked to keep downloaded, so it can stay in sync. */
-@Entity(tableName = "download_groups")
+@Entity(
+    tableName = "download_groups",
+    indices = [Index("profileId")],
+)
 data class DownloadGroupEntity(
     @PrimaryKey val groupId: String,
     /** album | playlist | favorites */
@@ -66,6 +74,7 @@ data class DownloadGroupEntity(
     val name: String = "",
     val keepDownloaded: Boolean = true,
     val updatedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "p1") val profileId: String = "p1",
 )
 
 /** Library payload cache (single JSON blob per kind) for offline browsing. */
@@ -88,7 +97,10 @@ data class CachedCoverEntity(
  * A side effect performed while offline (scrobble, star, unstar) that must be
  * replayed against the server with its original timestamp once online.
  */
-@Entity(tableName = "pending_actions")
+@Entity(
+    tableName = "pending_actions",
+    indices = [Index("profileId")],
+)
 data class PendingActionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     /** scrobble | star | unstar | starAlbum | unstarAlbum | starArtist | unstarArtist */
@@ -97,6 +109,7 @@ data class PendingActionEntity(
     val submission: Boolean = true,
     /** Original wall-clock time, so scrobbles keep the right timestamp. */
     val timeMs: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "p1") val profileId: String = "p1",
 )
 
 @Dao
@@ -168,6 +181,12 @@ interface DownloadDao {
     @Query("SELECT tempPath FROM downloads WHERE status IN ('QUEUED', 'DOWNLOADING', 'PAUSED') AND tempPath IS NOT NULL")
     suspend fun partialFilePaths(): List<String>
 
+    @Query("SELECT * FROM downloads WHERE profileId = :profileId ORDER BY enqueuedAt ASC")
+    suspend fun byProfile(profileId: String): List<DownloadEntity>
+
+    @Query("DELETE FROM downloads WHERE profileId = :profileId")
+    suspend fun deleteByProfile(profileId: String)
+
     @Query("DELETE FROM downloads WHERE songId = :id")
     suspend fun delete(id: String)
 
@@ -189,6 +208,9 @@ interface DownloadGroupDao {
     @Query("SELECT * FROM download_groups WHERE groupId = :groupId LIMIT 1")
     suspend fun byId(groupId: String): DownloadGroupEntity?
 
+    @Query("SELECT * FROM download_groups WHERE profileId = :profileId")
+    suspend fun byProfile(profileId: String): List<DownloadGroupEntity>
+
     @Query("SELECT groupId FROM download_groups WHERE keepDownloaded = 1")
     suspend fun keepIds(): List<String>
 
@@ -197,6 +219,9 @@ interface DownloadGroupDao {
 
     @Query("DELETE FROM download_groups WHERE groupId = :groupId")
     suspend fun delete(groupId: String)
+
+    @Query("DELETE FROM download_groups WHERE profileId = :profileId")
+    suspend fun deleteByProfile(profileId: String)
 
     @Query("DELETE FROM download_groups")
     suspend fun clear()
@@ -212,6 +237,9 @@ interface MetadataCacheDao {
 
     @Query("DELETE FROM metadata_cache WHERE key = :key")
     suspend fun remove(key: String)
+
+    @Query("DELETE FROM metadata_cache WHERE key LIKE :prefix || '%'")
+    suspend fun deleteByPrefix(prefix: String)
 
     @Query("DELETE FROM metadata_cache")
     suspend fun clear()
@@ -231,6 +259,9 @@ interface CachedCoverDao {
     @Query("DELETE FROM cached_covers WHERE coverArtId = :id")
     suspend fun delete(id: String)
 
+    @Query("DELETE FROM cached_covers WHERE coverArtId LIKE :prefix || '%'")
+    suspend fun deleteByPrefix(prefix: String)
+
     @Query("DELETE FROM cached_covers")
     suspend fun clear()
 }
@@ -240,11 +271,20 @@ interface PendingActionDao {
     @Query("SELECT * FROM pending_actions ORDER BY timeMs ASC")
     suspend fun all(): List<PendingActionEntity>
 
+    @Query("SELECT * FROM pending_actions WHERE profileId = :profileId ORDER BY timeMs ASC, id ASC")
+    suspend fun pendingForProfile(profileId: String): List<PendingActionEntity>
+
+    @Query("SELECT DISTINCT profileId FROM pending_actions ORDER BY profileId ASC")
+    suspend fun distinctProfileIds(): List<String>
+
     @Insert
     suspend fun insert(action: PendingActionEntity): Long
 
     @Query("DELETE FROM pending_actions WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("DELETE FROM pending_actions WHERE profileId = :profileId")
+    suspend fun deleteByProfile(profileId: String)
 
     @Query("SELECT COUNT(*) FROM pending_actions")
     fun observeCount(): Flow<Int>
@@ -258,7 +298,10 @@ interface PendingActionDao {
  * live in Media3's SimpleCache (LRU); this table is what makes the "Cached"
  * collection work with no network, and what gets pruned when bytes evaporate.
  */
-@Entity(tableName = "cached_tracks")
+@Entity(
+    tableName = "cached_tracks",
+    indices = [Index("profileId")],
+)
 data class CachedTrackEntity(
     @PrimaryKey val songId: String,
     val title: String,
@@ -277,6 +320,7 @@ data class CachedTrackEntity(
     val sizeBytes: Long = 0,
     val cachedAt: Long = System.currentTimeMillis(),
     val lastPlayedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "p1") val profileId: String = "p1",
 )
 
 @Dao
@@ -286,6 +330,9 @@ interface CachedTrackDao {
 
     @Query("SELECT * FROM cached_tracks ORDER BY cachedAt DESC")
     suspend fun all(): List<CachedTrackEntity>
+
+    @Query("SELECT * FROM cached_tracks WHERE profileId = :profileId ORDER BY cachedAt DESC")
+    suspend fun byProfile(profileId: String): List<CachedTrackEntity>
 
     @Query("SELECT * FROM cached_tracks WHERE songId = :id LIMIT 1")
     suspend fun byId(id: String): CachedTrackEntity?
@@ -299,6 +346,9 @@ interface CachedTrackDao {
     @Query("DELETE FROM cached_tracks WHERE songId = :id")
     suspend fun delete(id: String)
 
+    @Query("DELETE FROM cached_tracks WHERE profileId = :profileId")
+    suspend fun deleteByProfile(profileId: String)
+
     @Query("DELETE FROM cached_tracks")
     suspend fun clear()
 
@@ -307,11 +357,15 @@ interface CachedTrackDao {
 }
 
 /** Cached lyrics for a song, keyed by song id (or local URI key), so they open instantly offline. */
-@Entity(tableName = "lyrics_cache")
+@Entity(
+    tableName = "lyrics_cache",
+    indices = [Index("profileId")],
+)
 data class LyricsCacheEntity(
     @PrimaryKey val songId: String,
     val json: String,
     val updatedAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "p1") val profileId: String = "p1",
 )
 
 @Dao
@@ -327,6 +381,9 @@ interface LyricsCacheDao {
 
     @Query("DELETE FROM lyrics_cache WHERE songId = :id")
     suspend fun remove(id: String)
+
+    @Query("DELETE FROM lyrics_cache WHERE profileId = :profileId")
+    suspend fun deleteByProfile(profileId: String)
 
     @Query("DELETE FROM lyrics_cache")
     suspend fun clear()
@@ -346,6 +403,52 @@ val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
     }
 }
 
+/**
+ * 6 -> 7: adds profileId + indices to profile-scoped tables, backfills legacy bare IDs to
+ * the `"p1:"` namespace (leaving `local:` IDs and `cached_tracks.cacheKey` untouched so
+ * existing v6 SimpleCache spans on disk hit), and clears un-prefixed `metadata_cache` blobs.
+ */
+val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        // 1. downloads: add profileId + index, backfill legacy bare songIds/groupIds to p1:
+        db.execSQL("ALTER TABLE downloads ADD COLUMN profileId TEXT NOT NULL DEFAULT 'p1'")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_downloads_profileId ON downloads(profileId)")
+        db.execSQL("UPDATE downloads SET songId = 'p1:' || songId WHERE songId NOT LIKE 'local:%' AND songId NOT LIKE '%:%'")
+        db.execSQL("UPDATE downloads SET albumId = 'p1:' || albumId WHERE albumId IS NOT NULL AND albumId NOT LIKE 'local_album:%' AND albumId NOT LIKE '%:%'")
+        db.execSQL("UPDATE downloads SET artistId = 'p1:' || artistId WHERE artistId IS NOT NULL AND artistId NOT LIKE 'local_artist:%' AND artistId NOT LIKE '%:%'")
+        db.execSQL("UPDATE downloads SET coverArt = 'p1:' || coverArt WHERE coverArt IS NOT NULL AND coverArt NOT LIKE 'content://%' AND coverArt NOT LIKE 'file://%' AND coverArt NOT LIKE '%:%'")
+        db.execSQL("UPDATE downloads SET groupId = 'album:p1:' || substr(groupId, 7) WHERE groupId LIKE 'album:%' AND substr(groupId, 7) NOT LIKE '%:%'")
+        db.execSQL("UPDATE downloads SET groupId = 'playlist:p1:' || substr(groupId, 10) WHERE groupId LIKE 'playlist:%' AND substr(groupId, 10) NOT LIKE '%:%'")
+
+        // 2. download_groups: add profileId + index, backfill groupId
+        db.execSQL("ALTER TABLE download_groups ADD COLUMN profileId TEXT NOT NULL DEFAULT 'p1'")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_download_groups_profileId ON download_groups(profileId)")
+        db.execSQL("UPDATE download_groups SET groupId = 'album:p1:' || substr(groupId, 7) WHERE groupId LIKE 'album:%' AND substr(groupId, 7) NOT LIKE '%:%'")
+        db.execSQL("UPDATE download_groups SET groupId = 'playlist:p1:' || substr(groupId, 10) WHERE groupId LIKE 'playlist:%' AND substr(groupId, 10) NOT LIKE '%:%'")
+
+        // 3. pending_actions: add profileId + index, backfill targetId
+        db.execSQL("ALTER TABLE pending_actions ADD COLUMN profileId TEXT NOT NULL DEFAULT 'p1'")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_pending_actions_profileId ON pending_actions(profileId)")
+        db.execSQL("UPDATE pending_actions SET targetId = 'p1:' || targetId WHERE targetId NOT LIKE '%:%'")
+
+        // 4. cached_tracks: add profileId + index, backfill songId ONLY (keep v6 cacheKey untouched so existing SimpleCache spans on disk hit!)
+        db.execSQL("ALTER TABLE cached_tracks ADD COLUMN profileId TEXT NOT NULL DEFAULT 'p1'")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_cached_tracks_profileId ON cached_tracks(profileId)")
+        db.execSQL("UPDATE cached_tracks SET songId = 'p1:' || songId WHERE songId NOT LIKE 'local:%' AND songId NOT LIKE '%:%'")
+
+        // 5. lyrics_cache: add profileId + index, backfill non-local songId
+        db.execSQL("ALTER TABLE lyrics_cache ADD COLUMN profileId TEXT NOT NULL DEFAULT 'p1'")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_lyrics_cache_profileId ON lyrics_cache(profileId)")
+        db.execSQL("UPDATE lyrics_cache SET songId = 'p1:' || songId WHERE songId NOT LIKE 'local:%' AND songId NOT LIKE '%:%'")
+
+        // 6. cached_covers: backfill bare coverArtId
+        db.execSQL("UPDATE cached_covers SET coverArtId = 'p1:' || coverArtId WHERE coverArtId NOT LIKE 'content://%' AND coverArtId NOT LIKE 'file://%' AND coverArtId NOT LIKE '%:%'")
+
+        // 7. metadata_cache: invalidate/namespace un-prefixed v6 payloads (safe because revalidation re-fetches from server)
+        db.execSQL("DELETE FROM metadata_cache")
+    }
+}
+
 @androidx.room.Database(
     entities = [
         DownloadEntity::class,
@@ -356,8 +459,8 @@ val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
         CachedTrackEntity::class,
         LyricsCacheEntity::class,
     ],
-    version = 6,
-    exportSchema = false,
+    version = 7,
+    exportSchema = true,
 )
 abstract class MusicDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao

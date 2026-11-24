@@ -1,78 +1,92 @@
 package com.feishin.mobile.data.db
 
 import androidx.room.Room
+import androidx.room.testing.MigrationTestHelper
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
 
 /**
- * Verifies the 5 -> 6 Room migration adds the lyrics_cache table and preserves
- * existing data.
+ * Verifies the 5 -> 6 -> 7 Room migration path adds the lyrics_cache table,
+ * migrates to v7 with profile namespacing, and preserves existing data.
  *
- * The database is created at the current version first (so the v5 tables come
- * from Room itself, not a hand-copied DDL), then rewound to look like v5: the
- * new table is dropped and user_version is set back to 5. Re-opening it with
- * [MIGRATION_5_6] therefore exercises the real migration path.
+ * A real v6 schema is created via [MigrationTestHelper], seeded with a legacy
+ * download, and rewound to v5 by dropping `lyrics_cache` and resetting
+ * `user_version = 5` (since v6 only added `lyrics_cache`). Running
+ * [MIGRATION_5_6] followed by [MIGRATION_6_7] exercises the full upgrade path.
  */
+@RunWith(AndroidJUnit4::class)
 class LyricsCacheMigrationTest {
+
+    @get:Rule
+    val helper = MigrationTestHelper(
+        InstrumentationRegistry.getInstrumentation(),
+        MusicDatabase::class.java,
+    )
 
     @Test
     fun migrationFiveToSixAddsLyricsCacheTableAndKeepsData() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val dbFile = File(context.cacheDir, "lyrics_migration_${System.currentTimeMillis()}.db")
+        val dbName = "lyrics_migration_${System.currentTimeMillis()}.db"
 
         try {
-            // --- seed data, then rewind the schema to version 5 ---
-            val seed = Room.databaseBuilder(
-                context,
-                MusicDatabase::class.java,
-                dbFile.absolutePath,
-            )
-                .fallbackToDestructiveMigration()
-                .build()
-            runBlocking {
-                seed.downloadDao().upsert(
-                    DownloadEntity(
-                        songId = "song-1",
-                        title = "Old song",
-                        artist = "Old artist",
-                        album = "Old album",
-                        status = DownloadStatus.COMPLETED.name,
-                    ),
+            // --- create real v6 DB, seed legacy data, then rewind to version 5 ---
+            helper.createDatabase(dbName, 6).use { db ->
+                db.execSQL(
+                    """
+                    INSERT INTO downloads (
+                        songId, title, artist, album, durationSec, path,
+                        bytesDownloaded, expectedBytes, status, progress, enqueuedAt
+                    ) VALUES (
+                        'song-1', 'Old song', 'Old artist', 'Old album', 180, '',
+                        100, 100, 'COMPLETED', 1.0, 1000
+                    )
+                    """.trimIndent(),
                 )
-                assertEquals(1, seed.downloadDao().completedIds().size)
+                db.execSQL("DROP TABLE IF EXISTS lyrics_cache")
+                db.execSQL("PRAGMA user_version = 5")
             }
-            seed.openHelper.writableDatabase.apply {
-                execSQL("DROP TABLE IF EXISTS lyrics_cache")
-                execSQL("PRAGMA user_version = 5")
-            }
-            seed.close()
 
-            // --- version 6: the migration must run, lyrics_cache appear, old data kept ---
-            val v6 = Room.databaseBuilder(
+            // --- migrate 5 -> 6 -> 7 and validate against schemas/7.json ---
+            helper.runMigrationsAndValidate(dbName, 7, true, MIGRATION_5_6, MIGRATION_6_7).close()
+
+            // --- open via Room v7: old download kept & backfilled, lyrics_cache usable ---
+            val v7 = Room.databaseBuilder(
                 context,
                 MusicDatabase::class.java,
-                dbFile.absolutePath,
+                dbName,
             )
-                .addMigrations(MIGRATION_5_6)
+                .addMigrations(MIGRATION_5_6, MIGRATION_6_7)
                 .build()
-            runBlocking {
-                assertEquals(1, v6.downloadDao().completedIds().size)
+            try {
+                runBlocking {
+                    assertEquals(listOf("p1:song-1"), v7.downloadDao().completedIds())
 
-                val dao = v6.lyricsCacheDao()
-                assertNull(dao.get("song-1"))
-                dao.put(LyricsCacheEntity("song-1", "{\"kind\":\"SYNCED\"}", System.currentTimeMillis()))
-                assertNotNull(dao.get("song-1"))
-                dao.remove("song-1")
-                assertNull(dao.get("song-1"))
+                    val dao = v7.lyricsCacheDao()
+                    assertNull(dao.get("p1:song-1"))
+                    dao.put(
+                        LyricsCacheEntity(
+                            songId = "p1:song-1",
+                            json = "{\"kind\":\"SYNCED\"}",
+                            updatedAt = System.currentTimeMillis(),
+                            profileId = "p1",
+                        ),
+                    )
+                    assertNotNull(dao.get("p1:song-1"))
+                    dao.remove("p1:song-1")
+                    assertNull(dao.get("p1:song-1"))
+                }
+            } finally {
+                v7.close()
             }
-            v6.close()
         } finally {
-            dbFile.delete()
+            context.deleteDatabase(dbName)
         }
     }
 }

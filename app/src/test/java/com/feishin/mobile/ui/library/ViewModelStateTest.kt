@@ -226,6 +226,11 @@ class ViewModelStateTest {
         override suspend fun delete(id: String) {
             rows.remove(id)
         }
+        override suspend fun byProfile(profileId: String) =
+            rows.values.filter { it.profileId == profileId }
+        override suspend fun deleteByProfile(profileId: String) {
+            rows.entries.removeIf { it.value.profileId == profileId }
+        }
         override suspend fun clear() = rows.clear()
         override suspend fun count() = rows.size
     }
