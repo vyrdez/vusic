@@ -14,6 +14,7 @@ import coil.ImageLoader
 import coil.request.ImageRequest
 import com.feishin.mobile.MainActivity
 import com.feishin.mobile.R
+import com.feishin.mobile.core.network.CoverCacheKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -50,7 +51,15 @@ object WidgetUpdater {
         val bitmap = withContext(Dispatchers.IO) {
             runCatching {
                 val url = coverUrlFor(state.coverArtId) ?: return@runCatching null
-                val req = ImageRequest.Builder(app).data(url).size(256).build()
+                val req = ImageRequest.Builder(app)
+                    .data(url)
+                    .size(256)
+                    .apply {
+                        state.coverArtId
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { tag(CoverCacheKey::class.java, CoverCacheKey(it)) }
+                    }
+                    .build()
                 imageLoader.execute(req).drawable?.toBitmap()?.let { rounded(it) }
             }.getOrNull()
         }

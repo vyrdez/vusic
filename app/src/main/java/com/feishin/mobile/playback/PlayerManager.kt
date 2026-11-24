@@ -29,9 +29,7 @@ import com.feishin.mobile.core.common.PlaybackSource
 import com.feishin.mobile.core.common.ReplayGain
 import com.feishin.mobile.core.common.ReplayGainMode
 import com.feishin.mobile.core.common.OfflineRadio
-import com.feishin.mobile.core.network.CoverArtUrlProvider
-import com.feishin.mobile.core.network.StreamUrlProvider
-import com.feishin.mobile.data.auth.CredentialsStore
+import com.feishin.mobile.core.network.BackendUrlResolver
 import com.feishin.mobile.data.queue.QueueStore
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.Track
@@ -76,7 +74,7 @@ data class QueueItem(val song: Track, val queueId: Long)
 @Singleton
 class PlayerManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val creds: CredentialsStore,
+    private val urlResolver: BackendUrlResolver,
     private val settings: SettingsStore,
     private val queueStore: QueueStore,
     private val repo: MusicDataRepository,
@@ -641,10 +639,10 @@ class PlayerManager @Inject constructor(
      * shuffle toggle after restart behaves exactly as before the kill.
      */
     private suspend fun restoreFromSnapshot(c: Player, seedPlayer: Boolean = true): Boolean {
-        // Give the credentials up to 10s to arrive (first launch, slow disk);
+        // Give profiles up to 10s to arrive (first launch, slow disk);
         // if they never do, keep the snapshot for the next launch instead of
         // silently dropping it forever.
-        val credsReady = withTimeoutOrNull(10_000) { creds.state.first { it != null } } != null
+        val credsReady = urlResolver.awaitProfilesReady(10_000)
         if (restored) {
             return true
         }
@@ -871,14 +869,14 @@ class PlayerManager @Inject constructor(
 
     /** Fresh, signed stream URL (stream auth params are single-use). */
     private suspend fun streamUrlFor(track: Track): String? {
-        val c = creds.state.value ?: return null
+        if (track.isLocal) return track.localUri
         // A fully cached copy was stored at a specific quality. Offline, or when
         // the network would pick a DIFFERENT quality than the cached copy, using
         // the cached quality is what makes the CacheDataSource hit instead of
         // silently trying the (unreachable) network.
         val cachedQuality = if (isOffline()) cachedTracks.cachedQuality(track.id) else null
         val (bitrate, format) = cachedQuality ?: streamParams()
-        return StreamUrlProvider.build(c.serverUrl, c.username, c.password, track.id, bitrate, format)
+        return urlResolver.streamUrl(track, bitrate, format)
     }
 
     private suspend fun toMediaItem(
@@ -948,16 +946,8 @@ class PlayerManager @Inject constructor(
         c.volume = baseVolume * factor
     }
 
-    fun coverArtUrl(coverArtId: String?, size: Int = 600): String? {
-        if (coverArtId.isNullOrBlank()) return null
-        if (coverArtId.startsWith("content://") || coverArtId.startsWith("file://")) {
-            return coverArtId
-        }
-        val c = creds.state.value ?: return null
-        return CoverArtUrlProvider.build(
-            c.serverUrl, c.username, c.password, coverArtId, size,
-        )
-    }
+    fun coverArtUrl(coverArtId: String?, size: Int = 600): String? =
+        urlResolver.coverArtUrl(coverArtId, size)
 
     /** Plays [tracks] starting at [startIndex]; the caller's list is the queue. */
     fun playAll(tracks: List<Track>, startIndex: Int = 0, shuffle: Boolean = false, source: String? = null) {

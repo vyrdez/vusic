@@ -74,6 +74,7 @@ import coil.compose.AsyncImage
 import coil.memory.MemoryCache
 import coil.request.ImageRequest
 import com.feishin.mobile.R
+import com.feishin.mobile.core.network.CoverCacheKey
 import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.Artist
 import com.feishin.mobile.domain.model.Track
@@ -112,6 +113,7 @@ fun CoverImage(
     roundedDp: Dp = 8.dp,
     contentScale: ContentScale = ContentScale.Crop,
     thumbnailUrl: String? = null,
+    coverKey: String? = null,
 ) {
     val shape = RoundedCornerShape(roundedDp)
     if (url != null) {
@@ -123,6 +125,9 @@ fun CoverImage(
             .apply {
                 if (!thumbnailUrl.isNullOrBlank()) {
                     placeholderMemoryCacheKey(MemoryCache.Key(thumbnailUrl))
+                }
+                if (!coverKey.isNullOrBlank()) {
+                    tag(CoverCacheKey::class.java, CoverCacheKey(coverKey))
                 }
             }
             .build()
@@ -293,7 +298,13 @@ fun AlbumCard(album: Album, artUrl: String?, onClick: () -> Unit, modifier: Modi
             .clickable(onClick = onClick)
             .padding(4.dp),
     ) {
-        CoverImage(artUrl, album.name, modifier = Modifier.aspectRatio(1f).fillMaxWidth(), roundedDp = 8.dp)
+        CoverImage(
+            artUrl,
+            album.name,
+            modifier = Modifier.aspectRatio(1f).fillMaxWidth(),
+            roundedDp = 8.dp,
+            coverKey = album.coverArt,
+        )
         Text(album.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
         Text(
             "Album • ${album.artist} • ${album.year?.toString() ?: "—"}",
@@ -312,7 +323,13 @@ fun ArtistCard(artist: Artist, artUrl: String?, onClick: () -> Unit, modifier: M
             .padding(4.dp),
     ) {
         if (artUrl != null) {
-            CoverImage(artUrl, artist.name, modifier = Modifier.aspectRatio(1f).fillMaxWidth(), roundedDp = 8.dp)
+            CoverImage(
+                artUrl,
+                artist.name,
+                modifier = Modifier.aspectRatio(1f).fillMaxWidth(),
+                roundedDp = 8.dp,
+                coverKey = artist.coverArt,
+            )
         } else {
             Box(
                 Modifier.aspectRatio(1f).fillMaxWidth()
@@ -383,7 +400,13 @@ fun TrackRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(56.dp), contentAlignment = Alignment.BottomStart) {
-            CoverImage(artUrl, track.title, modifier = Modifier.size(56.dp), roundedDp = 4.dp)
+            CoverImage(
+                artUrl,
+                track.title,
+                modifier = Modifier.size(56.dp),
+                roundedDp = 4.dp,
+                coverKey = track.coverArt,
+            )
             if (isCurrent && isPlaying) {
                 // Dark scrim behind the animated bars: readable on any art
                 // (white bars clear 3:1 over a 55% black scrim even on white).

@@ -5,7 +5,9 @@ package com.feishin.mobile.playback
 import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import com.feishin.mobile.core.common.GlobalId
 import com.feishin.mobile.core.common.PlaybackSource
+import com.feishin.mobile.core.common.StableCacheKey
 import com.feishin.mobile.domain.model.Track
 
 /** Pure, Android-free description of a track's media payload. */
@@ -112,6 +114,14 @@ object TrackMediaItems {
                 if (info.streamUrl.startsWith("file://")) {
                     PlaybackSource.mimeTypeForPath(info.streamUrl)?.let { setMimeType(it) }
                 }
+                if (!info.streamUrl.startsWith("content://") && !info.streamUrl.startsWith("file://")) {
+                    setCustomCacheKey(
+                        StableCacheKey.keyFor(
+                            info.streamUrl,
+                            GlobalId.profileIdOrNull(info.mediaId),
+                        ),
+                    )
+                }
             }
             .setMediaMetadata(metadata)
             .build()
@@ -123,7 +133,19 @@ object TrackMediaItems {
 
     /** Rebuilds a MediaItem with fresh (single-use) stream auth params. */
     fun withStreamUrl(item: MediaItem, streamUrl: String): MediaItem =
-        item.buildUpon().setUri(streamUrl).build()
+        item.buildUpon()
+            .setUri(streamUrl)
+            .setCustomCacheKey(
+                if (!streamUrl.startsWith("content://") && !streamUrl.startsWith("file://")) {
+                    StableCacheKey.keyFor(
+                        streamUrl,
+                        GlobalId.profileIdOrNull(item.mediaId),
+                    )
+                } else {
+                    null
+                },
+            )
+            .build()
 
     @androidx.media3.common.util.UnstableApi
     fun toTrack(item: MediaItem): Track? {

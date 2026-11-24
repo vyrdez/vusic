@@ -5,18 +5,17 @@ package com.feishin.mobile.playback
 import android.content.Context
 import android.net.Uri
 import android.util.Log
-import androidx.media3.common.C
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import com.feishin.mobile.core.common.GlobalId
 import com.feishin.mobile.core.common.PrefetchWindow
 import com.feishin.mobile.core.common.VLog
 import com.feishin.mobile.core.common.QualityPolicy
 import com.feishin.mobile.core.common.StableCacheKey
-import com.feishin.mobile.core.network.StreamUrlProvider
-import com.feishin.mobile.data.auth.CredentialsStore
+import com.feishin.mobile.core.network.BackendUrlResolver
 import com.feishin.mobile.data.cache.CachedTrackStore
 import com.feishin.mobile.data.download.DownloadRepository
 import com.feishin.mobile.data.network.NetworkMonitor
@@ -51,7 +50,7 @@ class PrefetchManager @Inject constructor(
     @Named("streaming") private val http: OkHttpClient,
     private val settings: SettingsStore,
     private val network: NetworkMonitor,
-    private val creds: CredentialsStore,
+    private val urlResolver: BackendUrlResolver,
     private val downloads: DownloadRepository,
     private val cachedTracks: CachedTrackStore,
 ) {
@@ -110,17 +109,18 @@ class PrefetchManager @Inject constructor(
                 wifiBitrate = s.wifiBitrate, wifiFormat = s.wifiFormat,
                 mobileBitrate = s.mobileBitrate, mobileFormat = s.mobileFormat,
             )
-            val credsNow = creds.state.value ?: return@launch
             for (qid in window) {
                 if (active.containsKey(qid)) continue
                 val item = byId[qid] ?: continue
+                if (item.song.isLocal) continue
                 if (downloads.localFile(item.song.id) != null) continue
                 if (alreadyCached(item.song, quality.bitrateKbps, quality.format)) continue
                 active[qid] = launch {
                     fetch(
-                        track = item.song, queueId = qid,
-                        serverUrl = credsNow.serverUrl, username = credsNow.username, password = credsNow.password,
-                        bitrate = quality.bitrateKbps, format = quality.format,
+                        track = item.song,
+                        queueId = qid,
+                        bitrate = quality.bitrateKbps,
+                        format = quality.format,
                     )
                 }
             }
@@ -154,7 +154,7 @@ class PrefetchManager @Inject constructor(
             if (isOffline()) return@launch
             if (!allowedOnCurrentNetwork(s)) return@launch
             if (active.containsKey(queueId)) return@launch
-            val credsNow = creds.state.value ?: return@launch
+            if (track.isLocal) return@launch
             if (downloads.localFile(track.id) != null) return@launch
             val quality = QualityPolicy.forNetwork(
                 network = network.networkClass.value,
@@ -164,9 +164,10 @@ class PrefetchManager @Inject constructor(
             if (alreadyCached(track, quality.bitrateKbps, quality.format)) return@launch
             active[queueId] = launch {
                 fetch(
-                    track = track, queueId = queueId,
-                    serverUrl = credsNow.serverUrl, username = credsNow.username, password = credsNow.password,
-                    bitrate = quality.bitrateKbps, format = quality.format,
+                    track = track,
+                    queueId = queueId,
+                    bitrate = quality.bitrateKbps,
+                    format = quality.format,
                 )
             }
         }
@@ -199,22 +200,24 @@ class PrefetchManager @Inject constructor(
     private suspend fun fetch(
         track: Track,
         queueId: Long,
-        serverUrl: String,
-        username: String,
-        password: String,
         bitrate: Int,
         format: String,
     ) {
         android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_LOWEST)
         try {
-            val url = StreamUrlProvider.build(serverUrl, username, password, track.id, bitrate, format)
-            val key = StableCacheKey.keyFor(url)
-            val dataSpec = DataSpec(Uri.parse(url), 0L, C.LENGTH_UNSET.toLong())
+            val url = urlResolver.streamUrl(track, bitrate, format) ?: return
+            if (!url.startsWith("http://") && !url.startsWith("https://")) return
+            val profileId = GlobalId.profileIdOrNull(track.id)
+            val key = StableCacheKey.keyFor(url, profileId)
+            val dataSpec = DataSpec.Builder()
+                .setUri(Uri.parse(url))
+                .setKey(key)
+                .build()
             val upstream = OkHttpDataSource.Factory(http).createDataSource()
             val cds = CacheDataSource.Factory()
                 .setCache(cache)
                 .setUpstreamDataSourceFactory { upstream }
-                .setCacheKeyFactory { spec -> StableCacheKey.keyFor(spec.uri.toString()) }
+                .setCacheKeyFactory { spec -> spec.key ?: StableCacheKey.keyFor(spec.uri.toString(), profileId) }
                 .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
                 .createDataSource()
             val writer = CacheWriter(cds, dataSpec, ByteArray(DEFAULT_BUFFER), null)

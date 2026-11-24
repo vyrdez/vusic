@@ -5,8 +5,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
 import coil.ImageLoader
-import com.feishin.mobile.data.auth.CredentialsStore
-import com.feishin.mobile.core.network.CoverArtUrlProvider
+import com.feishin.mobile.core.network.BackendUrlResolver
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -25,7 +24,7 @@ import kotlinx.coroutines.launch
 class NowPlayingWidget : AppWidgetProvider() {
 
     @Inject lateinit var imageLoader: ImageLoader
-    @Inject lateinit var creds: CredentialsStore
+    @Inject lateinit var urlResolver: BackendUrlResolver
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + com.feishin.mobile.core.common.CrashGuard.handler)
 
@@ -34,7 +33,7 @@ class NowPlayingWidget : AppWidgetProvider() {
             WidgetUpdater.refreshFromStore(
                 context.applicationContext,
                 imageLoader,
-                coverUrlFor(context.applicationContext),
+                coverUrlFor(),
             )
         }
     }
@@ -59,15 +58,9 @@ class NowPlayingWidget : AppWidgetProvider() {
         }
     }
 
-    private fun coverUrlFor(context: Context): (String?) -> String? {
+    private fun coverUrlFor(): (String?) -> String? = { coverArtId ->
         // Artwork URLs are rebuilt the same way the phone builds them (stable
         // salt => Coil disk-cache hits).
-        return { coverArtId ->
-            if (coverArtId.isNullOrBlank()) null
-            else runCatching {
-                val c = creds.state.value ?: return@runCatching null
-                CoverArtUrlProvider.build(c.serverUrl, c.username, c.password, coverArtId, 256)
-            }.getOrNull()
-        }
+        runCatching { urlResolver.coverArtUrl(coverArtId, 256) }.getOrNull()
     }
 }

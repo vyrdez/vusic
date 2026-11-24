@@ -36,10 +36,11 @@ import com.feishin.mobile.MainActivity
 import com.feishin.mobile.R
 import com.feishin.mobile.core.common.AutoBrowse
 import com.feishin.mobile.core.common.VLog
+import com.feishin.mobile.core.common.GlobalId
 import com.feishin.mobile.core.common.PlaybackSource
 import com.feishin.mobile.core.common.Result
-import com.feishin.mobile.core.network.CoverArtUrlProvider
-import com.feishin.mobile.data.auth.CredentialsStore
+import com.feishin.mobile.core.common.StableCacheKey
+import com.feishin.mobile.core.network.CoverCacheKey
 import com.feishin.mobile.data.cache.CACHED_SONGS_PLAYLIST_ID
 import com.feishin.mobile.data.cache.CachedTrackStore
 import com.feishin.mobile.data.cache.toTrack
@@ -85,7 +86,6 @@ class PlayerService : MediaLibraryService() {
 
     @Inject lateinit var repo: MusicDataRepository
     @Inject lateinit var settings: SettingsStore
-    @Inject lateinit var creds: CredentialsStore
     @Inject lateinit var downloads: DownloadRepository
     @Inject lateinit var favorites: FavoritesStore
     @Inject lateinit var cachedTracks: CachedTrackStore
@@ -141,7 +141,7 @@ class PlayerService : MediaLibraryService() {
             // Stable keys (song + quality, no per-request salt): prefetched
             // bytes and replays hit the same spans instead of re-downloading.
             .setCacheKeyFactory { spec ->
-                com.feishin.mobile.core.common.StableCacheKey.keyFor(spec.uri.toString())
+                spec.key ?: StableCacheKey.keyFor(spec.uri.toString())
             }
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
             .setEventListener(
@@ -247,7 +247,7 @@ class PlayerService : MediaLibraryService() {
                             playerManager.notifyOfflineUnavailable(title)
                         } else {
                             val uriStr = item.localConfiguration?.uri?.toString().orEmpty()
-                            val key = com.feishin.mobile.core.common.StableCacheKey.keyFor(uriStr)
+                            val key = StableCacheKey.keyFor(uriStr, GlobalId.profileIdOrNull(item.mediaId))
                             if (PlaybackRecovery.shouldEvictStreamCacheOnError(isOffline = false)) {
                                 runCatching { cache.removeResource(key) }
                                 cachedTracks.remove(item.mediaId)
@@ -438,9 +438,7 @@ class PlayerService : MediaLibraryService() {
         if (coverArtId.startsWith("content://") || coverArtId.startsWith("file://")) {
             return Uri.parse(coverArtId)
         }
-        val c = creds.state.value ?: return null
-        return CoverArtUrlProvider.build(c.serverUrl, c.username, c.password, coverArtId, size)
-            ?.let { Uri.parse(it) }
+        return repo.coverArtUrl(coverArtId, size)?.let { Uri.parse(it) }
     }
 
     private fun folder(id: String, title: String, art: Uri? = null): MediaItem =
@@ -942,7 +940,19 @@ class PlayerService : MediaLibraryService() {
             return future
         }
 
-        override fun loadBitmap(uri: Uri): ListenableFuture<Bitmap> {
+        override fun loadBitmap(uri: Uri): ListenableFuture<Bitmap> =
+            loadBitmapInternal(uri, coverKey = null)
+
+        override fun loadBitmapFromMetadata(metadata: MediaMetadata): ListenableFuture<Bitmap>? {
+            val data = metadata.artworkData
+            if (data != null) return decodeBitmap(data)
+            val uri = metadata.artworkUri ?: return null
+            val coverKey = metadata.extras?.getString(TrackMediaItems.EXTRA_COVER_ART)
+                ?.takeIf { it.isNotBlank() }
+            return loadBitmapInternal(uri, coverKey)
+        }
+
+        private fun loadBitmapInternal(uri: Uri, coverKey: String?): ListenableFuture<Bitmap> {
             val future = SettableFuture.create<Bitmap>()
             scope.launch {
                 val bmp = runCatching {
@@ -950,6 +960,11 @@ class PlayerService : MediaLibraryService() {
                         val req = ImageRequest.Builder(this@PlayerService)
                             .data(uri.toString())
                             .size(256, 256)
+                            .apply {
+                                if (!coverKey.isNullOrBlank()) {
+                                    tag(CoverCacheKey::class.java, CoverCacheKey(coverKey))
+                                }
+                            }
                             .build()
                         imageLoader.execute(req).drawable?.toBitmap()
                     }
@@ -988,7 +1003,7 @@ private class UpstreamLogger(
         val inner = delegate.createDataSource()
         return object : androidx.media3.datasource.DataSource by inner {
             override fun open(dataSpec: androidx.media3.datasource.DataSpec): Long {
-                val key = com.feishin.mobile.core.common.StableCacheKey.keyFor(dataSpec.uri.toString())
+                val key = dataSpec.key ?: StableCacheKey.keyFor(dataSpec.uri.toString())
                 VLog.d(PlayerService.TAG, "upstream open key=$key uri=${dataSpec.uri.host}${dataSpec.uri.path}")
                 return inner.open(dataSpec)
             }
