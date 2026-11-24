@@ -4,6 +4,7 @@ import com.feishin.mobile.core.common.GlobalId
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.data.db.PendingActionDao
 import com.feishin.mobile.data.db.PendingActionEntity
+import com.feishin.mobile.domain.repo.BackendRegistry
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -19,10 +20,31 @@ enum class PendingActionType { SCROBBLE, STAR, UNSTAR, STAR_ALBUM, UNSTAR_ALBUM,
  * timestamp so scrobble history lands on the right day.
  */
 @Singleton
-class OfflineSyncStore @Inject constructor(
+class OfflineSyncStore private constructor(
     private val dao: PendingActionDao,
     private val repo: MusicDataRepository,
+    private val registryProvider: () -> BackendRegistry?,
 ) {
+    @Inject
+    constructor(
+        dao: PendingActionDao,
+        repo: MusicDataRepository,
+        backendRegistry: dagger.Lazy<BackendRegistry>,
+    ) : this(
+        dao = dao,
+        repo = repo,
+        registryProvider = { backendRegistry.get() },
+    )
+
+    internal constructor(
+        dao: PendingActionDao,
+        repo: MusicDataRepository,
+        backendRegistry: BackendRegistry? = null,
+    ) : this(
+        dao = dao,
+        repo = repo,
+        registryProvider = { backendRegistry },
+    )
     val pendingCount: Flow<Int> = dao.observeCount()
 
     val hasPending: Flow<Boolean> = dao.observeCount().map { it > 0 }
@@ -95,14 +117,27 @@ class OfflineSyncStore @Inject constructor(
 
     private suspend fun replay(action: PendingActionEntity): Boolean {
         val type = runCatching { PendingActionType.valueOf(action.type) }.getOrNull() ?: return true
-        val result: Result<Unit> = when (type) {
-            PendingActionType.SCROBBLE -> repo.scrobbleAt(action.targetId, action.timeMs, action.submission)
-            PendingActionType.STAR -> repo.starTrack(action.targetId, true)
-            PendingActionType.UNSTAR -> repo.starTrack(action.targetId, false)
-            PendingActionType.STAR_ALBUM -> repo.starAlbum(action.targetId, true)
-            PendingActionType.UNSTAR_ALBUM -> repo.starAlbum(action.targetId, false)
-            PendingActionType.STAR_ARTIST -> repo.starArtist(action.targetId, true)
-            PendingActionType.UNSTAR_ARTIST -> repo.starArtist(action.targetId, false)
+        val backend = registryProvider()?.get(action.profileId)
+        val result: Result<Unit> = if (backend != null) {
+            when (type) {
+                PendingActionType.SCROBBLE -> backend.scrobbleAt(action.targetId, action.timeMs, action.submission)
+                PendingActionType.STAR -> backend.starTrack(action.targetId, true)
+                PendingActionType.UNSTAR -> backend.starTrack(action.targetId, false)
+                PendingActionType.STAR_ALBUM -> backend.starAlbum(action.targetId, true)
+                PendingActionType.UNSTAR_ALBUM -> backend.starAlbum(action.targetId, false)
+                PendingActionType.STAR_ARTIST -> backend.starArtist(action.targetId, true)
+                PendingActionType.UNSTAR_ARTIST -> backend.starArtist(action.targetId, false)
+            }
+        } else {
+            when (type) {
+                PendingActionType.SCROBBLE -> repo.scrobbleAt(action.targetId, action.timeMs, action.submission)
+                PendingActionType.STAR -> repo.starTrack(action.targetId, true)
+                PendingActionType.UNSTAR -> repo.starTrack(action.targetId, false)
+                PendingActionType.STAR_ALBUM -> repo.starAlbum(action.targetId, true)
+                PendingActionType.UNSTAR_ALBUM -> repo.starAlbum(action.targetId, false)
+                PendingActionType.STAR_ARTIST -> repo.starArtist(action.targetId, true)
+                PendingActionType.UNSTAR_ARTIST -> repo.starArtist(action.targetId, false)
+            }
         }
         return result is Result.Ok
     }

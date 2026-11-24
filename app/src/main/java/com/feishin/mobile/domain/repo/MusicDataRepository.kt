@@ -1,11 +1,14 @@
 package com.feishin.mobile.domain.repo
 
+import com.feishin.mobile.core.common.GlobalId
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.AlbumDetail
 import com.feishin.mobile.domain.model.Artist
 import com.feishin.mobile.domain.model.ArtistDetail
 import com.feishin.mobile.domain.model.ArtistInfo
+import com.feishin.mobile.domain.model.BackendCapabilities
+import com.feishin.mobile.domain.model.BackendType
 import com.feishin.mobile.domain.model.Genre
 import com.feishin.mobile.domain.model.Playlist
 import com.feishin.mobile.domain.model.PlaylistDetail
@@ -14,6 +17,11 @@ import com.feishin.mobile.domain.model.ServerInfo
 import com.feishin.mobile.domain.model.StarredCollection
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.core.network.SyncedLyrics
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+
+private val EMPTY_FEDERATED_HEALTH_STATE: StateFlow<FederatedHealthState> =
+    MutableStateFlow(FederatedHealthState())
 
 /** Library scan state for the "Scan library" row. */
 data class ScanStatus(
@@ -25,7 +33,14 @@ data class ScanStatus(
 
 /** UI-facing music data contract. Implementations map wire DTOs to domain models. */
 interface MusicDataRepository {
+    val healthState: StateFlow<FederatedHealthState> get() = EMPTY_FEDERATED_HEALTH_STATE
+
+    fun capabilitiesFor(id: String): BackendCapabilities =
+        if (GlobalId.isDeviceLocal(id)) BackendCapabilities.DEVICE_LOCAL
+        else BackendCapabilities.forType(BackendType.NAVIDROME)
+
     suspend fun ping(): Result<Unit>
+    suspend fun ping(profileId: String): Result<Unit> = ping()
     suspend fun albumList(type: String, size: Int = 50, offset: Int = 0, genre: String? = null): Result<List<Album>>
     suspend fun artists(): Result<List<Artist>>
     suspend fun genres(): Result<List<Genre>>
@@ -34,13 +49,18 @@ interface MusicDataRepository {
     /** Search with explicit per-type counts (paging single-type views). */
     suspend fun search(query: String, artistCount: Int, albumCount: Int, songCount: Int): Result<SearchResults>
     suspend fun serverInfo(): Result<ServerInfo>
+    suspend fun serverInfo(profileId: String): Result<ServerInfo> = serverInfo()
     suspend fun startScan(): Result<Unit>
+    suspend fun startScan(profileId: String): Result<Unit> = startScan()
     suspend fun scanStatus(): Result<ScanStatus>
+    suspend fun scanStatus(profileId: String): Result<ScanStatus> = scanStatus()
     suspend fun album(id: String): Result<AlbumDetail>
     suspend fun artist(id: String): Result<ArtistDetail>
     suspend fun artistInfo(id: String): Result<ArtistInfo>
     suspend fun randomSongs(size: Int = 20, genre: String? = null): Result<List<Track>>
     suspend fun topSongs(artist: String, count: Int = 10): Result<List<Track>>
+    suspend fun topSongs(artist: String, count: Int = 10, preferredProfileId: String?): Result<List<Track>> =
+        topSongs(artist, count)
     suspend fun similarSongs(songId: String?, artistId: String?, count: Int = 25): Result<List<Track>>
     suspend fun playlist(id: String): Result<PlaylistDetail>
     suspend fun starred(): Result<StarredCollection>
@@ -48,6 +68,8 @@ interface MusicDataRepository {
     suspend fun starAlbum(id: String, starred: Boolean): Result<Unit>
     suspend fun starArtist(id: String, starred: Boolean): Result<Unit>
     suspend fun createPlaylist(name: String, trackIds: List<String> = emptyList()): Result<String>
+    suspend fun createPlaylist(name: String, trackIds: List<String>, profileId: String?): Result<String> =
+        createPlaylist(name, trackIds)
     suspend fun cachedPlaylist(id: String): PlaylistDetail? = null
     suspend fun addToPlaylist(playlistId: String, trackIds: List<String>): Result<Unit>
     suspend fun addToPlaylistOptimistic(

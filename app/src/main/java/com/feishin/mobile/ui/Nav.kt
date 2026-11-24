@@ -126,9 +126,12 @@ object Routes {
 
     /** Route pattern, for comparing against the current destination. */
     const val LIBRARY_PATTERN = "library?tab={tab}"
-    fun album(id: String) = "album/$id"
-    fun artist(id: String) = "artist/$id"
-    fun playlist(id: String) = "playlist/$id"
+    private fun encodeRouteArg(value: String): String =
+        java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+
+    fun album(id: String) = "album/${encodeRouteArg(id)}"
+    fun artist(id: String) = "artist/${encodeRouteArg(id)}"
+    fun playlist(id: String) = "playlist/${encodeRouteArg(id)}"
     fun genre(name: String) = "genre/${android.net.Uri.encode(name)}"
 }
 

@@ -4,6 +4,12 @@ import com.feishin.mobile.core.common.CrashGuard
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.network.SubsonicAuth
 import com.feishin.mobile.data.backend.BackendClientFactory
+import com.feishin.mobile.data.cache.CachedTrackStore
+import com.feishin.mobile.data.cache.MetadataCache
+import com.feishin.mobile.data.db.CachedCoverDao
+import com.feishin.mobile.data.db.LyricsCacheDao
+import com.feishin.mobile.data.db.PendingActionDao
+import com.feishin.mobile.data.download.DownloadRepository
 import com.feishin.mobile.data.remote.SubsonicApi
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.BackendType
@@ -24,19 +30,72 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private class ProfileCleanupDeps(
+    val cachedTrackStore: dagger.Lazy<CachedTrackStore>,
+    val metadataCache: dagger.Lazy<MetadataCache>,
+    val cachedCoverDao: dagger.Lazy<CachedCoverDao>,
+    val pendingActionDao: dagger.Lazy<PendingActionDao>,
+    val lyricsCacheDao: dagger.Lazy<LyricsCacheDao>,
+    val downloadRepository: dagger.Lazy<DownloadRepository>,
+)
+
 /**
  * Owns multi-backend profile authentication state. Profiles live encrypted in
  * [ProfileStore]; in-flight login/probe attempts live in [TransientProbeRegistry]
  * until verified via `ping`.
  */
 @Singleton
-class AuthRepository @Inject constructor(
+class AuthRepository private constructor(
     private val profileStore: ProfileStore,
     private val legacyCredentials: CredentialsStore,
     private val backendFactory: BackendClientFactory,
     private val probeRegistry: TransientProbeRegistry,
     private val settings: SettingsStore,
+    private val cleanup: ProfileCleanupDeps?,
 ) {
+    @Inject
+    constructor(
+        profileStore: ProfileStore,
+        legacyCredentials: CredentialsStore,
+        backendFactory: BackendClientFactory,
+        probeRegistry: TransientProbeRegistry,
+        settings: SettingsStore,
+        cachedTrackStore: dagger.Lazy<CachedTrackStore>,
+        metadataCache: dagger.Lazy<MetadataCache>,
+        cachedCoverDao: dagger.Lazy<CachedCoverDao>,
+        pendingActionDao: dagger.Lazy<PendingActionDao>,
+        lyricsCacheDao: dagger.Lazy<LyricsCacheDao>,
+        downloadRepository: dagger.Lazy<DownloadRepository>,
+    ) : this(
+        profileStore = profileStore,
+        legacyCredentials = legacyCredentials,
+        backendFactory = backendFactory,
+        probeRegistry = probeRegistry,
+        settings = settings,
+        cleanup = ProfileCleanupDeps(
+            cachedTrackStore = cachedTrackStore,
+            metadataCache = metadataCache,
+            cachedCoverDao = cachedCoverDao,
+            pendingActionDao = pendingActionDao,
+            lyricsCacheDao = lyricsCacheDao,
+            downloadRepository = downloadRepository,
+        ),
+    )
+
+    internal constructor(
+        profileStore: ProfileStore,
+        legacyCredentials: CredentialsStore,
+        backendFactory: BackendClientFactory,
+        probeRegistry: TransientProbeRegistry,
+        settings: SettingsStore,
+    ) : this(
+        profileStore = profileStore,
+        legacyCredentials = legacyCredentials,
+        backendFactory = backendFactory,
+        probeRegistry = probeRegistry,
+        settings = settings,
+        cleanup = null,
+    )
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashGuard.handler)
 
     private val verifying = MutableStateFlow(false)
@@ -122,6 +181,7 @@ class AuthRepository @Inject constructor(
             return@withContext Result.Err("Invalid server URL.")
         }
         profileStore.upsert(profile.copy(url = baseUrl))
+        backendFactory.invalidate(profile.id)
         syncLoginState()
         Result.Ok(Unit)
     }
@@ -138,9 +198,18 @@ class AuthRepository @Inject constructor(
 
     suspend fun removeProfile(
         profileId: String,
-        @Suppress("UNUSED_PARAMETER") keepDownloads: Boolean,
+        keepDownloads: Boolean,
     ) = withContext(Dispatchers.IO) {
         profileStore.remove(profileId)
+        backendFactory.invalidate(profileId)
+        cleanup?.let { c ->
+            runCatching { c.cachedTrackStore.get().clearForProfile(profileId) }
+            runCatching { c.metadataCache.get().deleteByPrefix("$profileId:") }
+            runCatching { c.cachedCoverDao.get().deleteByPrefix("$profileId:") }
+            runCatching { c.pendingActionDao.get().deleteByProfile(profileId) }
+            runCatching { c.lyricsCacheDao.get().deleteByProfile(profileId) }
+            runCatching { c.downloadRepository.get().removeProfileData(profileId, keepDownloads) }
+        }
         if (profileStore.profiles.value.isEmpty()) {
             runCatching { legacyCredentials.clear() }
         }
@@ -186,6 +255,7 @@ class AuthRepository @Inject constructor(
     /** Wipes all profiles and legacy credentials; navigation reacts via [loginState]. */
     fun logout() {
         profileStore.clear()
+        backendFactory.clearAll()
         runCatching { legacyCredentials.clear() }
         syncLoginState()
     }

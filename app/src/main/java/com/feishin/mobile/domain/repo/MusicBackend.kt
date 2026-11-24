@@ -1,0 +1,105 @@
+package com.feishin.mobile.domain.repo
+
+import com.feishin.mobile.core.common.Result
+import com.feishin.mobile.core.network.SyncedLyrics
+import com.feishin.mobile.domain.model.Album
+import com.feishin.mobile.domain.model.AlbumDetail
+import com.feishin.mobile.domain.model.Artist
+import com.feishin.mobile.domain.model.ArtistDetail
+import com.feishin.mobile.domain.model.ArtistInfo
+import com.feishin.mobile.domain.model.BackendCapabilities
+import com.feishin.mobile.domain.model.Genre
+import com.feishin.mobile.domain.model.Playlist
+import com.feishin.mobile.domain.model.PlaylistDetail
+import com.feishin.mobile.domain.model.SearchResults
+import com.feishin.mobile.domain.model.ServerInfo
+import com.feishin.mobile.domain.model.ServerProfile
+import com.feishin.mobile.domain.model.StarredCollection
+import com.feishin.mobile.domain.model.Track
+
+/** Per-profile runtime reachability/degradation snapshot for federated reads. */
+data class ProfileHealth(
+    val profileId: String,
+    val name: String,
+    val degraded: Boolean,
+    val lastError: String? = null,
+)
+
+/** Aggregate runtime health across all active profiles. */
+data class FederatedHealthState(
+    val profiles: Map<String, ProfileHealth> = emptyMap(),
+) {
+    val hasDegraded: Boolean get() = profiles.values.any { it.degraded }
+}
+
+/** Registry of live [MusicBackend] adapters synchronized with configured [ServerProfile]s. */
+interface BackendRegistry {
+    fun all(): List<MusicBackend>
+    fun enabled(): List<MusicBackend>
+    fun get(profileId: String): MusicBackend?
+}
+
+/**
+ * Single-server backend contract owned by one [ServerProfile].
+ *
+ * Every domain entity returned by an implementation MUST carry `{profileId}:{rawId}`
+ * identifiers via [com.feishin.mobile.core.common.GlobalId.format] and populate
+ * `sourceProfileId` / `sourceLabel` on [Track] and [Album].
+ */
+interface MusicBackend {
+    val profile: ServerProfile
+    val capabilities: BackendCapabilities
+
+    suspend fun ping(): Result<Unit>
+    suspend fun serverInfo(): Result<ServerInfo>
+    suspend fun startScan(): Result<Unit>
+    suspend fun scanStatus(): Result<ScanStatus>
+
+    suspend fun albumList(type: String, size: Int = 50, offset: Int = 0, genre: String? = null): Result<List<Album>>
+    suspend fun artists(): Result<List<Artist>>
+    suspend fun genres(): Result<List<Genre>>
+    suspend fun playlists(): Result<List<Playlist>>
+    suspend fun search(query: String, artistCount: Int = 20, albumCount: Int = 20, songCount: Int = 50): Result<SearchResults>
+
+    suspend fun album(id: String): Result<AlbumDetail>
+    suspend fun artist(id: String): Result<ArtistDetail>
+    suspend fun artistInfo(id: String): Result<ArtistInfo>
+    suspend fun randomSongs(size: Int = 20, genre: String? = null): Result<List<Track>>
+    suspend fun topSongs(artist: String, count: Int = 10): Result<List<Track>>
+    suspend fun similarSongs(songId: String?, artistId: String?, count: Int = 25): Result<List<Track>>
+    suspend fun playlist(id: String): Result<PlaylistDetail>
+    suspend fun cachedPlaylist(id: String): PlaylistDetail? = null
+    suspend fun starred(): Result<StarredCollection>
+
+    suspend fun starTrack(id: String, starred: Boolean): Result<Unit>
+    suspend fun starAlbum(id: String, starred: Boolean): Result<Unit>
+    suspend fun starArtist(id: String, starred: Boolean): Result<Unit>
+
+    suspend fun createPlaylist(name: String, trackIds: List<String> = emptyList()): Result<String>
+    suspend fun addToPlaylist(playlistId: String, trackIds: List<String>): Result<Unit>
+    suspend fun addToPlaylistOptimistic(
+        playlistId: String,
+        tracks: List<Track>,
+        playlistName: String = "",
+        onRollback: (() -> Unit)? = null,
+    ): Result<Unit> = addToPlaylist(playlistId, tracks.map { it.id })
+    suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit>
+    suspend fun deletePlaylist(id: String): Result<Unit>
+
+    suspend fun scrobble(id: String, submission: Boolean): Result<Unit>
+    suspend fun scrobbleAt(id: String, timeMs: Long, submission: Boolean): Result<Unit>
+
+    suspend fun lyricsForTrack(id: String, artist: String, title: String): Result<SyncedLyrics>
+    suspend fun lyrics(artist: String, title: String): Result<String>
+
+    fun streamUrl(track: Track, maxBitrate: Int = 0, format: String = "raw"): String
+    fun coverArtUrl(coverArtId: String?, size: Int = 512): String?
+    fun downloadUrl(track: Track): String
+
+    /** Stale-cache fallback hooks used by federated reads when a backend times out or fails. */
+    suspend fun readCachedAlbumList(type: String, offset: Int = 0, genre: String? = null): List<Album>? = null
+    suspend fun readCachedArtists(): List<Artist>? = null
+    suspend fun readCachedGenres(): List<Genre>? = null
+    suspend fun readCachedPlaylists(): List<Playlist>? = null
+    suspend fun readCachedStarred(): StarredCollection? = null
+}

@@ -48,6 +48,16 @@ class BackendClientFactory @Inject constructor(
         return created
     }
 
+    /** Drops any cached Retrofit client for [profileId] (e.g. on URL change or logout). */
+    fun invalidate(profileId: String) {
+        subsonicApis.remove(profileId)
+    }
+
+    /** Drops all cached Retrofit clients. */
+    fun clearAll() {
+        subsonicApis.clear()
+    }
+
     private fun buildSubsonicRetrofit(profile: ServerProfile): Retrofit {
         val baseUrl = "${profile.url.trimEnd('/')}/rest/"
         val client = buildProfileTaggedClient(profile.id)
