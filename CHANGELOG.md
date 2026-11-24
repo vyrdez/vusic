@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.0
+
+### Added
+- **Multi-Backend Core Foundation & OpenSubsonic (Phase 12.0)**:
+  - Added multi-backend architecture (`BackendType` for `NAVIDROME`, `OPENSUBSONIC`, and `JELLYFIN` placeholder; `ServerProfile`; `BackendCapabilities`; colon-safe `GlobalId` scoping; `FederatedMusicRepository` with parallel 4 s fan-out and cache-first fallback; `FederatedDeduplicator`).
+  - Added per-profile `EncryptedSharedPreferences` (`ProfileStore` with automatic one-shot `"feishin_auth"` -> `"p1"` migration and headless service preload), 4-client `ProfileAuthInterceptor` with credential-stripping `redirectGuard`, per-host `ProfileTrustManager`, `CleartextGuardInterceptor`, and `BackendClientFactory` with zero plaintext secret leakage in `VusicHttp` logs.
+  - Added Room `v6 -> v7` migration (`MIGRATION_6_7` with exported `6.json`/`7.json` schemas, `profileId` columns/indices, preserved `cached_tracks.cacheKey`), v6-compatible `StableCacheKey`, `CoverCacheKey`, per-profile `OfflineSyncStore.flush()`, and per-profile download directories.
+  - Added `BackendUrlResolver` and capability gating across UI and services (`PlaylistPickerSheet` owning-backend filter, `NowPlayingScreen` chips, `PlayerService` scrobbling gate, `ScanCoordinator` per-profile states).
+  - Added `LoginScreen` backend selector and `"Use Device files only"` entry, `SettingsScreen` reorderable Server Profiles manager, and `LibraryScreen` `"View my"` source filter with concurrent load deduplication.
+  - Added OpenSubsonic `getOpenSubsonicExtensions` capability persistence, `@POST updatePlaylist.view` (`formPost`), `getSimilarSongs2` -> `getRandomSongs(genre)` radio fallback, and default `LOCAL_DATA -> BETTER_LYRICS -> LRCLIB -> PAXSENIX -> KUGOU` lyrics chain routed through active server backends.
+
 ## 1.4.2
 
 ### Fixed

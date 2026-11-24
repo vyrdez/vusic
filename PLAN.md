@@ -1700,4 +1700,21 @@ Version 1.4.2 (versionCode 20) — `applicationId com.feishin.mobile` unchanged.
   - Resolved track taps inside filtered/searched lists to the full sorted source collection starting at the tapped track (preserving active sort order and duplicate playlist entries) across playlists (`PlaylistDetailScreen`, covering user playlists, Favorites, and Cached), `Library > Songs`, `Library > Downloads`, and `Device Files > Songs`, while keeping header Play/Shuffle scoped to `visibleTracks` and `onRemove` mapped to stored source indices.
   - Verification: `.\gradlew.bat assembleDebug assembleRelease lint test` passed (`testDebugUnitTest`: `968/968`, `testReleaseUnitTest`: `968/968`, `0` lint errors, signed release APKs `app-arm64-v8a-release.apk` / `app-x86_64-release.apk` with `CN=Vusic`); live emulator checks confirmed `1079`-song `test` playlist, `255`-song `Downloads`, and `500`-song `Songs` queues + Next/Prev neighbor playback (`docs/reference/after-11.2/B1-playlist-filtered-full-queue.png`, `B2-downloads-filtered-full-queue.png`, `B3-songs-filtered-full-queue.png`).
 
+## Phase 12.0 status: multi-backend core foundation & OpenSubsonic (1.5.0)
+
+Version 1.5.0 (versionCode 21) — `applicationId com.feishin.mobile` unchanged.
+
+- **Multi-Backend Architecture (`P12.0-A`..`J` + hardening)**:
+  - Added `BackendType` (`NAVIDROME`, `OPENSUBSONIC`, `JELLYFIN` placeholder), `ServerProfile`, `BackendCapabilities`, colon-safe `GlobalId` scoping, `FederatedMusicRepository` (parallel 4 s fan-out and cache-first fallback), and `FederatedDeduplicator`.
+- **Auth, TLS & Security**:
+  - Added per-profile `EncryptedSharedPreferences` (`ProfileStore` with automatic one-shot `"feishin_auth"` -> `"p1"` migration and headless service preload), 4-client `ProfileAuthInterceptor` with credential-stripping `redirectGuard`, per-host `ProfileTrustManager`, `CleartextGuardInterceptor`, and `BackendClientFactory` with verified zero plaintext secret leakage in `VusicHttp` logs.
+- **Database & Storage**:
+  - Migrated Room `v6 -> v7` (`MIGRATION_6_7` + exported `6.json`/`7.json` schemas, `profileId` columns/indices, preserved `cached_tracks.cacheKey`), v6-compatible `StableCacheKey`, `CoverCacheKey`, per-profile `OfflineSyncStore.flush()`, and per-profile download directories.
+- **Playback, Capability Gating & UI**:
+  - Wired `BackendUrlResolver` and UI/service capability gating (`PlaylistPickerSheet` owning-backend filter, `NowPlayingScreen` chips, `PlayerService` scrobbling gate, `ScanCoordinator` per-profile states), `LoginScreen` backend selector & `"Use Device files only"`, `SettingsScreen` reorderable Server Profiles manager, and `LibraryScreen` `"View my"` source filter & concurrent load deduplication.
+- **OpenSubsonic**:
+  - Added `getOpenSubsonicExtensions` capability persistence, `@POST updatePlaylist.view` (`formPost`), `getSimilarSongs2` -> `getRandomSongs(genre)` radio fallback, and `LOCAL_DATA -> BETTER_LYRICS -> LRCLIB -> PAXSENIX -> KUGOU` default lyrics chain routed through active server backends.
+- **Verification**:
+  - `1037` JVM unit tests across `128` suites; instrumentation tests on `feishin_test` (`Migration6To7Test`, `LyricsCacheMigrationTest`, `AutoBrowseDeviceTest` `6/6`); signed `1.4.2 (20) -> 1.5.0 (21)` in-place upgrade and live Navidrome + Gonic dual-server E2E verification (screenshots in `docs/reference/before-12.0/` and `docs/reference/after-12.0/`).
+
 

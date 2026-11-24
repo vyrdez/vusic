@@ -2,8 +2,8 @@
 
 <img src="assets/vusic-icon.svg" width="72" align="right" alt="Vusic app icon">
 
-A personal Android music player for a self-hosted [Navidrome](https://www.navidrome.org/)
-server, spoken to over the Subsonic/OpenSubsonic API.
+A personal Android music player for self-hosted [Navidrome](https://www.navidrome.org/)
+and OpenSubsonic-compatible servers, with multi-server profile support.
 
 Written in Kotlin with Jetpack Compose and Material 3. Dark by default, with
 System and Light themes.
@@ -22,8 +22,8 @@ System and Light themes.
 
 ## What it does
 
-Vusic streams and caches music from your own Navidrome server, with optional
-support for browsing and playing local device music files. The queue is
+Vusic streams and caches music from one or more self-hosted Navidrome or
+OpenSubsonic servers, with optional support for browsing and playing local device music files. The queue is
 gapless-capable ExoPlayer with a volume-ramp crossfade, ReplayGain (peak-limited,
 never clips), per-network quality for mobile and Wi-Fi, and a smart prefetch cache
 so transitions have no loading gap. There's a full-screen Now Playing with
@@ -70,10 +70,10 @@ the main screens.
 ## Requirements
 
 - Android 8.0 (API 26) or newer.
-- A Navidrome server reachable from the device. Any Subsonic-compatible server
-  exposing the OpenSubsonic endpoints Vusic uses should also work.
-- A Navidrome user account. Sign in from the login screen; credentials are
-  stored in Android's `EncryptedSharedPreferences`.
+- One or more Navidrome or OpenSubsonic-compatible servers reachable from the
+  device (or use **Device files only** for local music).
+- Server account credentials, stored per profile in Android's
+  `EncryptedSharedPreferences` with per-host TLS trust controls.
 
 ## Installing a release
 
