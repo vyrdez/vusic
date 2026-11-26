@@ -2,8 +2,8 @@
 
 <img src="assets/vusic-icon.svg" width="72" align="right" alt="Vusic app icon">
 
-A personal Android music player for self-hosted [Navidrome](https://www.navidrome.org/)
-and OpenSubsonic-compatible servers, with multi-server profile support.
+A personal Android music player for self-hosted [Navidrome](https://www.navidrome.org/),
+OpenSubsonic-compatible, and [Jellyfin](https://jellyfin.org/) servers, with multi-server profile support.
 
 Written in Kotlin with Jetpack Compose and Material 3. Dark by default, with
 System and Light themes.

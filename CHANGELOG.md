@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.5.1
+
+### Added
+- **Jellyfin Backend & Server/Login UI Redesign (Phase 12.1)**:
+  - **Native Jellyfin Backend (`P12.1-A`..`F`)**:
+    - Added `JellyfinApi` and `JellyfinBackend` with `AuthenticateByName` token auth, `ProfileIdTag` request tagging, and 401 token-expiry isolation.
+    - Added `JellyfinUrlBuilder` for static/universal audio streaming URLs and artwork cover URLs.
+    - Added Jellyfin playlist CRUD, `playlistItemId`-based track removal, and offline favorites replay.
+    - Added `PlayerService` `JellyfinSessionCoordinator` scrobbling and offline `SCROBBLE` queue replay.
+    - Added `JellyfinLyricsProvider` for server-side lyrics retrieval.
+  - **Server & Account UI Redesign (`P12.1-G`..`I`)**:
+    - Redesigned Server & Account management with collapsed-by-default multi-profile cards and drag/chevron profile reordering.
+    - Redesigned Add/Edit Server flow with `BackendTile`, `ConnectionBanner`, `ServerFormContent`, locked backend type on edit, `1.3x` font-scale support, and `48dp` touch targets.
+    - Added rank-ordered `"View My"` server source filtering in Library.
+  - **First-Run Login Redesign (`P12.1-J`..`K`)**:
+    - Redesigned First-Run Login with animated `Motion.kt` `EaseOutQuint` press scales, `"Use Device files only"` fallback, and hoisted `SnackbarHostState`.
+  - **Verification**:
+    - `1089` unit tests across `138` suites, `18/18` Android instrumentation tests, and `0` lint errors.
+
 ## 1.5.0
 
 ### Added

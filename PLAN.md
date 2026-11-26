@@ -1717,4 +1717,22 @@ Version 1.5.0 (versionCode 21) — `applicationId com.feishin.mobile` unchanged.
 - **Verification**:
   - `1037` JVM unit tests across `128` suites; instrumentation tests on `feishin_test` (`Migration6To7Test`, `LyricsCacheMigrationTest`, `AutoBrowseDeviceTest` `6/6`); signed `1.4.2 (20) -> 1.5.0 (21)` in-place upgrade and live Navidrome + Gonic dual-server E2E verification (screenshots in `docs/reference/before-12.0/` and `docs/reference/after-12.0/`).
 
+## Phase 12.1 status: Jellyfin backend & server/login UI redesign (1.5.1)
+
+Version 1.5.1 (versionCode 22) — `applicationId com.feishin.mobile` unchanged.
+
+- **Native Jellyfin Backend (`P12.1-A`..`F`)**:
+  - Added `JellyfinApi` and `JellyfinBackend` with `AuthenticateByName` token auth, `ProfileIdTag` tagging, and 401 token-expiry isolation.
+  - Added `JellyfinUrlBuilder` for static/universal streaming URLs and cover art URLs.
+  - Added Jellyfin playlist CRUD, `playlistItemId`-based track removal, and offline favorites replay.
+  - Wired `PlayerService` `JellyfinSessionCoordinator` scrobbling with offline `SCROBBLE` replay, plus `JellyfinLyricsProvider`.
+- **Server & Account UI Redesign (`P12.1-G`..`I`)**:
+  - Added collapsed-by-default multi-profile cards with drag/chevron reorder.
+  - Redesigned Add/Edit Server with `BackendTile`, `ConnectionBanner`, `ServerFormContent`, locked edit type, `font_scale` 1.3 support, and `48dp` touch targets.
+  - Added Library `"View My"` rank-ordered server filter.
+- **First-Run Login Redesign (`P12.1-J`..`K`)**:
+  - Redesigned First-Run Login with `Motion.kt` `EaseOutQuint` press scales, `"Use Device files only"` fallback, and hoisted `SnackbarHostState`.
+- **Verification**:
+  - `138` unit test suites / `1089` unit tests, `18/18` Android instrumentation tests, and `0` lint errors.
+
 
