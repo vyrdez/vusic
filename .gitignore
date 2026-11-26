@@ -52,3 +52,18 @@ Thumbs.db
 *.swp
 .idea/
 *.log
+
+# Local AI / agent tooling, plans, scratch, and internal docs
+AGENTS.md
+GEMINI.md
+PROJECT_OVERVIEW.md
+PLAN.md
+session-*.md
+run_emulator_gui.bat
+.agent/
+.agents/
+.commandcode/
+.opencode/
+graphify-out/
+docs/
+tools/
