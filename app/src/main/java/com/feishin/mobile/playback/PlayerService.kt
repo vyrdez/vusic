@@ -49,11 +49,13 @@ import com.feishin.mobile.data.cache.CACHED_SONGS_PLAYLIST_ID
 import com.feishin.mobile.data.cache.CachedTrackStore
 import com.feishin.mobile.data.cache.toTrack
 import com.feishin.mobile.data.download.DownloadRepository
+import com.feishin.mobile.data.download.OfflineSyncStore
 import com.feishin.mobile.data.favorites.FAVORITE_SONGS_PLAYLIST_ID
 import com.feishin.mobile.data.favorites.FavoritesStore
 import com.feishin.mobile.data.network.NetworkMonitor
 import com.feishin.mobile.data.queue.QueueStore
 import com.feishin.mobile.data.settings.SettingsStore
+import com.feishin.mobile.domain.model.BackendType
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.google.common.collect.ImmutableList
@@ -71,6 +73,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Owns the real ExoPlayer and publishes it through a [MediaLibrarySession],
@@ -98,13 +101,17 @@ class PlayerService : MediaLibraryService() {
     @Inject lateinit var playerManager: PlayerManager
     @Inject lateinit var imageLoader: ImageLoader
     @Inject lateinit var queueStore: com.feishin.mobile.data.queue.QueueStore
+    @Inject lateinit var offlineSync: dagger.Lazy<OfflineSyncStore>
     @Inject @Named("streaming") lateinit var okHttpClient: okhttp3.OkHttpClient
     @Inject lateinit var cache: androidx.media3.datasource.cache.SimpleCache
 
     private var player: ExoPlayer? = null
     private var mediaSession: MediaLibrarySession? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + com.feishin.mobile.core.common.CrashGuard.handler)
+    /** Application-scoped IO scope that survives [onDestroy] so final Jellyfin stop reports finish or fall back to offline queue. */
+    private val stopReportScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + com.feishin.mobile.core.common.CrashGuard.handler)
     private val scrobblePolicy = com.feishin.mobile.core.network.ScrobblePolicy()
+    private val jellyfinSession = JellyfinSessionCoordinator()
     private var ticker: Job? = null
 
     /** songId -> exact Track for already-browsed items (adopt mirror + resolve). */
@@ -195,14 +202,43 @@ class PlayerService : MediaLibraryService() {
 
         exo.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                val id = mediaItem?.mediaId ?: return
+                val id = mediaItem?.mediaId
+                val jellyfin = id != null && isJellyfinTrack(id)
+                val uri = mediaItem?.localConfiguration?.uri?.toString().orEmpty()
+                val isDirect = !uri.contains("/universal", ignoreCase = true)
+                val (stoppedPrev, startedNext) = jellyfinSession.transitionTo(
+                    newTrackId = id,
+                    isJellyfin = jellyfin,
+                    isDirect = isDirect,
+                    durationMs = player?.duration ?: 0L,
+                )
+                if (stoppedPrev != null) {
+                    stopReportScope.launch {
+                        repo.reportPlaybackStopped(
+                            id = stoppedPrev.trackId,
+                            positionMs = stoppedPrev.lastPositionMs,
+                            playSessionId = stoppedPrev.playSessionId,
+                        )
+                    }
+                }
+                if (id == null) return
                 // Prune other retried IDs when moving to a different track
                 val old = retriedMediaIds.toSet()
                 for (oldId in old) {
                     if (oldId != id) retriedMediaIds.remove(oldId)
                 }
-                // "Now playing" scrobble + reset the submission rule for the new track (only when backend supports scrobbling).
-                if (repo.capabilitiesFor(id).supportsScrobbling) {
+                if (startedNext != null) {
+                    scrobblePolicy.reset()
+                    scope.launch {
+                        repo.reportPlaybackStart(
+                            id = startedNext.trackId,
+                            positionMs = 0L,
+                            playSessionId = startedNext.playSessionId,
+                            isDirect = startedNext.isDirect,
+                        )
+                    }
+                } else if (repo.capabilitiesFor(id).supportsScrobbling) {
+                    // "Now playing" scrobble + reset the submission rule for non-Jellyfin backends.
                     scope.launch { repo.scrobble(id, submission = false) }
                 }
                 startTicker()
@@ -213,17 +249,64 @@ class PlayerService : MediaLibraryService() {
                 if (playbackState == Player.STATE_ENDED) {
                     val item = player?.currentMediaItem
                     val id = item?.mediaId
-                    if (id != null && repo.capabilitiesFor(id).supportsScrobbling && scrobblePolicy.onTrackEnded(id, player?.duration ?: 0L)) {
+                    val ended = jellyfinSession.onEnded(id, player?.duration ?: 0L)
+                    if (ended != null) {
+                        val (session, stopPositionMs) = ended
+                        stopReportScope.launch {
+                            reportStoppedOrQueueOffline(
+                                trackId = session.trackId,
+                                positionMs = stopPositionMs,
+                                playSessionId = session.playSessionId,
+                            )
+                        }
+                    } else if (id != null && !isJellyfinTrack(id) && repo.capabilitiesFor(id).supportsScrobbling && scrobblePolicy.onTrackEnded(id, player?.duration ?: 0L)) {
                         scope.launch { repo.scrobble(id, submission = true) }
                     }
                 }
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) {
-                    player?.currentMediaItem?.mediaId?.let { retriedMediaIds.remove(it) }
+                val p = player
+                val id = p?.currentMediaItem?.mediaId
+                if (isPlaying && id != null) {
+                    retriedMediaIds.remove(id)
+                }
+                if (p != null && id != null) {
+                    val session = jellyfinSession.onPauseOrSeek(id, p.currentPosition, p.duration)
+                    if (session != null) {
+                        scope.launch {
+                            repo.reportPlaybackProgress(
+                                id = session.trackId,
+                                positionMs = session.lastPositionMs,
+                                isPaused = !isPlaying,
+                                playSessionId = session.playSessionId,
+                                isDirect = session.isDirect,
+                            )
+                        }
+                    }
                 }
                 pushWidget()
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                if (reason != Player.DISCONTINUITY_REASON_SEEK) return
+                val p = player ?: return
+                val id = p.currentMediaItem?.mediaId ?: return
+                val session = jellyfinSession.onPauseOrSeek(id, newPosition.positionMs, p.duration) ?: return
+                val paused = !p.isPlaying
+                scope.launch {
+                    repo.reportPlaybackProgress(
+                        id = session.trackId,
+                        positionMs = session.lastPositionMs,
+                        isPaused = paused,
+                        playSessionId = session.playSessionId,
+                        isDirect = session.isDirect,
+                    )
+                }
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -341,8 +424,22 @@ class PlayerService : MediaLibraryService() {
     override fun onDestroy() {
         // Last chance to keep the queue without blocking the main thread.
         playerManager.snapshotPositionFromPlayer()
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+        val drained = jellyfinSession.drainOnDestroy(
+            currentTrackId = player?.currentMediaItem?.mediaId,
+            playerPositionMs = player?.currentPosition ?: 0L,
+        )
+        stopReportScope.launch {
             runCatching { playerManager.persist() }
+        }
+        if (drained != null) {
+            val (session, finalPosMs) = drained
+            stopReportScope.launch {
+                reportStoppedOrQueueOffline(
+                    trackId = session.trackId,
+                    positionMs = finalPosMs,
+                    playSessionId = session.playSessionId,
+                )
+            }
         }
         stopTicker()
         mediaSession?.release()
@@ -410,21 +507,39 @@ class PlayerService : MediaLibraryService() {
         }
     }
 
-    /** Drives the 50%-or-4-minutes scrobble submission rule. */
-    private fun startTicker() {        stopTicker()
+    /** Drives the 15s Jellyfin session progress ticks and the 50%-or-4-minutes Subsonic scrobble rule. */
+    private fun startTicker() {
+        stopTicker()
         ticker = scope.launch {
             while (true) {
                 val p = player ?: break
                 val item = p.currentMediaItem
                 val id = item?.mediaId
-                if (id != null && repo.capabilitiesFor(id).supportsScrobbling && p.isPlaying) {
-                    val submit = scrobblePolicy.onProgress(
-                        id = id,
-                        positionMs = p.currentPosition,
-                        durationMs = p.duration,
-                        isPlaying = true,
-                    )
-                    if (submit) repo.scrobble(id, submission = true)
+                if (id != null && p.isPlaying) {
+                    if (jellyfinSession.active?.trackId == id) {
+                        val dueSession = jellyfinSession.onTick(
+                            trackId = id,
+                            positionMs = p.currentPosition,
+                            durationMs = p.duration,
+                        )
+                        if (dueSession != null) {
+                            repo.reportPlaybackProgress(
+                                id = dueSession.trackId,
+                                positionMs = dueSession.lastPositionMs,
+                                isPaused = false,
+                                playSessionId = dueSession.playSessionId,
+                                isDirect = dueSession.isDirect,
+                            )
+                        }
+                    } else if (!isJellyfinTrack(id) && repo.capabilitiesFor(id).supportsScrobbling) {
+                        val submit = scrobblePolicy.onProgress(
+                            id = id,
+                            positionMs = p.currentPosition,
+                            durationMs = p.duration,
+                            isPlaying = true,
+                        )
+                        if (submit) repo.scrobble(id, submission = true)
+                    }
                 }
                 delay(1_000)
             }
@@ -434,6 +549,26 @@ class PlayerService : MediaLibraryService() {
     private fun stopTicker() {
         ticker?.cancel()
         ticker = null
+    }
+
+    private fun isJellyfinTrack(id: String): Boolean {
+        if (repo.isSessionScrobbleBackend(id)) return true
+        val profileId = GlobalId.profileIdOrNull(id) ?: return false
+        return profileStore.byId(profileId)?.type == BackendType.JELLYFIN
+    }
+
+    private suspend fun reportStoppedOrQueueOffline(
+        trackId: String,
+        positionMs: Long,
+        playSessionId: String,
+    ) {
+        val offline = isOffline()
+        val res = if (offline) null else withTimeoutOrNull(STOP_REPORT_TIMEOUT_MS) {
+            repo.reportPlaybackStopped(trackId, positionMs, playSessionId)
+        }
+        if (res !is Result.Ok) {
+            offlineSync.get().queueScrobble(trackId, submission = true, timeMs = System.currentTimeMillis())
+        }
     }
 
     // ---- Auto helpers (used by the callback) -------------------------------
@@ -1013,6 +1148,98 @@ class PlayerService : MediaLibraryService() {
         const val EXTRA_SONG_ID = "auto_song_id"
         const val EXTRA_PARENT_ID = "auto_parent_id"
         const val EXTRA_ACTION = "auto_action"
+        private const val STOP_REPORT_TIMEOUT_MS = 2_500L
+    }
+}
+
+/**
+ * Pure session state machine for Jellyfin `/Sessions/Playing` -> `/Progress` -> `/Stopped` reporting.
+ */
+internal class JellyfinSessionCoordinator(
+    private val clockMs: () -> Long = { android.os.SystemClock.elapsedRealtime() },
+    private val sessionIdFactory: () -> String = { java.util.UUID.randomUUID().toString() },
+    private val progressIntervalMs: Long = 15_000L,
+) {
+    data class ActiveSession(
+        val trackId: String,
+        val playSessionId: String,
+        val isDirect: Boolean,
+        val lastPositionMs: Long = 0L,
+        val durationMs: Long = 0L,
+        val lastProgressSentRealtimeMs: Long = 0L,
+    )
+
+    var active: ActiveSession? = null
+        private set
+
+    fun transitionTo(
+        newTrackId: String?,
+        isJellyfin: Boolean,
+        isDirect: Boolean,
+        durationMs: Long,
+    ): Pair<ActiveSession?, ActiveSession?> {
+        val stopped = active
+        active = null
+        if (newTrackId == null || !isJellyfin) {
+            return stopped to null
+        }
+        val started = ActiveSession(
+            trackId = newTrackId,
+            playSessionId = sessionIdFactory(),
+            isDirect = isDirect,
+            lastPositionMs = 0L,
+            durationMs = durationMs.coerceAtLeast(0L),
+            lastProgressSentRealtimeMs = clockMs(),
+        )
+        active = started
+        return stopped to started
+    }
+
+    fun onTick(trackId: String, positionMs: Long, durationMs: Long): ActiveSession? {
+        val cur = active ?: return null
+        if (cur.trackId != trackId) return null
+        val now = clockMs()
+        val pos = positionMs.coerceAtLeast(0L)
+        val dur = if (durationMs > 0L) durationMs else cur.durationMs
+        val due = now - cur.lastProgressSentRealtimeMs >= progressIntervalMs
+        val updated = cur.copy(
+            lastPositionMs = pos,
+            durationMs = dur,
+            lastProgressSentRealtimeMs = if (due) now else cur.lastProgressSentRealtimeMs,
+        )
+        active = updated
+        return if (due) updated else null
+    }
+
+    fun onPauseOrSeek(trackId: String, positionMs: Long, durationMs: Long): ActiveSession? {
+        val cur = active ?: return null
+        if (cur.trackId != trackId) return null
+        val updated = cur.copy(
+            lastPositionMs = positionMs.coerceAtLeast(0L),
+            durationMs = if (durationMs > 0L) durationMs else cur.durationMs,
+            lastProgressSentRealtimeMs = clockMs(),
+        )
+        active = updated
+        return updated
+    }
+
+    fun onEnded(trackId: String?, playerDurationMs: Long): Pair<ActiveSession, Long>? {
+        val cur = active ?: return null
+        if (trackId != null && cur.trackId != trackId) return null
+        active = null
+        val stopPositionMs = maxOf(cur.durationMs, playerDurationMs.coerceAtLeast(0L), cur.lastPositionMs)
+        return cur to stopPositionMs
+    }
+
+    fun drainOnDestroy(currentTrackId: String?, playerPositionMs: Long): Pair<ActiveSession, Long>? {
+        val cur = active ?: return null
+        active = null
+        val pos = if (currentTrackId == cur.trackId && playerPositionMs > 0L) {
+            maxOf(cur.lastPositionMs, playerPositionMs)
+        } else {
+            cur.lastPositionMs
+        }
+        return cur to pos
     }
 }
 

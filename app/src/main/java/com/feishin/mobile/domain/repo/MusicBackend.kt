@@ -93,6 +93,24 @@ interface MusicBackend {
 
     suspend fun scrobble(id: String, submission: Boolean): Result<Unit>
     suspend fun scrobbleAt(id: String, timeMs: Long, submission: Boolean): Result<Unit>
+    suspend fun reportPlaybackStart(
+        id: String,
+        positionMs: Long,
+        playSessionId: String,
+        isDirect: Boolean = true,
+    ): Result<Unit> = Result.Ok(Unit)
+    suspend fun reportPlaybackProgress(
+        id: String,
+        positionMs: Long,
+        isPaused: Boolean,
+        playSessionId: String,
+        isDirect: Boolean = true,
+    ): Result<Unit> = Result.Ok(Unit)
+    suspend fun reportPlaybackStopped(
+        id: String,
+        positionMs: Long,
+        playSessionId: String,
+    ): Result<Unit> = Result.Ok(Unit)
 
     suspend fun lyricsForTrack(id: String, artist: String, title: String): Result<SyncedLyrics>
     suspend fun lyrics(artist: String, title: String): Result<String>

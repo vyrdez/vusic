@@ -14,6 +14,7 @@ import com.feishin.mobile.data.favorites.PlaylistEvents
 import com.feishin.mobile.data.network.NetworkMonitor
 import com.feishin.mobile.data.remote.jellyfin.CreateJellyfinPlaylistRequest
 import com.feishin.mobile.data.remote.jellyfin.JellyfinApi
+import com.feishin.mobile.data.remote.jellyfin.JellyfinPlaybackProgressInfo
 import com.feishin.mobile.data.remote.jellyfin.JellyfinPlaybackStartInfo
 import com.feishin.mobile.data.remote.jellyfin.JellyfinPlaybackStopInfo
 import com.feishin.mobile.data.remote.jellyfin.toAlbum
@@ -863,40 +864,96 @@ class JellyfinBackend(
         Result.Ok(Unit)
     }
 
+    override suspend fun reportPlaybackStart(
+        id: String,
+        positionMs: Long,
+        playSessionId: String,
+        isDirect: Boolean,
+    ): Result<Unit> = call {
+        if (offline()) return@call Result.Err("You're offline")
+        val rawId = GlobalId.rawId(id)
+        api.reportPlaybackStart(
+            JellyfinPlaybackStartInfo(
+                itemId = rawId,
+                mediaSourceId = rawId,
+                positionTicks = positionMs.coerceAtLeast(0L) * TICKS_PER_MS,
+                isPaused = false,
+                playSessionId = playSessionId,
+                playMethod = playMethod(isDirect),
+            ),
+        )
+        Result.Ok(Unit)
+    }
+
+    override suspend fun reportPlaybackProgress(
+        id: String,
+        positionMs: Long,
+        isPaused: Boolean,
+        playSessionId: String,
+        isDirect: Boolean,
+    ): Result<Unit> = call {
+        if (offline()) return@call Result.Err("You're offline")
+        val rawId = GlobalId.rawId(id)
+        api.reportPlaybackProgress(
+            JellyfinPlaybackProgressInfo(
+                itemId = rawId,
+                mediaSourceId = rawId,
+                positionTicks = positionMs.coerceAtLeast(0L) * TICKS_PER_MS,
+                isPaused = isPaused,
+                playSessionId = playSessionId,
+                playMethod = playMethod(isDirect),
+            ),
+        )
+        Result.Ok(Unit)
+    }
+
+    override suspend fun reportPlaybackStopped(
+        id: String,
+        positionMs: Long,
+        playSessionId: String,
+    ): Result<Unit> = call {
+        if (offline()) return@call Result.Err("You're offline")
+        val rawId = GlobalId.rawId(id)
+        api.reportPlaybackStopped(
+            JellyfinPlaybackStopInfo(
+                itemId = rawId,
+                mediaSourceId = rawId,
+                positionTicks = positionMs.coerceAtLeast(0L) * TICKS_PER_MS,
+                playSessionId = playSessionId,
+            ),
+        )
+        Result.Ok(Unit)
+    }
+
     override suspend fun scrobble(id: String, submission: Boolean): Result<Unit> = call {
         val globalId = scopeId(id)
-        val rawId = GlobalId.rawId(id)
         if (offline()) {
-            offlineSync.get().queueScrobble(globalId, submission, System.currentTimeMillis())
+            if (submission) {
+                offlineSync.get().queueScrobble(globalId, submission = true, timeMs = System.currentTimeMillis())
+            }
             return@call Result.Ok(Unit)
         }
-        val sessionId = "${profile.id}-$rawId"
+        val rawId = GlobalId.rawId(id)
         if (submission) {
-            api.reportPlaybackStopped(
-                JellyfinPlaybackStopInfo(
-                    itemId = rawId,
-                    mediaSourceId = rawId,
-                    positionTicks = 0L,
-                    playSessionId = sessionId,
-                ),
-            )
-        } else {
-            api.reportPlaybackStart(
-                JellyfinPlaybackStartInfo(
-                    itemId = rawId,
-                    mediaSourceId = rawId,
-                    positionTicks = 0L,
-                    isPaused = false,
-                    playSessionId = sessionId,
-                ),
-            )
+            return@call scrobbleAt(globalId, System.currentTimeMillis(), submission = true)
         }
+        val sessionId = "${profile.id}-$rawId"
+        api.reportPlaybackStart(
+            JellyfinPlaybackStartInfo(
+                itemId = rawId,
+                mediaSourceId = rawId,
+                positionTicks = 0L,
+                isPaused = false,
+                playSessionId = sessionId,
+            ),
+        )
         Result.Ok(Unit)
     }
 
     override suspend fun scrobbleAt(id: String, timeMs: Long, submission: Boolean): Result<Unit> = call {
+        if (offline()) return@call Result.Err("You're offline")
         val rawId = GlobalId.rawId(id)
-        val sessionId = "${profile.id}-$rawId-$timeMs"
+        val sessionId = "${profile.id}-$rawId-$timeMs-${java.util.UUID.randomUUID()}"
         api.reportPlaybackStart(
             JellyfinPlaybackStartInfo(
                 itemId = rawId,
@@ -911,13 +968,15 @@ class JellyfinBackend(
                 JellyfinPlaybackStopInfo(
                     itemId = rawId,
                     mediaSourceId = rawId,
-                    positionTicks = 0L,
+                    positionTicks = DEFAULT_OFFLINE_SCROBBLE_TICKS,
                     playSessionId = sessionId,
                 ),
             )
         }
         Result.Ok(Unit)
     }
+
+    private fun playMethod(isDirect: Boolean): String = if (isDirect) "DirectStream" else "Transcode"
 
     override suspend fun lyricsForTrack(id: String, artist: String, title: String): Result<SyncedLyrics> =
         Result.Ok(SyncedLyrics.EMPTY)
@@ -985,5 +1044,7 @@ class JellyfinBackend(
         const val FIELDS_ALBUM_RECENT = "Genres,DateCreated"
         const val FIELDS_AUDIO = "MediaSources,Genres"
         const val DEFAULT_PLAYLIST_SEARCH_LIMIT = 20
+        const val TICKS_PER_MS = 10_000L
+        const val DEFAULT_OFFLINE_SCROBBLE_TICKS = 10_000_000L
     }
 }

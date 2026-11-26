@@ -894,6 +894,50 @@ class FederatedMusicRepository internal constructor(
         return backend.scrobbleAt(id, timeMs, submission)
     }
 
+    override suspend fun reportPlaybackStart(
+        id: String,
+        positionMs: Long,
+        playSessionId: String,
+        isDirect: Boolean,
+    ): Result<Unit> {
+        ensureLoaded()
+        if (GlobalId.isDeviceLocal(id)) return Result.Ok(Unit)
+        val backend = resolveBackend(id) ?: return Result.Err("Server unavailable")
+        if (!backend.capabilities.supportsScrobbling) return Result.Ok(Unit)
+        return backend.reportPlaybackStart(id, positionMs, playSessionId, isDirect)
+    }
+
+    override suspend fun reportPlaybackProgress(
+        id: String,
+        positionMs: Long,
+        isPaused: Boolean,
+        playSessionId: String,
+        isDirect: Boolean,
+    ): Result<Unit> {
+        ensureLoaded()
+        if (GlobalId.isDeviceLocal(id)) return Result.Ok(Unit)
+        val backend = resolveBackend(id) ?: return Result.Err("Server unavailable")
+        if (!backend.capabilities.supportsScrobbling) return Result.Ok(Unit)
+        return backend.reportPlaybackProgress(id, positionMs, isPaused, playSessionId, isDirect)
+    }
+
+    override suspend fun reportPlaybackStopped(
+        id: String,
+        positionMs: Long,
+        playSessionId: String,
+    ): Result<Unit> {
+        ensureLoaded()
+        if (GlobalId.isDeviceLocal(id)) return Result.Ok(Unit)
+        val backend = resolveBackend(id) ?: return Result.Err("Server unavailable")
+        if (!backend.capabilities.supportsScrobbling) return Result.Ok(Unit)
+        return backend.reportPlaybackStopped(id, positionMs, playSessionId)
+    }
+
+    override fun isSessionScrobbleBackend(id: String): Boolean {
+        if (GlobalId.isDeviceLocal(id)) return false
+        return resolveBackend(id)?.profile?.type == BackendType.JELLYFIN
+    }
+
     override suspend fun lyricsForTrack(id: String, artist: String, title: String): Result<SyncedLyrics> {
         ensureLoaded()
         if (GlobalId.isDeviceLocal(id)) return Result.Ok(SyncedLyrics.EMPTY)
