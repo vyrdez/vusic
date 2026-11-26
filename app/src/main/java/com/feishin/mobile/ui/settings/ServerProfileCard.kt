@@ -421,9 +421,10 @@ private fun CollapsedProfileHeader(
     ) {
         Box(
             modifier = Modifier
-                .size(30.dp)
+                .defaultMinSize(minWidth = 30.dp, minHeight = 30.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainer),
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .padding(horizontal = 6.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(

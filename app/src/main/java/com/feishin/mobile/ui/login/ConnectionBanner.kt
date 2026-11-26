@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -41,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.feishin.mobile.ui.theme.VusicColors
 
@@ -153,7 +155,10 @@ fun ConnectionBanner(
                                 modifier = Modifier.weight(1f),
                             )
                             Spacer(Modifier.width(8.dp))
-                            TextButton(onClick = onDismiss) {
+                            TextButton(
+                                onClick = onDismiss,
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                            ) {
                                 Text(
                                     "Dismiss",
                                     style = MaterialTheme.typography.labelMedium,
@@ -181,7 +186,10 @@ fun ConnectionBanner(
                                 modifier = Modifier.weight(1f),
                             )
                             Spacer(Modifier.width(8.dp))
-                            TextButton(onClick = onDismiss) {
+                            TextButton(
+                                onClick = onDismiss,
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                            ) {
                                 Text(
                                     "Dismiss",
                                     style = MaterialTheme.typography.labelMedium,
@@ -211,10 +219,14 @@ fun ConnectionBanner(
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = contentColor,
                                     maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f),
                                 )
                                 Spacer(Modifier.width(8.dp))
-                                TextButton(onClick = onDismiss) {
+                                TextButton(
+                                    onClick = onDismiss,
+                                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                                ) {
                                     Text(
                                         "Dismiss",
                                         style = MaterialTheme.typography.labelMedium,
@@ -225,6 +237,7 @@ fun ConnectionBanner(
                             if (!current.details.isNullOrBlank()) {
                                 TextButton(
                                     onClick = { detailsExpanded = !detailsExpanded },
+                                    modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                                     contentPadding = PaddingValues(0.dp),
                                 ) {
                                     Text(

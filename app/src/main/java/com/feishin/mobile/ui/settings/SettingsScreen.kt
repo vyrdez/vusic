@@ -244,7 +244,11 @@ private fun ServerEditScreen(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = onCancel, enabled = !busy) {
+            TextButton(
+                onClick = onCancel,
+                enabled = !busy,
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+            ) {
                 Text("Cancel")
             }
         }

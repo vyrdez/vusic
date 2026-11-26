@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -140,7 +141,11 @@ fun LoginScreen(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = onCancel, enabled = !busy) {
+                    TextButton(
+                        onClick = onCancel,
+                        enabled = !busy,
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                    ) {
                         Text("Cancel")
                     }
                 }
