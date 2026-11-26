@@ -9,6 +9,7 @@ import com.feishin.mobile.data.cache.LibraryRefresh
 import com.feishin.mobile.data.cache.MetadataCache
 import com.feishin.mobile.data.cache.MetadataCacheKeys
 import com.feishin.mobile.data.download.OfflineSyncStore
+import com.feishin.mobile.data.favorites.PlaylistEvent
 import com.feishin.mobile.data.favorites.PlaylistEvents
 import com.feishin.mobile.data.network.NetworkMonitor
 import com.feishin.mobile.data.remote.jellyfin.CreateJellyfinPlaylistRequest
@@ -679,54 +680,76 @@ class JellyfinBackend(
         Result.Ok(api.getItem(userId = userId, itemId = rawId).toTrack(profile))
     }
 
-    override suspend fun starTrack(id: String, starred: Boolean): Result<Unit> = call {
+    private suspend fun invalidatePlaylistsCache(playlistId: String? = null) {
+        val playlistsKey = scopedKey(MetadataCacheKeys.PLAYLISTS)
+        cache.remove(playlistsKey)
+        refresh.policy.force(playlistsKey)
+        refresh.invalidateLogical(MetadataCacheKeys.PLAYLISTS)
+        if (!playlistId.isNullOrBlank()) {
+            val globalId = scopeId(playlistId)
+            val logicalDetailKey = MetadataCacheKeys.playlist(globalId)
+            val detailKey = scopedKey(logicalDetailKey)
+            cache.remove(detailKey)
+            refresh.policy.force(detailKey)
+            refresh.invalidateLogical(logicalDetailKey)
+        }
+    }
+
+    private suspend fun setFavorite(
+        id: String,
+        starred: Boolean,
+        extraLogicalKey: String? = null,
+        queueOffline: suspend OfflineSyncStore.(String, Boolean) -> Unit,
+    ): Result<Unit> = call {
         val globalId = scopeId(id)
         val rawId = GlobalId.rawId(id)
         if (offline()) {
-            offlineSync.get().queueStar(globalId, starred)
+            offlineSync.get().queueOffline(globalId, starred)
             return@call Result.Ok(Unit)
         }
         if (starred) api.markFavorite(userId, rawId) else api.unmarkFavorite(userId, rawId)
+        refresh.policy.force(scopedKey(MetadataCacheKeys.STARRED))
+        refresh.invalidateLogical(MetadataCacheKeys.STARRED)
+        if (extraLogicalKey != null) {
+            refresh.policy.force(scopedKey(extraLogicalKey))
+            refresh.invalidateLogical(extraLogicalKey)
+        }
         Result.Ok(Unit)
     }
 
-    override suspend fun starAlbum(id: String, starred: Boolean): Result<Unit> = call {
-        val globalId = scopeId(id)
-        val rawId = GlobalId.rawId(id)
-        if (offline()) {
-            offlineSync.get().queueStarAlbum(globalId, starred)
-            return@call Result.Ok(Unit)
-        }
-        if (starred) api.markFavorite(userId, rawId) else api.unmarkFavorite(userId, rawId)
-        Result.Ok(Unit)
-    }
+    override suspend fun starTrack(id: String, starred: Boolean): Result<Unit> =
+        setFavorite(id, starred) { globalId, isStarred -> queueStar(globalId, isStarred) }
 
-    override suspend fun starArtist(id: String, starred: Boolean): Result<Unit> = call {
-        val globalId = scopeId(id)
-        val rawId = GlobalId.rawId(id)
-        if (offline()) {
-            offlineSync.get().queueStarArtist(globalId, starred)
-            return@call Result.Ok(Unit)
+    override suspend fun starAlbum(id: String, starred: Boolean): Result<Unit> =
+        setFavorite(id, starred, MetadataCacheKeys.album(scopeId(id))) { globalId, isStarred ->
+            queueStarAlbum(globalId, isStarred)
         }
-        if (starred) api.markFavorite(userId, rawId) else api.unmarkFavorite(userId, rawId)
-        Result.Ok(Unit)
-    }
+
+    override suspend fun starArtist(id: String, starred: Boolean): Result<Unit> =
+        setFavorite(id, starred, MetadataCacheKeys.artist(scopeId(id))) { globalId, isStarred ->
+            queueStarArtist(globalId, isStarred)
+        }
 
     override suspend fun createPlaylist(name: String, trackIds: List<String>): Result<String> = call {
-        val rawIds = trackIds.map { GlobalId.rawId(it) }
+        val rawIds = trackIds.map { GlobalId.rawId(it) }.filter { it.isNotBlank() }
         val response = api.createPlaylist(
             CreateJellyfinPlaylistRequest(
                 name = name,
                 ids = rawIds,
                 userId = userId,
+                mediaType = "Audio",
             ),
         )
         val rawPlaylistId = response.id.takeIf { it.isNotBlank() }?.let { GlobalId.rawId(it) }
             ?: return@call Result.Err("Create failed")
+        invalidatePlaylistsCache()
         Result.Ok(GlobalId.format(profile.id, rawPlaylistId))
     }
 
-    override suspend fun addToPlaylist(playlistId: String, trackIds: List<String>): Result<Unit> = call {
+    private suspend fun addPlaylistItemsRemote(
+        playlistId: String,
+        trackIds: List<String>,
+    ): Result<Unit> = call {
         val rawPlaylistId = GlobalId.rawId(playlistId)
         val rawIds = trackIds.map { GlobalId.rawId(it) }.filter { it.isNotBlank() }
         if (rawIds.isNotEmpty()) {
@@ -739,24 +762,104 @@ class JellyfinBackend(
         Result.Ok(Unit)
     }
 
-    override suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit> = call {
-        if (indexes.isEmpty()) return@call Result.Ok(Unit)
-        val rawPlaylistId = GlobalId.rawId(playlistId)
-        val items = api.getPlaylistItems(playlistId = rawPlaylistId, userId = userId).items
-        val entryIds = indexes.mapNotNull { idx ->
-            items.getOrNull(idx)?.playlistItemId?.takeIf { it.isNotBlank() }
+    override suspend fun addToPlaylist(playlistId: String, trackIds: List<String>): Result<Unit> {
+        val res = addPlaylistItemsRemote(playlistId, trackIds)
+        if (res is Result.Ok) {
+            invalidatePlaylistsCache(playlistId)
         }
-        if (entryIds.isNotEmpty()) {
+        return res
+    }
+
+    override suspend fun addToPlaylistOptimistic(
+        playlistId: String,
+        tracks: List<Track>,
+        playlistName: String,
+        onRollback: (() -> Unit)?,
+    ): Result<Unit> {
+        val globalPlaylistId = scopeId(playlistId)
+        val detailKey = scopedKey(MetadataCacheKeys.playlist(globalPlaylistId))
+        val playlistsKey = scopedKey(MetadataCacheKeys.PLAYLISTS)
+
+        val originalDetail = cache.read(detailKey, PlaylistDetail.serializer())
+        val originalPlaylists = cache.read(playlistsKey, ListSerializer(Playlist.serializer()))
+
+        if (originalDetail != null) {
+            val updatedDetail = originalDetail.copy(
+                songCount = originalDetail.songCount + tracks.size,
+                durationSec = originalDetail.durationSec + tracks.sumOf { it.durationSec },
+                tracks = originalDetail.tracks + tracks,
+            )
+            cache.write(detailKey, PlaylistDetail.serializer(), updatedDetail)
+        }
+        if (originalPlaylists != null) {
+            val updatedPlaylists = originalPlaylists.map { p ->
+                if (p.id == globalPlaylistId) {
+                    p.copy(
+                        songCount = p.songCount + tracks.size,
+                        durationSec = p.durationSec + tracks.sumOf { it.durationSec },
+                    )
+                } else {
+                    p
+                }
+            }
+            cache.write(playlistsKey, ListSerializer(Playlist.serializer()), updatedPlaylists)
+        }
+        cacheScope.launch {
+            val res = addPlaylistItemsRemote(globalPlaylistId, tracks.map { it.id })
+            if (res is Result.Err) {
+                if (originalDetail != null) {
+                    cache.write(detailKey, PlaylistDetail.serializer(), originalDetail)
+                } else {
+                    cache.remove(detailKey)
+                }
+                if (originalPlaylists != null) {
+                    cache.write(playlistsKey, ListSerializer(Playlist.serializer()), originalPlaylists)
+                }
+                playlistEvents.get().emit(PlaylistEvent.TracksAdded(globalPlaylistId))
+                onRollback?.invoke()
+            } else {
+                refresh.policy.force(detailKey)
+                refresh.policy.force(playlistsKey)
+                refresh.invalidateLogical(MetadataCacheKeys.playlist(globalPlaylistId))
+                refresh.invalidateLogical(MetadataCacheKeys.PLAYLISTS)
+                playlistEvents.get().emit(PlaylistEvent.TracksAdded(globalPlaylistId))
+            }
+        }
+        return Result.Ok(Unit)
+    }
+
+    override suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit> =
+        removeFromPlaylist(playlistId, indexes, emptyList())
+
+    override suspend fun removeFromPlaylist(
+        playlistId: String,
+        indexes: List<Int>,
+        entryIds: List<String>,
+    ): Result<Unit> = call {
+        val rawPlaylistId = GlobalId.rawId(playlistId)
+        val directEntryIds = entryIds.filter { it.isNotBlank() }
+        val resolvedEntryIds = if (directEntryIds.isNotEmpty()) {
+            directEntryIds
+        } else {
+            if (indexes.isEmpty()) return@call Result.Ok(Unit)
+            val items = api.getPlaylistItems(playlistId = rawPlaylistId, userId = userId).items
+            indexes.mapNotNull { idx ->
+                items.getOrNull(idx)?.playlistItemId?.takeIf { it.isNotBlank() }
+            }
+        }
+        if (resolvedEntryIds.isNotEmpty()) {
             api.removePlaylistItems(
                 playlistId = rawPlaylistId,
-                entryIds = entryIds.joinToString(","),
+                entryIds = resolvedEntryIds.joinToString(","),
             )
+            invalidatePlaylistsCache(playlistId)
         }
         Result.Ok(Unit)
     }
 
     override suspend fun deletePlaylist(id: String): Result<Unit> = call {
         api.deleteItem(GlobalId.rawId(id))
+        invalidatePlaylistsCache(id)
         Result.Ok(Unit)
     }
 

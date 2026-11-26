@@ -113,6 +113,7 @@ fun JellyfinBaseItemDto.toTrack(profile: ServerProfile): Track {
         path = primarySource?.path ?: path.orEmpty(),
         sourceProfileId = profile.id,
         sourceLabel = profile.name,
+        playlistItemId = playlistItemId?.takeIf { it.isNotBlank() },
     )
 }
 

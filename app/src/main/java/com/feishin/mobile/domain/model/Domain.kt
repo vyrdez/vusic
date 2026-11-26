@@ -69,6 +69,8 @@ data class Track(
     val localModifiedSec: Long = 0L,
     val sourceProfileId: String? = null,
     val sourceLabel: String? = null,
+    /** Server-assigned row identifier inside a playlist (required by Jellyfin for duplicate-safe removal). */
+    val playlistItemId: String? = null,
 ) {
     val isLocal: Boolean get() = !localUri.isNullOrBlank()
 }

@@ -84,6 +84,11 @@ interface MusicBackend {
         onRollback: (() -> Unit)? = null,
     ): Result<Unit> = addToPlaylist(playlistId, tracks.map { it.id })
     suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit>
+    suspend fun removeFromPlaylist(
+        playlistId: String,
+        indexes: List<Int>,
+        entryIds: List<String>,
+    ): Result<Unit> = removeFromPlaylist(playlistId, indexes)
     suspend fun deletePlaylist(id: String): Result<Unit>
 
     suspend fun scrobble(id: String, submission: Boolean): Result<Unit>

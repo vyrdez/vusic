@@ -278,7 +278,8 @@ class PlaylistDetailViewModel @Inject constructor(
             // `sourceIndex` is always the STORED position (the caller maps a
             // visible row back through the visible->source table), so a removal
             // under a sort or filter still hits the entry the user pointed at.
-            repo.removeFromPlaylist(id, listOf(sourceIndex))
+            val entryIds = listOfNotNull(tracks[sourceIndex].playlistItemId)
+            repo.removeFromPlaylist(id, listOf(sourceIndex), entryIds)
             // Optimistic: the row is gone from the server, so the cached copy
             // must not be served back over it.
             libraryRefresh.invalidate(MetadataCacheKeys.playlist(id))

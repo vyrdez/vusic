@@ -850,10 +850,17 @@ class FederatedMusicRepository internal constructor(
         return backend.addToPlaylistOptimistic(playlistId, compatible, playlistName, onRollback)
     }
 
-    override suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit> {
+    override suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit> =
+        removeFromPlaylist(playlistId, indexes, emptyList())
+
+    override suspend fun removeFromPlaylist(
+        playlistId: String,
+        indexes: List<Int>,
+        entryIds: List<String>,
+    ): Result<Unit> {
         ensureLoaded()
         val backend = resolveBackend(playlistId) ?: return Result.Err("Server unavailable")
-        val res = backend.removeFromPlaylist(playlistId, indexes)
+        val res = backend.removeFromPlaylist(playlistId, indexes, entryIds)
         if (res is Result.Ok) {
             refresh.policy.forceLogical(MetadataCacheKeys.playlist(playlistId))
             refresh.policy.forceLogical(MetadataCacheKeys.PLAYLISTS)
