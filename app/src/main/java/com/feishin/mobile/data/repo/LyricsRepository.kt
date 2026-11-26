@@ -3,11 +3,13 @@ package com.feishin.mobile.data.repo
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import com.feishin.mobile.core.common.GlobalId
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.network.Lyrics
 import com.feishin.mobile.core.network.LyricsCacheKey
 import com.feishin.mobile.core.network.LyricsKind
 import com.feishin.mobile.core.network.LyricsSource
+import com.feishin.mobile.data.auth.ProfileStore
 import com.feishin.mobile.data.db.LyricsCacheDao
 import com.feishin.mobile.data.db.LyricsCacheEntity
 import com.feishin.mobile.data.lyrics.BetterLyricsProvider
@@ -16,6 +18,7 @@ import com.feishin.mobile.data.lyrics.KuGouLyricsProvider
 import com.feishin.mobile.data.lyrics.LrclibLyricsProvider
 import com.feishin.mobile.data.lyrics.PaxsenixLyricsProvider
 import com.feishin.mobile.data.settings.SettingsStore
+import com.feishin.mobile.domain.model.BackendType
 import com.feishin.mobile.domain.model.Track
 import com.feishin.mobile.domain.repo.LyricsProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -33,18 +36,77 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.Json
 
 @Singleton
-class LyricsRepository @Inject constructor(
+class LyricsRepository private constructor(
     private val cache: LyricsCacheDao,
-    private val lrclib: LrclibLyricsProvider,
-    private val betterLyrics: BetterLyricsProvider,
-    private val paxsenix: PaxsenixLyricsProvider,
-    private val kugou: KuGouLyricsProvider,
-    private val navidrome: NavidromeLyricsProvider,
-    private val fileTags: FileTagLyricsProvider,
+    private val lrclib: LyricsProvider,
+    private val betterLyrics: LyricsProvider,
+    private val paxsenix: LyricsProvider,
+    private val kugou: LyricsProvider,
+    private val navidrome: LyricsProvider,
+    private val jellyfin: LyricsProvider,
+    private val fileTags: LyricsProvider,
+    private val profileStore: ProfileStore,
     private val settingsStore: SettingsStore,
     private val json: Json,
-    @ApplicationContext private val context: Context,
+    private val context: Context,
 ) {
+    @Inject
+    constructor(
+        cache: LyricsCacheDao,
+        lrclib: LrclibLyricsProvider,
+        betterLyrics: BetterLyricsProvider,
+        paxsenix: PaxsenixLyricsProvider,
+        kugou: KuGouLyricsProvider,
+        navidrome: NavidromeLyricsProvider,
+        jellyfin: JellyfinLyricsProvider,
+        fileTags: FileTagLyricsProvider,
+        profileStore: ProfileStore,
+        settingsStore: SettingsStore,
+        json: Json,
+        @ApplicationContext context: Context,
+    ) : this(
+        cache = cache,
+        lrclib = lrclib as LyricsProvider,
+        betterLyrics = betterLyrics as LyricsProvider,
+        paxsenix = paxsenix as LyricsProvider,
+        kugou = kugou as LyricsProvider,
+        navidrome = navidrome as LyricsProvider,
+        jellyfin = jellyfin as LyricsProvider,
+        fileTags = fileTags as LyricsProvider,
+        profileStore = profileStore,
+        settingsStore = settingsStore,
+        json = json,
+        context = context,
+    )
+
+    internal constructor(
+        cache: LyricsCacheDao,
+        lrclib: LyricsProvider,
+        betterLyrics: LyricsProvider,
+        paxsenix: LyricsProvider,
+        kugou: LyricsProvider,
+        navidrome: LyricsProvider,
+        jellyfin: LyricsProvider,
+        fileTags: LyricsProvider,
+        profileStore: ProfileStore,
+        settingsStore: SettingsStore,
+        json: Json,
+        context: Context,
+        @Suppress("UNUSED_PARAMETER") forTest: Unit = Unit,
+    ) : this(
+        cache = cache,
+        lrclib = lrclib,
+        betterLyrics = betterLyrics,
+        paxsenix = paxsenix,
+        kugou = kugou,
+        navidrome = navidrome,
+        jellyfin = jellyfin,
+        fileTags = fileTags,
+        profileStore = profileStore,
+        settingsStore = settingsStore,
+        json = json,
+        context = context,
+    )
     /** 7-day TTL for negative cache entries ("nothing found"). */
     private val negativeTtlMs = 7 * 24 * 60 * 60 * 1000L
 
@@ -130,7 +192,11 @@ class LyricsRepository @Inject constructor(
                             "BETTER_LYRICS" -> betterLyrics
                             "PAXSENIX" -> paxsenix
                             "KUGOU" -> kugou
-                            "LOCAL_DATA" -> if (track.isLocal) fileTags else navidrome
+                            "LOCAL_DATA" -> when {
+                                track.isLocal -> fileTags
+                                GlobalId.profileIdOrNull(track.id)?.let { profileStore.byId(it)?.type } == BackendType.JELLYFIN -> jellyfin
+                                else -> navidrome
+                            }
                             else -> continue
                         }
 
