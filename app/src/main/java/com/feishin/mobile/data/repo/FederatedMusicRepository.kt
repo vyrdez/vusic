@@ -7,6 +7,7 @@ import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.network.SyncedLyrics
 import com.feishin.mobile.data.auth.ProfileStore
 import com.feishin.mobile.data.backend.BackendClientFactory
+import com.feishin.mobile.data.backend.JellyfinBackend
 import com.feishin.mobile.data.backend.SubsonicBackend
 import com.feishin.mobile.data.cache.CACHED_SONGS_PLAYLIST_ID
 import com.feishin.mobile.data.cache.CachedTrackStore
@@ -981,7 +982,17 @@ class FederatedMusicRepository internal constructor(
                     playlistEvents = playlistEvents,
                     cacheScope = repoScope,
                 )
-                BackendType.JELLYFIN,
+                BackendType.JELLYFIN -> JellyfinBackend(
+                    profile = profile,
+                    api = clientFactory.jellyfinApi(profile),
+                    cache = cache,
+                    refresh = refresh,
+                    network = network,
+                    settings = settings,
+                    offlineSync = offlineSync,
+                    playlistEvents = playlistEvents,
+                    cacheScope = repoScope,
+                )
                 BackendType.GOOGLE_DRIVE -> UnsupportedBackend(profile)
             }
         }
