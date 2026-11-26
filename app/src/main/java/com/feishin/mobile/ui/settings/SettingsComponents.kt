@@ -1,10 +1,16 @@
 package com.feishin.mobile.ui.settings
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -175,6 +181,109 @@ fun SwitchRow(
             colors = VusicControlDefaults.switchColors(),
             modifier = Modifier.widthIn(min = 52.dp),
         )
+    }
+}
+
+/**
+ * Security toggle row shared by Login and Add/Edit server screens inside a
+ * [SettingsCard]. Supports an animated inline [warning] chip and optional [hint]
+ * line (when toggled off but context like an `http://` URL warrants attention).
+ */
+@Composable
+fun LoginToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    warning: String? = null,
+    warningIsError: Boolean = false,
+    hint: String? = null,
+    showDivider: Boolean = false,
+) {
+    val reduceMotion = Motion.durationScale == 0f
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = VusicSpacing.RowMinHeight)
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(
+                    enabled = enabled,
+                    role = Role.Switch,
+                    onClick = { onToggle(!checked) },
+                )
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f).padding(end = VusicSpacing.ControlGap)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(VusicSpacing.TitleToDescription))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VusicColors.SecondaryText,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = onToggle,
+                enabled = enabled,
+                colors = VusicControlDefaults.switchColors(),
+            )
+        }
+        val activeCallout = warning ?: hint
+        val isErrorTone = warning != null && warningIsError
+        AnimatedVisibility(
+            visible = activeCallout != null,
+            enter = if (reduceMotion) {
+                fadeIn(snap()) + expandVertically(snap())
+            } else {
+                fadeIn(Motion.fade(Motion.Fast)) + expandVertically(Motion.layoutSize())
+            },
+            exit = if (reduceMotion) {
+                fadeOut(snap()) + shrinkVertically(snap())
+            } else {
+                fadeOut(Motion.fade(Motion.Fast)) + shrinkVertically(Motion.layoutSize())
+            },
+        ) {
+            if (activeCallout != null) {
+                val pillBg = if (isErrorTone) {
+                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
+                } else {
+                    VusicColors.Warning.copy(alpha = 0.14f)
+                }
+                val pillFg = if (isErrorTone) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    VusicColors.Warning
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(pillBg)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = activeCallout,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = pillFg,
+                    )
+                }
+            }
+        }
+        if (showDivider) SettingsDivider()
     }
 }
 

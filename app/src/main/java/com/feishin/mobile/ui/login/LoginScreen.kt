@@ -1,20 +1,18 @@
 package com.feishin.mobile.ui.login
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,22 +33,18 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -64,9 +58,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -76,16 +69,16 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.feishin.mobile.domain.model.BackendType
+import com.feishin.mobile.domain.model.ProfileCredentials
+import com.feishin.mobile.domain.model.ServerProfile
 import com.feishin.mobile.ui.components.UiMessenger
-import com.feishin.mobile.ui.theme.Motion
+import com.feishin.mobile.ui.settings.LoginToggleRow
+import com.feishin.mobile.ui.settings.SettingsCard
 import com.feishin.mobile.ui.theme.VusicColors
-import com.feishin.mobile.ui.theme.VusicControlDefaults
 import com.feishin.mobile.ui.theme.VusicSpacing
 
-/** Corner radius shared by login fields and buttons (matches the search field). */
-private val FieldShape = RoundedCornerShape(24.dp)
+private val FieldShape = RoundedCornerShape(14.dp)
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LoginScreen(
     vm: LoginViewModel = hiltViewModel(),
@@ -95,78 +88,10 @@ fun LoginScreen(
     onCancel: () -> Unit = {},
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    val settings by vm.settings.flow.collectAsStateWithLifecycle(initialValue = null)
-    // Survive rotation; the password is intentionally kept out of saved state so
-    // process death never persists it to disk (user retypes it).
-    var backendType by rememberSaveable { mutableStateOf(BackendType.NAVIDROME) }
-    var serverName by rememberSaveable { mutableStateOf("") }
-    var url by rememberSaveable { mutableStateOf("") }
-    var user by rememberSaveable { mutableStateOf("") }
-    var pass by remember { mutableStateOf("") }
-    var showPassword by rememberSaveable { mutableStateOf(false) }
-    var allowSelfSigned by rememberSaveable { mutableStateOf(false) }
-    var allowCleartext by rememberSaveable { mutableStateOf(true) }
-    var seededFromSettings by rememberSaveable { mutableStateOf(false) }
-
-    LaunchedEffect(settings) {
-        val current = settings
-        if (current != null && !seededFromSettings) {
-            allowSelfSigned = current.allowSelfSigned
-            allowCleartext = current.allowCleartext
-            seededFromSettings = true
-        }
-    }
-
-    LaunchedEffect(addMode) {
-        if (addMode) vm.resetUi()
-    }
-
     val busy = ui.busy
 
     if (addMode) {
         BackHandler(enabled = !busy) { onCancel() }
-    }
-
-    // Clear the inline error whenever the user edits a field.
-    val onNameChange = { text: String -> serverName = text; vm.clearError() }
-    val onUrlChange = { text: String -> url = text; vm.clearError() }
-    val onUserChange = { text: String -> user = text; vm.clearError() }
-    val onPassChange = { text: String -> pass = text; vm.clearError() }
-
-    val canSubmit = url.isNotBlank() && user.isNotBlank() && !busy
-    // Typed as Unit-returning so it can be passed straight to onClick/onDone.
-    val submit: () -> Unit = {
-        if (canSubmit) {
-            vm.testAndConnect(
-                serverUrl = url.trim(),
-                username = user.trim(),
-                password = pass,
-                backendType = backendType,
-                serverName = serverName.trim(),
-                allowSelfSigned = allowSelfSigned,
-                allowCleartext = allowCleartext,
-                addMode = addMode,
-                onSuccess = onAdded,
-            )
-        }
-    }
-    val submitTestOnly: () -> Unit = {
-        if (canSubmit) {
-            vm.testOnly(
-                serverUrl = url.trim(),
-                username = user.trim(),
-                password = pass,
-                allowSelfSigned = allowSelfSigned,
-                allowCleartext = allowCleartext,
-            )
-        }
-    }
-
-    // The same failure is also raised as a snackbar through the section-A host,
-    // so it stays visible above the mini player even once this screen scrolls.
-    LaunchedEffect(ui.failureNonce) {
-        val text = ui.message
-        if (text != null && ui.isError) messenger.show(text)
     }
 
     Surface(
@@ -190,14 +115,14 @@ fun LoginScreen(
                     IconButton(onClick = onCancel, enabled = !busy, modifier = Modifier.size(48.dp)) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Cancel",
+                            contentDescription = "Back",
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                     Text(
                         "Add server",
                         style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
@@ -220,6 +145,7 @@ fun LoginScreen(
                 if (addMode) {
                     Spacer(Modifier.height(VusicSpacing.SectionBottom))
                 } else {
+                    Spacer(Modifier.height(16.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             Icons.Default.MusicNote,
@@ -234,149 +160,234 @@ fun LoginScreen(
                             color = VusicColors.Accent,
                         )
                     }
+                    Spacer(Modifier.height(12.dp))
                 }
-                Text(
-                    when (backendType) {
-                        BackendType.OPENSUBSONIC -> "Connect to your OpenSubsonic server"
-                        else -> "Connect to your Navidrome server"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = VusicColors.SecondaryText,
-                )
-                Spacer(Modifier.height(VusicSpacing.SectionBottom * 2))
 
-                Text(
-                    "Backend",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = VusicColors.SecondaryText,
-                )
-                Spacer(Modifier.height(6.dp))
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ServerFormContent(
+                    vm = vm,
+                    messenger = messenger,
+                    existingProfile = null,
+                    addMode = addMode,
+                    onSuccess = onAdded,
                 ) {
-                    listOf(
-                        BackendType.NAVIDROME to "Navidrome",
-                        BackendType.OPENSUBSONIC to "OpenSubsonic",
-                    ).forEach { (type, label) ->
-                        val selected = backendType == type
-                        FilterChip(
-                            selected = selected,
-                            onClick = {
-                                if (!busy) {
-                                    backendType = type
-                                    vm.clearError()
-                                }
-                            },
+                    if (!addMode) {
+                        Spacer(Modifier.height(VusicSpacing.CardGap / 2))
+                        OutlinedButton(
+                            onClick = { vm.useDeviceFilesOnly() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp),
                             enabled = !busy,
-                            label = {
-                                Text(
-                                    label,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            },
-                            leadingIcon = if (selected) {
-                                {
-                                    Icon(
-                                        Icons.Default.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                }
-                            } else null,
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = VusicColors.Accent.copy(alpha = 0.18f),
-                                selectedLabelColor = VusicColors.Accent,
-                                selectedLeadingIconColor = VusicColors.Accent,
-                            ),
-                        )
+                            shape = CircleShape,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                        ) {
+                            Text(
+                                "Use Device files only",
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                     }
-                    FilterChip(
-                        selected = false,
-                        onClick = {},
-                        enabled = false,
-                        label = { Text("Jellyfin · Soon", maxLines = 1) },
-                    )
-                    FilterChip(
-                        selected = false,
-                        onClick = {},
-                        enabled = false,
-                        label = { Text("Google Drive · Soon", maxLines = 1) },
-                    )
                 }
                 Spacer(Modifier.height(VusicSpacing.SectionBottom * 2))
+            }
+        }
+    }
+}
 
-                val fieldColors = TextFieldDefaults.colors(
-                    focusedContainerColor = VusicColors.SurfaceHigh,
-                    unfocusedContainerColor = VusicColors.SurfaceHigh,
-                    disabledContainerColor = VusicColors.SurfaceHigh.copy(alpha = 0.4f),
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent,
+/**
+ * Shared server form body used by first-run login and Settings Add/Edit Server.
+ */
+@Composable
+fun ServerFormContent(
+    vm: LoginViewModel,
+    messenger: UiMessenger,
+    existingProfile: ServerProfile? = null,
+    addMode: Boolean = false,
+    onSuccess: () -> Unit = {},
+    bottomExtraContent: @Composable ColumnScope.() -> Unit = {},
+) {
+    val ui by vm.ui.collectAsStateWithLifecycle()
+    val existingId = existingProfile?.id
+    val editMode = existingId != null
+    val reduceMotion = rememberLoginReduceMotion()
+
+    // Text fields survive configuration changes; password stays in plain remember
+    // so process death never writes secrets into the saved-instance bundle.
+    var backendType by rememberSaveable(existingId) {
+        mutableStateOf(existingProfile?.type ?: BackendType.NAVIDROME)
+    }
+    var serverName by rememberSaveable(existingId) {
+        mutableStateOf(existingProfile?.name.orEmpty())
+    }
+    var url by rememberSaveable(existingId) {
+        mutableStateOf(existingProfile?.url.orEmpty())
+    }
+    var user by rememberSaveable(existingId) {
+        mutableStateOf(existingProfile?.let(::existingProfileUsername).orEmpty())
+    }
+    var pass by remember(existingId) { mutableStateOf("") }
+    var showPassword by rememberSaveable(existingId) { mutableStateOf(false) }
+    var allowSelfSigned by rememberSaveable(existingId) {
+        mutableStateOf(existingProfile?.allowSelfSigned ?: false)
+    }
+    var allowCleartext by rememberSaveable(existingId) {
+        mutableStateOf(existingProfile?.allowCleartext ?: false)
+    }
+
+    LaunchedEffect(existingId) {
+        vm.resetUi()
+    }
+
+    LaunchedEffect(vm) {
+        vm.events.collect { event ->
+            when (event) {
+                is LoginEvent.Snackbar -> messenger.show(event.message)
+            }
+        }
+    }
+
+    val busy = ui.busy
+    val canConnect = LoginViewModel.canConnect(
+        url = url,
+        username = user,
+        password = pass,
+        backendType = backendType,
+        editMode = editMode,
+    )
+    val canTest = LoginViewModel.canTest(
+        url = url,
+        username = user,
+        password = pass,
+        backendType = backendType,
+        editMode = editMode,
+    )
+
+    val onConnectClick: () -> Unit = {
+        if (!busy) {
+            if (canConnect) {
+                vm.testAndConnect(
+                    serverUrl = url.trim(),
+                    username = user.trim(),
+                    password = pass,
+                    backendType = backendType,
+                    serverName = serverName.trim(),
+                    allowSelfSigned = allowSelfSigned,
+                    allowCleartext = allowCleartext,
+                    addMode = addMode || editMode,
+                    existingProfileId = existingId,
+                    onSuccess = onSuccess,
                 )
+            } else {
+                vm.notifyIncomplete(backendType = backendType, editMode = editMode)
+            }
+        }
+    }
 
-                // Filled, rounded fields matching the app's search field.
-                TextField(
+    val onTestOnlyClick: () -> Unit = {
+        if (!busy) {
+            if (canTest) {
+                vm.testOnly(
+                    serverUrl = url.trim(),
+                    username = user.trim(),
+                    password = pass,
+                    allowSelfSigned = allowSelfSigned,
+                    allowCleartext = allowCleartext,
+                    backendType = backendType,
+                    existingProfileId = existingId,
+                )
+            } else {
+                vm.notifyIncomplete(backendType = backendType, editMode = editMode)
+            }
+        }
+    }
+
+    Column(Modifier.fillMaxWidth()) {
+        FormSectionLabel("BACKEND TYPE")
+        Spacer(Modifier.height(10.dp))
+        BackendTileGrid(
+            selected = backendType,
+            enabled = !busy,
+            locked = editMode,
+            onSelect = { selected ->
+                if (backendType != selected) {
+                    backendType = selected
+                    pass = ""
+                    vm.clearError()
+                }
+            },
+            onSoonClick = { vm.notifyComingSoon() },
+        )
+
+        Spacer(Modifier.height(22.dp))
+        FormSectionLabel("CONNECTION & CREDENTIALS")
+        Spacer(Modifier.height(10.dp))
+
+        val fieldColors = TextFieldDefaults.colors(
+            focusedContainerColor = VusicColors.Surface,
+            unfocusedContainerColor = VusicColors.Surface,
+            disabledContainerColor = VusicColors.Surface.copy(alpha = 0.5f),
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor = Color.Transparent,
+        )
+
+        SettingsCard {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                LabeledFormField(
+                    label = "Server name",
+                    hint = "Optional",
                     value = serverName,
-                    onValueChange = onNameChange,
-                    label = { Text("Server name (optional)") },
-                    placeholder = {
-                        Text("Defaults to host name", color = VusicColors.SecondaryText)
-                    },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                    singleLine = true,
+                    onValueChange = { serverName = it; vm.clearError() },
+                    placeholder = "e.g. Home Library",
                     enabled = !busy,
-                    shape = FieldShape,
                     colors = fieldColors,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Text,
                         imeAction = ImeAction.Next,
                     ),
                 )
-                Spacer(Modifier.height(VusicSpacing.CardGap / 2))
-                TextField(
+                LabeledFormField(
+                    label = "Server URL",
+                    hint = "HTTPS or HTTP",
                     value = url,
-                    onValueChange = onUrlChange,
-                    label = { Text("Server URL") },
-                    placeholder = {
-                        Text("https://host:4533/music", color = VusicColors.SecondaryText)
+                    onValueChange = { url = it; vm.clearError() },
+                    placeholder = if (backendType == BackendType.JELLYFIN) {
+                        "https://jellyfin.example.com:8096"
+                    } else {
+                        "https://host:4533/music"
                     },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                    singleLine = true,
                     enabled = !busy,
-                    shape = FieldShape,
                     colors = fieldColors,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Uri,
                         imeAction = ImeAction.Next,
                     ),
                 )
-                Spacer(Modifier.height(VusicSpacing.CardGap / 2))
-                TextField(
+                LabeledFormField(
+                    label = "Username",
+                    hint = null,
                     value = user,
-                    onValueChange = onUserChange,
-                    label = { Text("Username") },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                    singleLine = true,
+                    onValueChange = { user = it; vm.clearError() },
+                    placeholder = "Enter username",
                     enabled = !busy,
-                    shape = FieldShape,
                     colors = fieldColors,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Text,
                         imeAction = ImeAction.Next,
                     ),
                 )
-                Spacer(Modifier.height(VusicSpacing.CardGap / 2))
-                TextField(
+                LabeledFormField(
+                    label = "Password",
+                    hint = if (backendType == BackendType.JELLYFIN) "Optional" else null,
                     value = pass,
-                    onValueChange = onPassChange,
-                    label = { Text("Password") },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                    singleLine = true,
+                    onValueChange = { pass = it; vm.clearError() },
+                    placeholder = if (editMode) "Leave blank to keep current" else "Enter password",
                     enabled = !busy,
-                    shape = FieldShape,
                     colors = fieldColors,
                     visualTransformation = if (showPassword) {
                         VisualTransformation.None
@@ -388,273 +399,255 @@ fun LoginScreen(
                             onClick = { showPassword = !showPassword },
                             enabled = !busy,
                         ) {
-                            Icon(
-                                imageVector = if (showPassword) {
-                                    Icons.Filled.VisibilityOff
-                                } else {
-                                    Icons.Filled.Visibility
-                                },
-                                contentDescription = if (showPassword) {
-                                    "Hide password"
-                                } else {
-                                    "Show password"
-                                },
-                            )
+                            Crossfade(
+                                targetState = showPassword,
+                                animationSpec = if (reduceMotion) snap() else tween(120),
+                                label = "password-visibility",
+                            ) { visible ->
+                                Icon(
+                                    imageVector = if (visible) {
+                                        Icons.Filled.VisibilityOff
+                                    } else {
+                                        Icons.Filled.Visibility
+                                    },
+                                    contentDescription = if (visible) {
+                                        "Hide password"
+                                    } else {
+                                        "Show password"
+                                    },
+                                )
+                            }
                         }
                     },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done,
                     ),
-                    keyboardActions = KeyboardActions(onDone = { submit() }),
+                    keyboardActions = KeyboardActions(onDone = { onConnectClick() }),
                 )
-                Spacer(Modifier.height(VusicSpacing.SectionBottom * 2))
-
-                LoginToggleRow(
-                    title = "Allow self-signed certificate",
-                    subtitle = "Only for servers you trust, such as a home server",
-                    checked = allowSelfSigned,
-                    enabled = !busy,
-                    onToggle = { allowSelfSigned = it; vm.clearError() },
-                )
-
-                AnimatedVisibility(
-                    visible = allowSelfSigned,
-                    enter = fadeIn(Motion.fade(Motion.Fast)) +
-                        expandVertically(animationSpec = Motion.layoutSize()),
-                    exit = fadeOut(Motion.fade(Motion.Fast)) +
-                        shrinkVertically(animationSpec = Motion.layoutSize()),
-                ) {
-                    Text(
-                        "Connections to this server won't be fully verified",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
-                    )
-                }
-
-                LoginToggleRow(
-                    title = "Allow cleartext HTTP",
-                    subtitle = "Allow unencrypted http:// connections for this server",
-                    checked = allowCleartext,
-                    enabled = !busy,
-                    onToggle = { allowCleartext = it; vm.clearError() },
-                )
-
-                AnimatedVisibility(
-                    visible = allowCleartext && url.trim().startsWith("http://", ignoreCase = true),
-                    enter = fadeIn(Motion.fade(Motion.Fast)) +
-                        expandVertically(animationSpec = Motion.layoutSize()),
-                    exit = fadeOut(Motion.fade(Motion.Fast)) +
-                        shrinkVertically(animationSpec = Motion.layoutSize()),
-                ) {
-                    Text(
-                        "Traffic can be read on public networks",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = VusicColors.Warning,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
-                    )
-                }
-
-                // Inline error / confirmation card above the buttons.
-                AnimatedVisibility(
-                    visible = ui.message != null,
-                    enter = fadeIn(Motion.fade(Motion.Fast)) +
-                        expandVertically(animationSpec = Motion.layoutSize()),
-                    exit = fadeOut(Motion.fade(Motion.Fast)) +
-                        shrinkVertically(animationSpec = Motion.layoutSize()),
-                ) {
-                    ui.message?.let { message ->
-                        LoginMessageCard(
-                            message = message,
-                            isError = ui.isError,
-                            details = ui.details,
-                            onDismiss = { vm.clearError() },
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(VusicSpacing.CardGap))
-
-                // Reserved row so the buttons never jump when the spinner appears.
-                Box(
-                    Modifier.fillMaxWidth().heightIn(min = 28.dp),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    if (busy) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = VusicColors.Accent,
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                "Contacting the server…",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = VusicColors.SecondaryText,
-                            )
-                        }
-                    }
-                }
-
-                Button(
-                    onClick = submit,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    enabled = canSubmit,
-                    shape = CircleShape,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = VusicColors.Accent,
-                        contentColor = VusicColors.OnAccent,
-                    ),
-                ) { Text("Test & Connect") }
-                Spacer(Modifier.height(VusicSpacing.CardGap / 2))
-                Button(
-                    onClick = submitTestOnly,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    enabled = canSubmit,
-                    shape = CircleShape,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
-                ) { Text("Test connection only") }
-                if (!addMode) {
-                    Spacer(Modifier.height(VusicSpacing.CardGap / 2))
-                    OutlinedButton(
-                        onClick = { vm.useDeviceFilesOnly() },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                        enabled = !busy,
-                        shape = CircleShape,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                    ) {
-                        Text(
-                            "Use Device files only",
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(VusicSpacing.SectionBottom * 2))
             }
         }
+
+        Spacer(Modifier.height(22.dp))
+        FormSectionLabel("TRANSPORT & SECURITY")
+        Spacer(Modifier.height(10.dp))
+
+        val isHttpUrl = url.trim().startsWith("http://", ignoreCase = true)
+        SettingsCard {
+            LoginToggleRow(
+                title = "Allow self-signed certificate",
+                subtitle = "For trusted local or home-lab servers using custom TLS",
+                checked = allowSelfSigned,
+                enabled = !busy,
+                onToggle = { allowSelfSigned = it; vm.clearError() },
+                warning = if (allowSelfSigned) {
+                    "TLS certificate chain won't be strictly verified"
+                } else {
+                    null
+                },
+                warningIsError = true,
+                showDivider = true,
+            )
+            LoginToggleRow(
+                title = "Allow cleartext HTTP",
+                subtitle = "Permit unencrypted http:// connections on local networks",
+                checked = allowCleartext,
+                enabled = !busy,
+                onToggle = { allowCleartext = it; vm.clearError() },
+                warning = if (allowCleartext && isHttpUrl) {
+                    "Traffic can be read on public networks"
+                } else {
+                    null
+                },
+                warningIsError = false,
+                hint = if (!allowCleartext && isHttpUrl) {
+                    "This URL uses HTTP — enable cleartext to connect"
+                } else {
+                    null
+                },
+                showDivider = false,
+            )
+        }
+
+        Spacer(Modifier.height(14.dp))
+        ConnectionBanner(
+            state = ui.banner,
+            onDismiss = { vm.dismissBanner() },
+        )
+        Spacer(Modifier.height(14.dp))
+
+        val primaryInteraction = remember { MutableInteractionSource() }
+        val primaryPressed by primaryInteraction.collectIsPressedAsState()
+        val primaryScale by animateFloatAsState(
+            targetValue = if (primaryPressed && canConnect && !busy) 0.985f else 1f,
+            animationSpec = if (reduceMotion) snap() else spring(stiffness = Spring.StiffnessHigh),
+            label = "primary-btn-press",
+        )
+
+        Button(
+            onClick = onConnectClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .graphicsLayer {
+                    scaleX = primaryScale
+                    scaleY = primaryScale
+                },
+            enabled = !busy,
+            interactionSource = primaryInteraction,
+            shape = CircleShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (canConnect) {
+                    VusicColors.Accent
+                } else {
+                    VusicColors.Accent.copy(alpha = 0.38f)
+                },
+                contentColor = if (canConnect) {
+                    VusicColors.OnAccent
+                } else {
+                    VusicColors.OnAccent.copy(alpha = 0.65f)
+                },
+            ),
+        ) {
+            if (busy && ui.activeAction == LoginAction.CONNECT) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 2.dp,
+                    color = LocalContentColor.current,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Testing…")
+            } else {
+                Text(if (editMode) "Save & Connect" else "Test & Connect")
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        val secondaryInteraction = remember { MutableInteractionSource() }
+        val secondaryPressed by secondaryInteraction.collectIsPressedAsState()
+        val secondaryScale by animateFloatAsState(
+            targetValue = if (secondaryPressed && canTest && !busy) 0.985f else 1f,
+            animationSpec = if (reduceMotion) snap() else spring(stiffness = Spring.StiffnessHigh),
+            label = "secondary-btn-press",
+        )
+
+        Button(
+            onClick = onTestOnlyClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .graphicsLayer {
+                    scaleX = secondaryScale
+                    scaleY = secondaryScale
+                },
+            enabled = !busy,
+            interactionSource = secondaryInteraction,
+            shape = CircleShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (canTest) {
+                    MaterialTheme.colorScheme.surfaceContainerHighest
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.45f)
+                },
+                contentColor = if (canTest) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                },
+            ),
+        ) {
+            if (busy && ui.activeAction == LoginAction.TEST_ONLY) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 2.dp,
+                    color = LocalContentColor.current,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Testing…")
+            } else {
+                Text("Test connection only")
+            }
+        }
+
+        bottomExtraContent()
     }
 }
 
 @Composable
-private fun LoginToggleRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
+private fun FormSectionLabel(title: String) {
+    Text(
+        text = title.uppercase(),
+        style = MaterialTheme.typography.labelMedium,
+        color = VusicColors.SecondaryText,
+        modifier = Modifier.padding(start = 4.dp),
+    )
+}
+
+@Composable
+private fun LabeledFormField(
+    label: String,
+    hint: String?,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
     enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
+    colors: androidx.compose.material3.TextFieldColors,
+    keyboardOptions: KeyboardOptions,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    trailingIcon: @Composable (() -> Unit)? = null,
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(
-                enabled = enabled,
-                role = Role.Switch,
-                onClick = { onToggle(!checked) },
-            )
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f).padding(end = VusicSpacing.ControlGap)) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                title,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
             )
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = VusicColors.SecondaryText,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (!hint.isNullOrBlank()) {
+                Text(
+                    text = hint,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = VusicColors.SecondaryText,
+                )
+            }
         }
-        Switch(
-            checked = checked,
-            onCheckedChange = onToggle,
+        Spacer(Modifier.height(6.dp))
+        TextField(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = {
+                Text(
+                    text = placeholder,
+                    color = VusicColors.SecondaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp),
+            singleLine = true,
             enabled = enabled,
-            colors = VusicControlDefaults.switchColors(),
+            shape = FieldShape,
+            colors = colors,
+            visualTransformation = visualTransformation,
+            trailingIcon = trailingIcon,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
         )
     }
 }
 
-/**
- * One card for both outcomes: theme error colours for failures, the neutral
- * surface for a successful connection test. Technical details stay collapsed
- * behind "Details" so the first line never wraps past two lines.
- */
-@Composable
-private fun LoginMessageCard(
-    message: String,
-    isError: Boolean,
-    details: String?,
-    onDismiss: () -> Unit,
-) {
-    var expanded by remember(details) { mutableStateOf(false) }
-    val container = if (isError) {
-        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f)
-    } else {
-        VusicColors.SurfaceHigh
-    }
-    val content = if (isError) {
-        MaterialTheme.colorScheme.onErrorContainer
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(container)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    ) {
-        Row(verticalAlignment = Alignment.Top) {
-            if (isError) {
-                Icon(
-                    Icons.Outlined.ErrorOutline,
-                    contentDescription = null,
-                    tint = content,
-                    modifier = Modifier.padding(top = 2.dp).size(18.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-            }
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = content,
-                maxLines = 2,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(8.dp))
-            TextButton(onClick = onDismiss) {
-                Text("Dismiss", color = content)
-            }
-        }
-        if (details != null) {
-            TextButton(
-                onClick = { expanded = !expanded },
-                contentPadding = PaddingValues(0.dp),
-            ) {
-                Text(
-                    if (expanded) "Hide details" else "Details",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = content,
-                )
-            }
-            if (expanded) {
-                Text(
-                    text = details,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = content,
-                )
-            }
-        }
-    }
+private fun existingProfileUsername(profile: ServerProfile): String = when (val creds = profile.credentials) {
+    is ProfileCredentials.Subsonic -> creds.username
+    is ProfileCredentials.Jellyfin -> creds.username
+    is ProfileCredentials.GoogleDrive -> creds.accountEmail
 }

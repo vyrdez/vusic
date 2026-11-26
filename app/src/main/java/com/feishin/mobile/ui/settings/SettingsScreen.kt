@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -50,7 +51,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -74,8 +74,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.feishin.mobile.BuildConfig
 import com.feishin.mobile.core.common.CacheSizePolicy
@@ -84,7 +82,8 @@ import com.feishin.mobile.core.common.ReplayGainMode
 import com.feishin.mobile.data.auth.ProfileAuthStatus
 import com.feishin.mobile.domain.model.BackendCapabilities
 import com.feishin.mobile.domain.model.ServerProfile
-import com.feishin.mobile.ui.login.LoginScreen
+import com.feishin.mobile.ui.login.LoginViewModel
+import com.feishin.mobile.ui.login.ServerFormContent
 import com.feishin.mobile.ui.theme.LocalVusicDark
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.VusicControlColors
@@ -99,7 +98,7 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyColumnState
 
 private enum class SettingsRoute {
-    HOME, SERVER, APPEARANCE, SOUND, CONNECTIVITY, STORAGE, ABOUT
+    HOME, SERVER, SERVER_EDIT, APPEARANCE, SOUND, CONNECTIVITY, STORAGE, ABOUT
 }
 
 @Composable
@@ -110,12 +109,13 @@ fun SettingsScreen(
     onOpenLibraryDownloads: () -> Unit = onOpenDownloads,
 ) {
     var route by rememberSaveable { mutableStateOf(SettingsRoute.HOME) }
-    // Direction of the last navigation: into a sub-screen (forward) or back to
-    // HOME (back). Drives the AnimatedContent slide direction below, so the
-    // back arrow and the system back gesture reverse the enter animation.
+    var editingProfileId by rememberSaveable { mutableStateOf<String?>(null) }
+    // Direction of the last navigation: forward into a sub-screen or back out.
+    // Drives the AnimatedContent slide direction below, so the back arrow,
+    // Cancel, Save, and system back gesture reverse the enter animation.
     var forward by rememberSaveable { mutableStateOf(true) }
-    fun go(target: SettingsRoute) {
-        forward = target != SettingsRoute.HOME
+    fun go(target: SettingsRoute, isForward: Boolean = target != SettingsRoute.HOME) {
+        forward = isForward
         com.feishin.mobile.core.common.VLog.d("SettingsNav", "route=$route -> $target forward=$forward")
         route = target
     }
@@ -124,8 +124,8 @@ fun SettingsScreen(
         topBar.title = if (route == SettingsRoute.HOME) "Settings" else null
         topBar.alwaysShowTitle = true
     }
-    if (route != SettingsRoute.HOME) {
-        BackHandler { go(SettingsRoute.HOME) }
+    if (route != SettingsRoute.HOME && route != SettingsRoute.SERVER_EDIT) {
+        BackHandler { go(SettingsRoute.HOME, isForward = false) }
     }
     // Sub-screens used to swap with a bare `when`, so the shared NavHost
     // transitions never applied and screens popped with no animation at all.
@@ -149,11 +149,39 @@ fun SettingsScreen(
             SettingsRoute.HOME -> SettingsHome(vm, onOpen = { go(it) })
             SettingsRoute.SERVER -> SubScreen(
                 title = "Server & Account",
-                onBack = { go(SettingsRoute.HOME) },
+                onBack = { go(SettingsRoute.HOME, isForward = false) },
                 scrollable = false,
             ) {
-                ServerAccountScreen(vm, onLogout)
+                ServerAccountScreen(
+                    vm = vm,
+                    onLogout = onLogout,
+                    onAddServer = {
+                        vm.collapseAllProfiles()
+                        editingProfileId = null
+                        go(SettingsRoute.SERVER_EDIT, isForward = true)
+                    },
+                    onEditServer = { profileId ->
+                        vm.collapseAllProfiles()
+                        editingProfileId = profileId
+                        go(SettingsRoute.SERVER_EDIT, isForward = true)
+                    },
+                )
             }
+            SettingsRoute.SERVER_EDIT -> ServerEditScreen(
+                editingProfileId = editingProfileId,
+                settingsVm = vm,
+                onSaved = {
+                    vm.collapseAllProfiles()
+                    vm.refreshServerInfo()
+                    editingProfileId = null
+                    go(SettingsRoute.SERVER, isForward = false)
+                },
+                onCancel = {
+                    vm.collapseAllProfiles()
+                    editingProfileId = null
+                    go(SettingsRoute.SERVER, isForward = false)
+                },
+            )
             SettingsRoute.APPEARANCE -> SubScreen("Appearance & Layout", onBack = { go(SettingsRoute.HOME) }) {
                 AppearanceScreen(vm)
             }
@@ -169,6 +197,74 @@ fun SettingsScreen(
             SettingsRoute.ABOUT -> SubScreen("About", onBack = { go(SettingsRoute.HOME) }) {
                 AboutScreen()
             }
+        }
+    }
+}
+
+@Composable
+private fun ServerEditScreen(
+    editingProfileId: String?,
+    settingsVm: SettingsViewModel,
+    onSaved: () -> Unit,
+    onCancel: () -> Unit,
+    loginVm: LoginViewModel = hiltViewModel(),
+) {
+    val ui by loginVm.ui.collectAsStateWithLifecycle()
+    val profiles by settingsVm.profiles.collectAsStateWithLifecycle()
+    val existingProfile = remember(editingProfileId, profiles) {
+        editingProfileId?.let { id -> profiles.firstOrNull { it.id == id } }
+    }
+    val busy = ui.busy
+
+    BackHandler(enabled = !busy) { onCancel() }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 4.dp, end = 12.dp, top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(
+                onClick = onCancel,
+                enabled = !busy,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Text(
+                text = if (editingProfileId != null) "Edit server" else "Add server",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onCancel, enabled = !busy) {
+                Text("Cancel")
+            }
+        }
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .imePadding()
+                .padding(horizontal = VusicSpacing.ScreenHorizontal * 1.5f)
+                .padding(bottom = LocalMiniClearance.current + 24.dp),
+        ) {
+            Spacer(Modifier.height(VusicSpacing.SectionBottom))
+            ServerFormContent(
+                vm = loginVm,
+                messenger = settingsVm.uiMessenger,
+                existingProfile = existingProfile,
+                addMode = true,
+                onSuccess = onSaved,
+            )
         }
     }
 }
@@ -330,7 +426,12 @@ private fun OfflineChip() {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
+private fun ServerAccountScreen(
+    vm: SettingsViewModel,
+    onLogout: () -> Unit,
+    onAddServer: () -> Unit,
+    onEditServer: (String) -> Unit,
+) {
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val testStates by vm.profileTestStates.collectAsStateWithLifecycle()
     val profileServerInfos by vm.profileServerInfos.collectAsStateWithLifecycle()
@@ -341,8 +442,6 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
     val online by vm.isOnline.collectAsStateWithLifecycle()
     val counts by vm.libraryCounts.collectAsStateWithLifecycle()
 
-    var showAddBackend by rememberSaveable { mutableStateOf(false) }
-    var editingProfile by remember { mutableStateOf<ServerProfile?>(null) }
     var pendingRemoveProfile by remember { mutableStateOf<ServerProfile?>(null) }
 
     var displayProfiles by remember(profiles) { mutableStateOf(profiles) }
@@ -383,7 +482,7 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
                     label = "+ Add backend",
                     onClick = {
                         vm.collapseAllProfiles()
-                        showAddBackend = true
+                        onAddServer()
                     },
                     modifier = Modifier.align(Alignment.CenterVertically),
                 )
@@ -471,7 +570,7 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
                     onToggleEnabled = { vm.setProfileEnabled(profile.id, it) },
                     onEdit = {
                         vm.collapseAllProfiles()
-                        editingProfile = profile
+                        onEditServer(profile.id)
                     },
                     onTestConnection = { vm.testProfileConnection(profile) },
                     onScan = { vm.startScan(profile.id) },
@@ -498,65 +597,6 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
                 }
             }
         }
-    }
-
-    editingProfile?.let { target ->
-        var editName by remember(target.id) { mutableStateOf(target.name) }
-        var editUrl by remember(target.id) { mutableStateOf(target.url) }
-        var editSelfSigned by remember(target.id) { mutableStateOf(target.allowSelfSigned) }
-        var editCleartext by remember(target.id) { mutableStateOf(target.allowCleartext) }
-        AlertDialog(
-            onDismissRequest = { editingProfile = null },
-            title = { Text("Edit ${target.name}") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = editName,
-                        onValueChange = { editName = it },
-                        label = { Text("Server name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedTextField(
-                        value = editUrl,
-                        onValueChange = { editUrl = it },
-                        label = { Text("Server URL") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    SwitchRow(
-                        label = "Allow self-signed certificate",
-                        value = editSelfSigned,
-                        onSet = { editSelfSigned = it },
-                        showDivider = true,
-                    )
-                    SwitchRow(
-                        label = "Allow cleartext HTTP",
-                        value = editCleartext,
-                        onSet = { editCleartext = it },
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = editUrl.isNotBlank(),
-                    onClick = {
-                        val updated = target.copy(
-                            name = editName.trim().ifBlank { target.name },
-                            url = editUrl.trim(),
-                            allowSelfSigned = editSelfSigned,
-                            allowCleartext = editCleartext,
-                        )
-                        editingProfile = null
-                        vm.updateProfile(updated)
-                        vm.testProfileConnection(updated)
-                    },
-                ) { Text("Save & test") }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingProfile = null }) { Text("Cancel") }
-            },
-        )
     }
 
     pendingRemoveProfile?.let { target ->
@@ -593,26 +633,6 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
                 TextButton(onClick = { pendingRemoveProfile = null }) { Text("Cancel") }
             },
         )
-    }
-
-    if (showAddBackend) {
-        Dialog(
-            onDismissRequest = { showAddBackend = false },
-            properties = DialogProperties(
-                usePlatformDefaultWidth = false,
-                decorFitsSystemWindows = false,
-            ),
-        ) {
-            LoginScreen(
-                messenger = vm.uiMessenger,
-                addMode = true,
-                onAdded = {
-                    showAddBackend = false
-                    vm.refreshServerInfo()
-                },
-                onCancel = { showAddBackend = false },
-            )
-        }
     }
 }
 
