@@ -459,17 +459,78 @@ class LoginViewModelTest {
         vm.notifyComingSoon()
         vm.notifyIncomplete(BackendType.NAVIDROME, editMode = false)
         vm.notifyIncomplete(BackendType.JELLYFIN, editMode = false)
+        vm.useDeviceFilesOnly()
 
-        awaitSuspendCondition { events.size >= 3 }
+        awaitSuspendCondition { events.size >= 4 }
         assertEquals(
             listOf(
                 LoginEvent.Snackbar("Google Drive backend support is coming soon"),
                 LoginEvent.Snackbar("Fill in Server URL, Username, and Password first"),
                 LoginEvent.Snackbar("Fill in Server URL and Username first"),
+                LoginEvent.Snackbar("Offline mode · Using local device files only"),
             ),
-            events.take(3),
+            events.take(4),
         )
         job.cancel()
+    }
+
+    @Test
+    fun reloginSameServer_updatesExistingProfileInPlace_preservingIdAndPriority() = runBlocking {
+        val settings = newSettings()
+        LocalHttpServer { req ->
+            when {
+                req.path.endsWith("/Users/AuthenticateByName") ->
+                    200 to """{"AccessToken":"refreshed-tok","ServerId":"srv-1","User":{"Id":"u-1","Name":"Alice"}}"""
+                req.path.endsWith("/System/Info/Public") ->
+                    200 to """{"ProductName":"Jellyfin","Version":"10.9.11"}"""
+                else -> 404 to "{}"
+            }
+        }.use { server ->
+            val existing = ServerProfile(
+                id = "p-keep",
+                name = "Existing JF",
+                type = BackendType.JELLYFIN,
+                url = server.baseUrl,
+                userId = "u-1",
+                credentials = ProfileCredentials.Jellyfin(
+                    username = "alice",
+                    accessToken = "old-tok",
+                    serverId = "srv-1",
+                    deviceId = "dev-1",
+                ),
+                allowSelfSigned = false,
+                allowCleartext = true,
+                enabled = false,
+                priority = 2,
+            )
+            val harness = newAuthHarness(settings, listOf(existing))
+            val vm = track(LoginViewModel(harness.auth, settings))
+
+            var done = false
+            vm.testAndConnect(
+                serverUrl = "${server.baseUrl}/web/",
+                username = "Alice",
+                password = "new-pw",
+                backendType = BackendType.JELLYFIN,
+                serverName = "Updated JF",
+                allowSelfSigned = true,
+                allowCleartext = true,
+                addMode = false,
+                existingProfileId = null,
+                onSuccess = { done = true },
+            )
+            awaitSuspendCondition { done }
+
+            val profiles = harness.auth.profiles.value
+            assertEquals(1, profiles.size)
+            val saved = profiles.single()
+            assertEquals("p-keep", saved.id)
+            assertEquals(2, saved.priority)
+            assertEquals("Updated JF", saved.name)
+            assertTrue(saved.enabled)
+            assertTrue(saved.allowSelfSigned)
+            assertEquals("refreshed-tok", (saved.credentials as ProfileCredentials.Jellyfin).accessToken)
+        }
     }
 
     private data class RecordedReq(val path: String, val query: String, val body: String)

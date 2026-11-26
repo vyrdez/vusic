@@ -237,10 +237,10 @@ class LoginViewModel @Inject constructor(
     /** Enter offline/device-files standalone mode without signing in to a server. */
     fun useDeviceFilesOnly() {
         viewModelScope.launch {
+            settings.setLibraryViewMode("DEVICE")
+            settings.setLibrarySourceFilter("DEVICE")
             settings.setShowDeviceFiles(true)
             settings.setDeviceFilesStandalone(true)
-            settings.setLibrarySourceFilter("DEVICE")
-            settings.setLibraryViewMode("DEVICE")
             _events.trySend(LoginEvent.Snackbar("Offline mode · Using local device files only"))
         }
     }

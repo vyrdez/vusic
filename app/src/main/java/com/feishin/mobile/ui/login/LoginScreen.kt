@@ -1,16 +1,20 @@
 package com.feishin.mobile.ui.login
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -36,9 +40,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -58,14 +64,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.feishin.mobile.domain.model.BackendType
@@ -74,10 +82,12 @@ import com.feishin.mobile.domain.model.ServerProfile
 import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.settings.LoginToggleRow
 import com.feishin.mobile.ui.settings.SettingsCard
+import com.feishin.mobile.ui.theme.Motion.pressScale
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.VusicSpacing
 
 private val FieldShape = RoundedCornerShape(14.dp)
+private val BrandMarkShape = RoundedCornerShape(12.dp)
 
 @Composable
 fun LoginScreen(
@@ -86,9 +96,12 @@ fun LoginScreen(
     addMode: Boolean = false,
     onAdded: () -> Unit = {},
     onCancel: () -> Unit = {},
+    onUseDeviceFilesOnly: () -> Unit = {},
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val busy = ui.busy
+    val reduceMotion = rememberLoginReduceMotion()
+    var selectedBackend by rememberSaveable { mutableStateOf(BackendType.NAVIDROME) }
 
     if (addMode) {
         BackHandler(enabled = !busy) { onCancel() }
@@ -140,27 +153,17 @@ fun LoginScreen(
                     .verticalScroll(rememberScrollState())
                     .imePadding()
                     .padding(horizontal = VusicSpacing.ScreenHorizontal * 1.5f),
-                verticalArrangement = if (addMode) Arrangement.Top else Arrangement.Center,
+                verticalArrangement = Arrangement.Top,
             ) {
                 if (addMode) {
                     Spacer(Modifier.height(VusicSpacing.SectionBottom))
                 } else {
-                    Spacer(Modifier.height(16.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.MusicNote,
-                            contentDescription = null,
-                            tint = VusicColors.Accent,
-                            modifier = Modifier.size(36.dp),
-                        )
-                        Spacer(Modifier.width(VusicSpacing.CardGap))
-                        Text(
-                            "Vusic",
-                            style = MaterialTheme.typography.displaySmall,
-                            color = VusicColors.Accent,
-                        )
-                    }
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(26.dp))
+                    LoginBrandHeader(
+                        backend = selectedBackend,
+                        reduceMotion = reduceMotion,
+                    )
+                    Spacer(Modifier.height(24.dp))
                 }
 
                 ServerFormContent(
@@ -168,22 +171,49 @@ fun LoginScreen(
                     messenger = messenger,
                     existingProfile = null,
                     addMode = addMode,
+                    onBackendChanged = { selectedBackend = it },
                     onSuccess = onAdded,
                 ) {
                     if (!addMode) {
-                        Spacer(Modifier.height(VusicSpacing.CardGap / 2))
+                        Spacer(Modifier.height(14.dp))
+                        OrDivider()
+                        Spacer(Modifier.height(14.dp))
+                        val deviceInteraction = remember { MutableInteractionSource() }
+                        val devicePressed by deviceInteraction.collectIsPressedAsState()
+                        val deviceTint = if (devicePressed) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            VusicColors.SecondaryText
+                        }
+                        val deviceScaleMod = if (reduceMotion) {
+                            Modifier
+                        } else {
+                            Modifier.pressScale(pressed = devicePressed && !busy, targetScale = 0.985f)
+                        }
                         OutlinedButton(
-                            onClick = { vm.useDeviceFilesOnly() },
+                            onClick = {
+                                vm.useDeviceFilesOnly()
+                                onUseDeviceFilesOnly()
+                            },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 48.dp),
+                                .heightIn(min = 48.dp)
+                                .then(deviceScaleMod),
                             enabled = !busy,
+                            interactionSource = deviceInteraction,
                             shape = CircleShape,
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                         ) {
+                            Icon(
+                                imageVector = Icons.Outlined.PhoneAndroid,
+                                contentDescription = null,
+                                tint = deviceTint,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
                             Text(
-                                "Use Device files only",
-                                color = MaterialTheme.colorScheme.onSurface,
+                                text = "Use Device files only",
+                                color = deviceTint,
                             )
                         }
                     }
@@ -191,6 +221,87 @@ fun LoginScreen(
                 Spacer(Modifier.height(VusicSpacing.SectionBottom * 2))
             }
         }
+    }
+}
+
+@Composable
+private fun LoginBrandHeader(
+    backend: BackendType,
+    reduceMotion: Boolean,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(BrandMarkShape)
+                .background(VusicColors.SurfaceHigh)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, BrandMarkShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Default.MusicNote,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Vusic",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-0.3).sp,
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+            )
+            AnimatedContent(
+                targetState = backend,
+                transitionSpec = {
+                    if (reduceMotion) {
+                        fadeIn(snap()) togetherWith fadeOut(snap())
+                    } else {
+                        fadeIn(tween(160)) togetherWith fadeOut(tween(120))
+                    }
+                },
+                label = "login-subtitle",
+            ) { currentBackend ->
+                Text(
+                    text = currentBackend.loginSubtitle(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = VusicColors.SecondaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrDivider() {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HorizontalDivider(
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+        Text(
+            text = "or",
+            style = MaterialTheme.typography.labelSmall,
+            color = VusicColors.SecondaryText,
+            modifier = Modifier.padding(horizontal = 12.dp),
+        )
+        HorizontalDivider(
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
     }
 }
 
@@ -203,6 +314,7 @@ fun ServerFormContent(
     messenger: UiMessenger,
     existingProfile: ServerProfile? = null,
     addMode: Boolean = false,
+    onBackendChanged: (BackendType) -> Unit = {},
     onSuccess: () -> Unit = {},
     bottomExtraContent: @Composable ColumnScope.() -> Unit = {},
 ) {
@@ -236,6 +348,10 @@ fun ServerFormContent(
 
     LaunchedEffect(existingId) {
         vm.resetUi()
+    }
+
+    LaunchedEffect(backendType) {
+        onBackendChanged(backendType)
     }
 
     LaunchedEffect(vm) {
@@ -311,6 +427,7 @@ fun ServerFormContent(
             onSelect = { selected ->
                 if (backendType != selected) {
                     backendType = selected
+                    onBackendChanged(selected)
                     pass = ""
                     vm.clearError()
                 }
@@ -478,21 +595,18 @@ fun ServerFormContent(
 
         val primaryInteraction = remember { MutableInteractionSource() }
         val primaryPressed by primaryInteraction.collectIsPressedAsState()
-        val primaryScale by animateFloatAsState(
-            targetValue = if (primaryPressed && canConnect && !busy) 0.985f else 1f,
-            animationSpec = if (reduceMotion) snap() else spring(stiffness = Spring.StiffnessHigh),
-            label = "primary-btn-press",
-        )
+        val primaryScaleMod = if (reduceMotion) {
+            Modifier
+        } else {
+            Modifier.pressScale(pressed = primaryPressed && canConnect && !busy, targetScale = 0.985f)
+        }
 
         Button(
             onClick = onConnectClick,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 48.dp)
-                .graphicsLayer {
-                    scaleX = primaryScale
-                    scaleY = primaryScale
-                },
+                .then(primaryScaleMod),
             enabled = !busy,
             interactionSource = primaryInteraction,
             shape = CircleShape,
@@ -526,21 +640,18 @@ fun ServerFormContent(
 
         val secondaryInteraction = remember { MutableInteractionSource() }
         val secondaryPressed by secondaryInteraction.collectIsPressedAsState()
-        val secondaryScale by animateFloatAsState(
-            targetValue = if (secondaryPressed && canTest && !busy) 0.985f else 1f,
-            animationSpec = if (reduceMotion) snap() else spring(stiffness = Spring.StiffnessHigh),
-            label = "secondary-btn-press",
-        )
+        val secondaryScaleMod = if (reduceMotion) {
+            Modifier
+        } else {
+            Modifier.pressScale(pressed = secondaryPressed && canTest && !busy, targetScale = 0.985f)
+        }
 
         Button(
             onClick = onTestOnlyClick,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 48.dp)
-                .graphicsLayer {
-                    scaleX = secondaryScale
-                    scaleY = secondaryScale
-                },
+                .then(secondaryScaleMod),
             enabled = !busy,
             interactionSource = secondaryInteraction,
             shape = CircleShape,

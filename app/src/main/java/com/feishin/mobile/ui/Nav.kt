@@ -91,7 +91,6 @@ import com.feishin.mobile.ui.components.LocalMiniClearance
 import com.feishin.mobile.ui.components.MiniPlayer
 import com.feishin.mobile.ui.components.MiniPlayerHeight
 import com.feishin.mobile.ui.components.MiniPlayerNavGap
-import com.feishin.mobile.ui.components.MessageHost
 import com.feishin.mobile.ui.components.OfflineBanner
 import com.feishin.mobile.ui.components.rememberSheetState
 import com.feishin.mobile.ui.theme.Motion
@@ -139,7 +138,12 @@ object Routes {
 private val DETAIL_ROUTES = NavRules.DETAIL_ROUTES
 
 @Composable
-fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
+fun MainScaffold(
+    main: MainViewModel = hiltViewModel(),
+    onLogout: () -> Unit,
+    snackbar: SnackbarHostState = remember { SnackbarHostState() },
+    onMessageClearanceChanged: (miniVisible: Boolean, miniDragY: Float, navBarHeightPx: Int) -> Unit = { _, _, _ -> },
+) {
     val nav = rememberNavController()
     val nowPlayingSheet = rememberSheetState(positionThreshold = 0.15f)
     val showNowPlaying = nowPlayingSheet.open
@@ -156,13 +160,11 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     // A playlist delete waiting for confirmation. The action moved from a bare
     // header button into the ⋮ menu, so it now asks first.
     var pendingPlaylistDelete by remember { mutableStateOf<com.feishin.mobile.domain.model.Playlist?>(null) }
-    val snackbar = remember { SnackbarHostState() }
     val navScope = rememberCoroutineScope()
     val profiles by main.auth.loginState.collectAsStateWithLifecycle()
     val topBar = remember { TopBarController() }
 
-    // Mini player visibility + drag offset, so the shared message host can
-    // position itself above the card instead of behind it.
+    // Mini player visibility + drag offset, reported upward to AppNav's hoisted MessageHost.
     var miniPlayerVisible by remember { mutableStateOf(false) }
     var miniPlayerDragY by remember { mutableFloatStateOf(0f) }
 
@@ -173,10 +175,6 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
     // Home widget: event-driven pushes on track/play-state/queue/favorites
     // changes while the UI is alive (the service covers the app-dead path).
     com.feishin.mobile.widget.WidgetPushEffect(main)
-
-    LaunchedEffect(Unit) {
-        main.messenger.messages.collect { snackbar.showSnackbar(it) }
-    }
 
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
@@ -276,6 +274,9 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
             // Measured nav bar height, so the floating card can sit exactly on
             // it from outside the scaffold's inset handling.
             var navBarHeightPx by remember { mutableIntStateOf(0) }
+            LaunchedEffect(miniPlayerVisible, miniPlayerDragY, navBarHeightPx) {
+                onMessageClearanceChanged(miniPlayerVisible, miniPlayerDragY, navBarHeightPx)
+            }
             val density = LocalDensity.current
             val imeBottomPx = WindowInsets.ime.getBottom(density)
             Scaffold(
@@ -564,18 +565,6 @@ fun MainScaffold(main: MainViewModel = hiltViewModel(), onLogout: () -> Unit) {
                 modifier = Modifier
                     .align(androidx.compose.ui.Alignment.BottomCenter)
                     .padding(bottom = with(outerDensity) { navBarHeightPx.toDp() } + MiniPlayerNavGap),
-            )
-
-            // Shared message host: appears fully above the mini player (when
-            // visible) or the bottom bar, moves with the card while dragged,
-            // and clears the keyboard. Drawn after the mini player so its
-            // action buttons stay tappable.
-            MessageHost(
-                snackbar = snackbar,
-                miniPlayerVisible = miniPlayerVisible,
-                miniPlayerDragY = miniPlayerDragY,
-                navBarHeightPx = navBarHeightPx,
-                imeBottomPx = imeBottomPx,
             )
 
             // Overlays draw above the scaffold in z-order: full-screen player

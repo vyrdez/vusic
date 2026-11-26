@@ -4,8 +4,14 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.IntOffset
 
 /**
@@ -33,6 +39,9 @@ object Motion {
     var durationScale: Float = 1f
 
     private val eased: Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+
+    /** Prototype deceleration curve for login <-> app screen transitions. */
+    val EaseOutQuint: Easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
 
     /** Shortest transition: chips, ripples, pressed states. */
     const val Fast = 150
@@ -149,4 +158,29 @@ object Motion {
 
     fun navBackOffset(full: Int): IntOffset =
         IntOffset(if (durationScale == 0f) 0 else -full, 0)
+
+    /** Animated press-down scale factor that snaps to 1f when animations are disabled. */
+    @Composable
+    fun rememberPressScaleState(
+        pressed: Boolean,
+        targetScale: Float = 0.985f,
+    ): State<Float> = animateFloatAsState(
+        targetValue = if (pressed && durationScale > 0f) targetScale else 1f,
+        animationSpec = if (durationScale == 0f) snap() else spring(stiffness = Spring.StiffnessHigh),
+        label = "press-scale",
+    )
+
+    /** Phase-deferred press scale modifier reading animated scale inside graphicsLayer. */
+    @Composable
+    fun Modifier.pressScale(
+        pressed: Boolean,
+        targetScale: Float = 0.985f,
+    ): Modifier {
+        val scaleState = rememberPressScaleState(pressed = pressed, targetScale = targetScale)
+        return graphicsLayer {
+            val s = scaleState.value
+            scaleX = s
+            scaleY = s
+        }
+    }
 }

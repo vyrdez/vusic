@@ -46,10 +46,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.feishin.mobile.domain.model.BackendType
 import com.feishin.mobile.ui.theme.Motion
+import com.feishin.mobile.ui.theme.Motion.pressScale
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.VusicControlColors
 
 private val TileShape = RoundedCornerShape(12.dp)
+
+fun BackendType.loginSubtitle(): String = when (this) {
+    BackendType.NAVIDROME -> "Connect to your Navidrome server"
+    BackendType.OPENSUBSONIC -> "Connect to your OpenSubsonic server"
+    BackendType.JELLYFIN -> "Connect to your Jellyfin server"
+    BackendType.GOOGLE_DRIVE -> "Connect to your Google Drive"
+}
 
 @Composable
 internal fun rememberLoginReduceMotion(): Boolean {
@@ -165,11 +173,6 @@ fun BackendTile(
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
 
-    val pressScale by animateFloatAsState(
-        targetValue = if (pressed && enabled && !soon) 0.98f else 1f,
-        animationSpec = if (reduceMotion) snap() else spring(stiffness = Spring.StiffnessHigh),
-        label = "backend-tile-press",
-    )
     val borderColor by animateColorAsState(
         targetValue = when {
             selected -> VusicColors.Accent
@@ -211,12 +214,15 @@ fun BackendTile(
         )
     }
 
+    val scaleModifier = if (!soon && !reduceMotion) {
+        Modifier.pressScale(pressed = pressed && enabled, targetScale = 0.98f)
+    } else {
+        Modifier
+    }
+
     Surface(
         modifier = modifier
-            .graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
-            }
+            .then(scaleModifier)
             .clip(TileShape)
             .then(clickModifier),
         shape = TileShape,
