@@ -18,6 +18,7 @@ import androidx.media3.common.Player
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
@@ -41,7 +42,9 @@ import com.feishin.mobile.core.common.PlaybackSource
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.common.StableCacheKey
 import com.feishin.mobile.core.network.CoverCacheKey
+import com.feishin.mobile.core.network.ProfileIdTag
 import com.feishin.mobile.data.auth.ProfileStore
+import com.feishin.mobile.data.remote.ProfileAuthInterceptor
 import com.feishin.mobile.data.cache.CACHED_SONGS_PLAYLIST_ID
 import com.feishin.mobile.data.cache.CachedTrackStore
 import com.feishin.mobile.data.cache.toTrack
@@ -137,7 +140,19 @@ class PlayerService : MediaLibraryService() {
         // Scheme-routing DataSource: local files (file://, content://, android.resource://)
         // bypass CacheDataSource and SimpleCache entirely via local DefaultDataSource.
         // Network streams (http://, https://) route to CacheDataSource with UpstreamLogger.
-        val httpFactory = OkHttpDataSource.Factory(okHttpClient)
+        val okHttpFactory = OkHttpDataSource.Factory(okHttpClient)
+        val httpFactory = ResolvingDataSource.Factory(okHttpFactory) { spec ->
+            val profileId = StableCacheKey.extractProfileId(spec.key)
+            if (profileId != null && !spec.httpRequestHeaders.containsKey(ProfileAuthInterceptor.HEADER_PROFILE_ID)) {
+                spec.buildUpon()
+                    .setHttpRequestHeaders(
+                        spec.httpRequestHeaders + (ProfileAuthInterceptor.HEADER_PROFILE_ID to profileId),
+                    )
+                    .build()
+            } else {
+                spec
+            }
+        }
         val cacheFactory = CacheDataSource.Factory()
             .setCache(cache)
             .setUpstreamDataSourceFactory(UpstreamLogger(httpFactory))
@@ -969,6 +984,10 @@ class PlayerService : MediaLibraryService() {
                             .apply {
                                 if (!coverKey.isNullOrBlank()) {
                                     tag(CoverCacheKey::class.java, CoverCacheKey(coverKey))
+                                    GlobalId.profileIdOrNull(coverKey)?.let { pid ->
+                                        tag(ProfileIdTag::class.java, ProfileIdTag(pid))
+                                        addHeader(ProfileAuthInterceptor.HEADER_PROFILE_ID, pid)
+                                    }
                                 }
                             }
                             .build()

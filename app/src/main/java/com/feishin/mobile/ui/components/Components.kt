@@ -74,7 +74,10 @@ import coil.compose.AsyncImage
 import coil.memory.MemoryCache
 import coil.request.ImageRequest
 import com.feishin.mobile.R
+import com.feishin.mobile.core.common.GlobalId
 import com.feishin.mobile.core.network.CoverCacheKey
+import com.feishin.mobile.core.network.ProfileIdTag
+import com.feishin.mobile.data.remote.ProfileAuthInterceptor
 import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.Artist
 import com.feishin.mobile.domain.model.Track
@@ -128,6 +131,10 @@ fun CoverImage(
                 }
                 if (!coverKey.isNullOrBlank()) {
                     tag(CoverCacheKey::class.java, CoverCacheKey(coverKey))
+                    GlobalId.profileIdOrNull(coverKey)?.let { pid ->
+                        tag(ProfileIdTag::class.java, ProfileIdTag(pid))
+                        addHeader(ProfileAuthInterceptor.HEADER_PROFILE_ID, pid)
+                    }
                 }
             }
             .build()

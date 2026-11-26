@@ -7,6 +7,7 @@ import com.feishin.mobile.domain.model.BackendType
 import com.feishin.mobile.domain.model.ProfileCredentials
 import com.feishin.mobile.domain.model.ServerProfile
 import com.feishin.mobile.domain.model.Track
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
@@ -67,6 +68,87 @@ internal object SubsonicUrlBuilder {
         val query = linkedMapOf("id" to rawTrackId)
         query.putAll(SubsonicAuth.authQuery(username, password))
         return SubsonicAuth.buildUrl(normalizeBaseUrl(serverUrl), "rest/download.view", query)
+    }
+}
+
+/**
+ * Pure Jellyfin URL builder (JVM-safe via OkHttp [HttpUrl], no `android.net.Uri`).
+ */
+internal object JellyfinUrlBuilder {
+    private const val FALLBACK_TRANSCODE_CODEC = "mp3"
+
+    private fun parseBaseUrl(serverUrl: String): HttpUrl? =
+        runCatching { JellyfinUrl.normalize(serverUrl).toHttpUrlOrNull() }.getOrNull()
+
+    fun streamUrl(
+        serverUrl: String,
+        userId: String,
+        deviceId: String,
+        rawTrackId: String,
+        maxBitrate: Int = 0,
+        format: String = SubsonicUrlBuilder.DEFAULT_FORMAT,
+    ): String? {
+        val base = parseBaseUrl(serverUrl) ?: return null
+        val normalizedFormat = format.trim().lowercase(Locale.ROOT)
+        val isDirect = maxBitrate <= 0 && (normalizedFormat.isEmpty() || normalizedFormat == SubsonicUrlBuilder.DEFAULT_FORMAT)
+        val builder = base.newBuilder()
+            .addPathSegment("Audio")
+            .addPathSegment(rawTrackId)
+        if (isDirect) {
+            return builder
+                .addPathSegment("stream")
+                .addQueryParameter("static", "true")
+                .build()
+                .toString()
+        }
+        val codec = normalizedFormat.takeIf {
+            it.isNotEmpty() && it != SubsonicUrlBuilder.DEFAULT_FORMAT
+        } ?: FALLBACK_TRANSCODE_CODEC
+        builder.addPathSegment("universal")
+        if (userId.isNotBlank()) builder.addQueryParameter("UserId", userId)
+        if (deviceId.isNotBlank()) builder.addQueryParameter("DeviceId", deviceId)
+        if (maxBitrate > 0) builder.addQueryParameter("MaxStreamingBitrate", (maxBitrate * 1000L).toString())
+        return builder
+            .addQueryParameter("AudioCodec", codec)
+            .addQueryParameter("Container", codec)
+            .addQueryParameter("TranscodingProtocol", "http")
+            .addQueryParameter("TranscodingContainer", codec)
+            .addQueryParameter("EnableRedirection", "false")
+            .addQueryParameter("EnableRemoteMedia", "false")
+            .build()
+            .toString()
+    }
+
+    fun coverArtUrl(
+        serverUrl: String,
+        rawCoverArtId: String,
+        size: Int = 512,
+    ): String? {
+        if (rawCoverArtId.isBlank()) return null
+        val base = parseBaseUrl(serverUrl) ?: return null
+        return base.newBuilder()
+            .addPathSegment("Items")
+            .addPathSegment(rawCoverArtId)
+            .addPathSegment("Images")
+            .addPathSegment("Primary")
+            .addQueryParameter("maxWidth", size.toString())
+            .addQueryParameter("quality", "90")
+            .build()
+            .toString()
+    }
+
+    fun downloadUrl(
+        serverUrl: String,
+        rawTrackId: String,
+    ): String? {
+        val base = parseBaseUrl(serverUrl) ?: return null
+        return base.newBuilder()
+            .addPathSegment("Audio")
+            .addPathSegment(rawTrackId)
+            .addPathSegment("stream")
+            .addQueryParameter("static", "true")
+            .build()
+            .toString()
     }
 }
 
@@ -140,18 +222,11 @@ class BackendUrlResolver @Inject constructor(
                     )
                 }.getOrNull()
             }
-            BackendType.JELLYFIN -> {
-                val base = parseBaseUrl(profile.url) ?: return null
-                base.newBuilder()
-                    .addPathSegment("Items")
-                    .addPathSegment(rawId)
-                    .addPathSegment("Images")
-                    .addPathSegment("Primary")
-                    .addQueryParameter("maxWidth", size.toString())
-                    .addQueryParameter("quality", "90")
-                    .build()
-                    .toString()
-            }
+            BackendType.JELLYFIN -> JellyfinUrlBuilder.coverArtUrl(
+                serverUrl = profile.url,
+                rawCoverArtId = rawId,
+                size = size,
+            )
             BackendType.GOOGLE_DRIVE -> {
                 if (rawId.startsWith("cov:")) {
                     "drive-cover://${profile.id}/${rawId.removePrefix("cov:")}"
@@ -179,15 +254,10 @@ class BackendUrlResolver @Inject constructor(
                     )
                 }.getOrNull()
             }
-            BackendType.JELLYFIN -> {
-                val base = parseBaseUrl(profile.url) ?: return null
-                base.newBuilder()
-                    .addPathSegment("Items")
-                    .addPathSegment(rawId)
-                    .addPathSegment("Download")
-                    .build()
-                    .toString()
-            }
+            BackendType.JELLYFIN -> JellyfinUrlBuilder.downloadUrl(
+                serverUrl = profile.url,
+                rawTrackId = rawId,
+            )
             BackendType.GOOGLE_DRIVE -> buildGoogleDriveFileUrl(rawId)
         }
     }
@@ -214,29 +284,15 @@ class BackendUrlResolver @Inject constructor(
         maxBitrate: Int,
         format: String,
     ): String? {
-        val base = parseBaseUrl(profile.url) ?: return null
-        val transcode = maxBitrate > 0 || (format.isNotBlank() && format != SubsonicUrlBuilder.DEFAULT_FORMAT)
-        val builder = base.newBuilder()
-            .addPathSegment("Audio")
-            .addPathSegment(rawId)
-        if (!transcode) {
-            return builder
-                .addPathSegment("stream")
-                .addQueryParameter("static", "true")
-                .build()
-                .toString()
-        }
         val creds = profile.credentials as? ProfileCredentials.Jellyfin
-        builder.addPathSegment("universal")
-        if (profile.userId.isNotBlank()) builder.addQueryParameter("UserId", profile.userId)
-        if (!creds?.deviceId.isNullOrBlank()) builder.addQueryParameter("DeviceId", creds!!.deviceId)
-        if (maxBitrate > 0) builder.addQueryParameter("MaxStreamingBitrate", (maxBitrate * 1000L).toString())
-        if (format.isNotBlank() && format != SubsonicUrlBuilder.DEFAULT_FORMAT) {
-            builder.addQueryParameter("AudioCodec", format)
-            builder.addQueryParameter("Container", format)
-        }
-        builder.addQueryParameter("EnableRedirection", "false")
-        return builder.build().toString()
+        return JellyfinUrlBuilder.streamUrl(
+            serverUrl = profile.url,
+            userId = profile.userId,
+            deviceId = creds?.deviceId.orEmpty(),
+            rawTrackId = rawId,
+            maxBitrate = maxBitrate,
+            format = format,
+        )
     }
 
     private fun buildGoogleDriveFileUrl(rawId: String): String =

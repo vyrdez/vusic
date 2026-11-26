@@ -2,7 +2,7 @@ package com.feishin.mobile.data.backend
 
 import com.feishin.mobile.core.common.GlobalId
 import com.feishin.mobile.core.common.Result
-import com.feishin.mobile.core.network.JellyfinUrl
+import com.feishin.mobile.core.network.JellyfinUrlBuilder
 import com.feishin.mobile.core.network.SubsonicAuth
 import com.feishin.mobile.core.network.SyncedLyrics
 import com.feishin.mobile.data.cache.LibraryRefresh
@@ -51,7 +51,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.ListSerializer
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import retrofit2.HttpException
 
 /**
@@ -823,37 +822,15 @@ class JellyfinBackend(
     override suspend fun lyrics(artist: String, title: String): Result<String> =
         Result.Ok("")
 
-    private fun normalizedBaseHttpUrl() = JellyfinUrl.normalize(profile.url).toHttpUrlOrNull()
-        ?: throw IllegalArgumentException("Invalid Jellyfin server URL: ${profile.url}")
-
-    override fun streamUrl(track: Track, maxBitrate: Int, format: String): String {
-        val rawId = GlobalId.rawId(track.id)
-        val base = normalizedBaseHttpUrl().newBuilder()
-        if (maxBitrate <= 0 && format == "raw") {
-            return base
-                .addPathSegment("Audio")
-                .addPathSegment(rawId)
-                .addPathSegment("stream")
-                .addQueryParameter("static", "true")
-                .build()
-                .toString()
-        }
-        val codec = format.takeIf { it != "raw" && it.isNotBlank() } ?: "mp3"
-        base.addPathSegment("Audio")
-            .addPathSegment(rawId)
-            .addPathSegment("universal")
-            .addQueryParameter("UserId", userId)
-            .addQueryParameter("DeviceId", jellyfinCreds.deviceId)
-        if (maxBitrate > 0) {
-            base.addQueryParameter("MaxStreamingBitrate", (maxBitrate * 1000).toString())
-        }
-        return base
-            .addQueryParameter("AudioCodec", codec)
-            .addQueryParameter("Container", codec)
-            .addQueryParameter("EnableRedirection", "false")
-            .build()
-            .toString()
-    }
+    override fun streamUrl(track: Track, maxBitrate: Int, format: String): String =
+        JellyfinUrlBuilder.streamUrl(
+            serverUrl = profile.url,
+            userId = userId,
+            deviceId = jellyfinCreds.deviceId,
+            rawTrackId = GlobalId.rawId(track.id),
+            maxBitrate = maxBitrate,
+            format = format,
+        ) ?: throw IllegalArgumentException("Invalid Jellyfin server URL: ${profile.url}")
 
     override fun coverArtUrl(coverArtId: String?, size: Int): String? {
         if (coverArtId.isNullOrBlank()) return null
@@ -865,28 +842,18 @@ class JellyfinBackend(
         ) {
             return coverArtId
         }
-        val rawCoverId = GlobalId.rawId(coverArtId)
-        if (rawCoverId.isBlank()) return null
-        return normalizedBaseHttpUrl().newBuilder()
-            .addPathSegment("Items")
-            .addPathSegment(rawCoverId)
-            .addPathSegment("Images")
-            .addPathSegment("Primary")
-            .addQueryParameter("maxWidth", size.toString())
-            .addQueryParameter("quality", "90")
-            .build()
-            .toString()
+        return JellyfinUrlBuilder.coverArtUrl(
+            serverUrl = profile.url,
+            rawCoverArtId = GlobalId.rawId(coverArtId),
+            size = size,
+        )
     }
 
-    override fun downloadUrl(track: Track): String {
-        val rawId = GlobalId.rawId(track.id)
-        return normalizedBaseHttpUrl().newBuilder()
-            .addPathSegment("Items")
-            .addPathSegment(rawId)
-            .addPathSegment("Download")
-            .build()
-            .toString()
-    }
+    override fun downloadUrl(track: Track): String =
+        JellyfinUrlBuilder.downloadUrl(
+            serverUrl = profile.url,
+            rawTrackId = GlobalId.rawId(track.id),
+        ) ?: throw IllegalArgumentException("Invalid Jellyfin server URL: ${profile.url}")
 
     override suspend fun readCachedAlbumList(type: String, offset: Int, genre: String?): List<Album>? =
         cache.read(scopedKey(albumListLogicalKey(type, offset, genre)), ListSerializer(Album.serializer()))

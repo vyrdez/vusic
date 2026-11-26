@@ -69,11 +69,14 @@ class BackendUrlResolverTest {
         priority = 0,
     )
 
-    private fun jellyfinProfile(id: String = "jf1") = ServerProfile(
+    private fun jellyfinProfile(
+        id: String = "jf1",
+        url: String = "https://jf.example.com:8096",
+    ) = ServerProfile(
         id = id,
         name = "Jellyfin",
         type = BackendType.JELLYFIN,
-        url = "https://jf.example.com:8096",
+        url = url,
         userId = "user-42",
         credentials = ProfileCredentials.Jellyfin(
             username = "jfuser",
@@ -149,16 +152,43 @@ class BackendUrlResolverTest {
         assertEquals("nav.example.com", legacyUrl.host)
         assertEquals("bare-99", legacyUrl.queryParameter("id"))
 
-        // Jellyfin direct + transcoded hooks
+        // Jellyfin direct + progressive universal transcoded hooks (including /web trim)
         val jfDirect = resolver.streamUrl(sampleTrack("jf1:jf-10"))!!.toHttpUrl()
         assertEquals("/Audio/jf-10/stream", jfDirect.encodedPath)
         assertEquals("true", jfDirect.queryParameter("static"))
 
         val jfTranscode = resolver.streamUrl(sampleTrack("jf1:jf-10"), maxBitrate = 192, format = "opus")!!.toHttpUrl()
         assertEquals("/Audio/jf-10/universal", jfTranscode.encodedPath)
+        assertEquals("user-42", jfTranscode.queryParameter("UserId"))
+        assertEquals("dev-9", jfTranscode.queryParameter("DeviceId"))
         assertEquals("192000", jfTranscode.queryParameter("MaxStreamingBitrate"))
         assertEquals("opus", jfTranscode.queryParameter("AudioCodec"))
         assertEquals("opus", jfTranscode.queryParameter("Container"))
+        assertEquals("http", jfTranscode.queryParameter("TranscodingProtocol"))
+        assertEquals("opus", jfTranscode.queryParameter("TranscodingContainer"))
+        assertEquals("false", jfTranscode.queryParameter("EnableRedirection"))
+        assertEquals("false", jfTranscode.queryParameter("EnableRemoteMedia"))
+
+        val jfRawBitrateFallback = resolver.streamUrl(sampleTrack("jf1:jf-10"), maxBitrate = 128, format = "raw")!!.toHttpUrl()
+        assertEquals("/Audio/jf-10/universal", jfRawBitrateFallback.encodedPath)
+        assertEquals("128000", jfRawBitrateFallback.queryParameter("MaxStreamingBitrate"))
+        assertEquals("mp3", jfRawBitrateFallback.queryParameter("AudioCodec"))
+        assertEquals("mp3", jfRawBitrateFallback.queryParameter("Container"))
+        assertEquals("http", jfRawBitrateFallback.queryParameter("TranscodingProtocol"))
+        assertEquals("mp3", jfRawBitrateFallback.queryParameter("TranscodingContainer"))
+        assertEquals("false", jfRawBitrateFallback.queryParameter("EnableRemoteMedia"))
+
+        val jfWebTrim = BackendUrlResolver(
+            newProfileStore(backgroundScope, listOf(jellyfinProfile("jf2", "https://jf.example.com:8096/web/"))),
+        )
+        assertEquals(
+            "https://jf.example.com:8096/Audio/jf-10/stream?static=true",
+            jfWebTrim.streamUrl(sampleTrack("jf2:jf-10")),
+        )
+        assertEquals(
+            "https://jf.example.com:8096/Items/alb-1/Images/Primary?maxWidth=512&quality=90",
+            jfWebTrim.coverArtUrl("jf2:alb-1", 512),
+        )
 
         // Google Drive hook
         assertEquals(
@@ -233,7 +263,7 @@ class BackendUrlResolverTest {
         assertEquals("alice", subDl.queryParameter("u"))
 
         assertEquals(
-            "https://jf.example.com:8096/Items/jf-7/Download",
+            "https://jf.example.com:8096/Audio/jf-7/stream?static=true",
             resolver.downloadUrl(sampleTrack("jf1:jf-7")),
         )
         assertEquals(

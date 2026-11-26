@@ -8,6 +8,7 @@ import coil.intercept.Interceptor
 import coil.memory.MemoryCache
 import com.feishin.mobile.core.common.GlobalId
 import com.feishin.mobile.core.network.CoverCacheKey
+import com.feishin.mobile.core.network.ProfileIdTag
 import com.feishin.mobile.data.auth.ProfileStore
 import com.feishin.mobile.data.remote.CleartextGuardInterceptor
 import com.feishin.mobile.data.remote.ProfileAuthInterceptor
@@ -150,17 +151,30 @@ class OfflineCoverInterceptor(
                 }
             }
         }
-        return chain.proceed(request)
+        val taggedProfileId = request.tags.tag(ProfileIdTag::class.java)?.profileId?.takeIf { it.isNotBlank() }
+            ?: key?.let { GlobalId.profileIdOrNull(it) }
+        val nextRequest = if (
+            taggedProfileId != null &&
+            request.headers[ProfileAuthInterceptor.HEADER_PROFILE_ID].isNullOrBlank()
+        ) {
+            request.newBuilder()
+                .setHeader(ProfileAuthInterceptor.HEADER_PROFILE_ID, taggedProfileId)
+                .build()
+        } else {
+            request
+        }
+        return chain.proceed(nextRequest)
     }
 
     internal fun resolveKey(request: coil.request.ImageRequest, url: String): String? {
         request.tags.tag(CoverCacheKey::class.java)?.key?.takeIf { it.isNotBlank() }?.let { return it }
+        val taggedProfileId = request.tags.tag(ProfileIdTag::class.java)?.profileId?.takeIf { it.isNotBlank() }
         val parsedUrl = runCatching { url.toHttpUrlOrNull() }.getOrNull()
         if (url.contains("getCoverArt")) {
             val rawId = parsedUrl?.queryParameter("id")
                 ?: runCatching { Uri.parse(url).getQueryParameter("id") }.getOrNull()
             if (!rawId.isNullOrBlank()) {
-                val profileId = parsedUrl?.let {
+                val profileId = taggedProfileId ?: parsedUrl?.let {
                     profileStore?.findByHost(it.scheme, it.host, it.port)?.id
                 }
                 return if (profileId != null) GlobalId.format(profileId, rawId) else rawId
@@ -168,7 +182,8 @@ class OfflineCoverInterceptor(
         }
         if (parsedUrl != null) {
             JELLYFIN_COVER_REGEX.find(parsedUrl.encodedPath)?.groupValues?.getOrNull(1)?.let { itemId ->
-                val profileId = profileStore?.findByHost(parsedUrl.scheme, parsedUrl.host, parsedUrl.port)?.id
+                val profileId = taggedProfileId
+                    ?: profileStore?.findByHost(parsedUrl.scheme, parsedUrl.host, parsedUrl.port)?.id
                 return if (profileId != null) GlobalId.format(profileId, itemId) else itemId
             }
         }

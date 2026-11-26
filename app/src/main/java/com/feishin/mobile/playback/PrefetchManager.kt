@@ -19,6 +19,7 @@ import com.feishin.mobile.core.network.BackendUrlResolver
 import com.feishin.mobile.data.cache.CachedTrackStore
 import com.feishin.mobile.data.download.DownloadRepository
 import com.feishin.mobile.data.network.NetworkMonitor
+import com.feishin.mobile.data.remote.ProfileAuthInterceptor
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.Track
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -212,6 +213,11 @@ class PrefetchManager @Inject constructor(
             val dataSpec = DataSpec.Builder()
                 .setUri(Uri.parse(url))
                 .setKey(key)
+                .apply {
+                    if (!profileId.isNullOrBlank()) {
+                        setHttpRequestHeaders(mapOf(ProfileAuthInterceptor.HEADER_PROFILE_ID to profileId))
+                    }
+                }
                 .build()
             val upstream = OkHttpDataSource.Factory(http).createDataSource()
             val cds = CacheDataSource.Factory()

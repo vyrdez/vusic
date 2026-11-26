@@ -46,6 +46,21 @@ object StableCacheKey {
         }
         return if (kept.isEmpty()) base else "$base?$kept"
     }
+
+    /** Extracts the `{profileId}` prefix from a scoped cache key, or `null` when unscoped (`p1`/v6). */
+    fun extractProfileId(key: String?): String? {
+        if (key.isNullOrBlank()) return null
+        val idx = key.indexOf(':')
+        if (idx <= 0 || idx == key.lastIndex) return null
+        val prefix = key.substring(0, idx)
+        if (!GlobalId.PROFILE_ID_REGEX.matches(prefix)) return null
+        val rest = key.substring(idx + 1)
+        return if (rest.startsWith("http://", ignoreCase = true) || rest.startsWith("https://", ignoreCase = true)) {
+            prefix
+        } else {
+            null
+        }
+    }
 }
 
 /**

@@ -6,6 +6,7 @@ import com.feishin.mobile.core.common.GlobalId
 import com.feishin.mobile.core.common.PlaybackSource
 import com.feishin.mobile.core.common.QualityPolicy
 import com.feishin.mobile.core.common.StreamQuality
+import com.feishin.mobile.core.network.ProfileIdTag
 import com.feishin.mobile.data.db.CachedCoverDao
 import com.feishin.mobile.data.db.CachedCoverEntity
 import com.feishin.mobile.data.db.DownloadDao
@@ -431,7 +432,11 @@ class DownloadRepository @Inject constructor(
         if (existing != null && File(existing).exists()) return@withContext true
         val url = signedCoverUrl(coverArtId) ?: return@withContext false
         runCatching {
-            val req = okhttp3.Request.Builder().url(url).build()
+            val reqBuilder = okhttp3.Request.Builder().url(url)
+            GlobalId.profileIdOrNull(coverArtId)?.let { pid ->
+                reqBuilder.tag(ProfileIdTag::class.java, ProfileIdTag(pid))
+            }
+            val req = reqBuilder.build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@use false
                 val safeId = sanitizeCoverArtId(coverArtId)

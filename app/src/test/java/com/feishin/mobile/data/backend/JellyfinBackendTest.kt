@@ -543,8 +543,17 @@ class JellyfinBackendTest {
                 "${server.baseUrl}/Audio/all-1/stream?static=true",
                 backend.streamUrl(song, maxBitrate = 0, format = "raw"),
             )
+            val transcodedUrl = backend.streamUrl(song, maxBitrate = 192, format = "opus")
+            assertTrue(transcodedUrl.startsWith("${server.baseUrl}/Audio/all-1/universal?"))
+            assertTrue(transcodedUrl.contains("MaxStreamingBitrate=192000"))
+            assertTrue(transcodedUrl.contains("AudioCodec=opus"))
+            assertTrue(transcodedUrl.contains("Container=opus"))
+            assertTrue(transcodedUrl.contains("TranscodingProtocol=http"))
+            assertTrue(transcodedUrl.contains("TranscodingContainer=opus"))
+            assertTrue(transcodedUrl.contains("EnableRedirection=false"))
+            assertTrue(transcodedUrl.contains("EnableRemoteMedia=false"))
             assertEquals(
-                "${server.baseUrl}/Items/all-1/Download",
+                "${server.baseUrl}/Audio/all-1/stream?static=true",
                 backend.downloadUrl(song),
             )
             assertNull(backend.coverArtUrl(null))

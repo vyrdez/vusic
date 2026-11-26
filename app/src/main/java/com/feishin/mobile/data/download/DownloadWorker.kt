@@ -7,6 +7,8 @@ import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.feishin.mobile.core.common.CacheSizePolicy
 import com.feishin.mobile.core.common.DownloadStateMachine
+import com.feishin.mobile.core.common.GlobalId
+import com.feishin.mobile.core.network.ProfileIdTag
 import com.feishin.mobile.data.db.DownloadDao
 import com.feishin.mobile.data.db.DownloadEntity
 import com.feishin.mobile.data.db.DownloadStatus
@@ -174,6 +176,9 @@ class DownloadWorker @AssistedInject constructor(
         if (!useRange && partial.exists()) partial.delete()
 
         val builder = Request.Builder().url(url)
+        GlobalId.profileIdOrNull(row.songId)?.let { pid ->
+            builder.tag(ProfileIdTag::class.java, ProfileIdTag(pid))
+        }
         if (startAt > 0) builder.header("Range", "bytes=$startAt-")
         val request = builder.build()
 
