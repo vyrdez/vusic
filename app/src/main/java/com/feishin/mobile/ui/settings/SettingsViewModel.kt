@@ -16,6 +16,8 @@ import com.feishin.mobile.core.common.CacheSizePolicy
 import com.feishin.mobile.core.common.ReplayGainMode
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.data.auth.AuthRepository
+import com.feishin.mobile.data.auth.ProfileAuthStateStore
+import com.feishin.mobile.data.auth.ProfileAuthStatus
 import com.feishin.mobile.data.cache.CachedTrackStore
 import com.feishin.mobile.data.cache.MetadataCache
 import com.feishin.mobile.data.download.DownloadRepository
@@ -102,6 +104,7 @@ class SettingsViewModel private constructor(
     val scanCoordinator: ScanCoordinator? = null,
     val libraryRefresh: com.feishin.mobile.data.cache.LibraryRefresh? = null,
     val messenger: com.feishin.mobile.ui.components.UiMessenger? = null,
+    profileAuthStateStore: ProfileAuthStateStore? = null,
 ) : ViewModel() {
 
     val downloads: DownloadRepository? = deps?.downloads
@@ -132,6 +135,7 @@ class SettingsViewModel private constructor(
         imageLoader: coil.ImageLoader,
         lyricsRepo: com.feishin.mobile.data.repo.LyricsRepository,
         @ApplicationContext context: Context,
+        profileAuthStateStore: ProfileAuthStateStore,
         scanCoordinator: ScanCoordinator? = null,
         libraryRefresh: com.feishin.mobile.data.cache.LibraryRefresh? = null,
         messenger: com.feishin.mobile.ui.components.UiMessenger? = null,
@@ -155,6 +159,7 @@ class SettingsViewModel private constructor(
         scanCoordinator = scanCoordinator,
         libraryRefresh = libraryRefresh,
         messenger = messenger,
+        profileAuthStateStore = profileAuthStateStore,
     )
 
     internal constructor(
@@ -164,6 +169,7 @@ class SettingsViewModel private constructor(
         scanCoordinator: ScanCoordinator? = null,
         libraryRefresh: com.feishin.mobile.data.cache.LibraryRefresh? = null,
         messenger: com.feishin.mobile.ui.components.UiMessenger? = null,
+        profileAuthStateStore: ProfileAuthStateStore? = null,
     ) : this(
         store = store,
         repo = repo,
@@ -172,6 +178,7 @@ class SettingsViewModel private constructor(
         scanCoordinator = scanCoordinator,
         libraryRefresh = libraryRefresh,
         messenger = messenger,
+        profileAuthStateStore = profileAuthStateStore,
     )
 
     val isOnline: StateFlow<Boolean> = network?.isOnline ?: MutableStateFlow(true)
@@ -222,6 +229,24 @@ class SettingsViewModel private constructor(
             }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private val authStateStore: ProfileAuthStateStore = profileAuthStateStore ?: ProfileAuthStateStore()
+    val authStates: StateFlow<Map<String, ProfileAuthStatus>> = authStateStore.states
+
+    private val _expandedProfileIds = MutableStateFlow<Set<String>>(emptySet())
+    val expandedProfileIds: StateFlow<Set<String>> = _expandedProfileIds.asStateFlow()
+
+    fun toggleExpanded(profileId: String) {
+        _expandedProfileIds.update { current ->
+            if (profileId in current) current - profileId else current + profileId
+        }
+    }
+
+    fun collapseAllProfiles() {
+        if (_expandedProfileIds.value.isNotEmpty()) {
+            _expandedProfileIds.value = emptySet()
+        }
+    }
 
     private val _test = MutableStateFlow<TestState>(TestState.Idle)
     val test: StateFlow<TestState> = _test.asStateFlow()
@@ -441,6 +466,7 @@ class SettingsViewModel private constructor(
             } else {
                 when (val r = repo.ping(profile.id)) {
                     is Result.Ok -> {
+                        authStateStore.clear(profile.id)
                         refreshProfileInfo(profile.id)
                         _profileTestStates.update { it + (profile.id to TestState.Ok) }
                     }
@@ -472,6 +498,7 @@ class SettingsViewModel private constructor(
             store.setLibrarySourceFilter("ALL")
         }
         auth.removeProfile(profileId, keepDownloads)
+        _expandedProfileIds.update { it - profileId }
         _profileTestStates.update { it - profileId }
         _profileServerInfos.update { it - profileId }
         refreshLibraryCounts()

@@ -69,6 +69,10 @@ android {
         compose = true
         buildConfig = true
     }
+    composeCompiler {
+        reportsDestination = layout.buildDirectory.dir("compose_compiler")
+        metricsDestination = layout.buildDirectory.dir("compose_compiler")
+    }
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
@@ -149,9 +153,12 @@ dependencies {
     implementation("com.atilika.kuromoji:kuromoji-ipadic:0.9.0")
 
     debugImplementation(libs.compose.ui.tooling)
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
     // Part B: on-device MediaBrowser client verifying the Auto browse tree.
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation(libs.media3.session)
     androidTestImplementation(libs.room.testing)
     androidTestImplementation("androidx.test:runner:1.6.2")

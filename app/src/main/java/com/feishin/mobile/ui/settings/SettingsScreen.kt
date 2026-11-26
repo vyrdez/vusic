@@ -33,7 +33,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Remove
@@ -48,7 +47,6 @@ import androidx.compose.material.icons.filled.SettingsInputAntenna
 import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -58,7 +56,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -81,12 +81,9 @@ import com.feishin.mobile.BuildConfig
 import com.feishin.mobile.core.common.CacheSizePolicy
 import com.feishin.mobile.core.common.QualityPolicy
 import com.feishin.mobile.core.common.ReplayGainMode
+import com.feishin.mobile.data.auth.ProfileAuthStatus
 import com.feishin.mobile.domain.model.BackendCapabilities
-import com.feishin.mobile.domain.model.BackendType
-import com.feishin.mobile.domain.model.ProfileCredentials
-import com.feishin.mobile.domain.model.ServerInfo
 import com.feishin.mobile.domain.model.ServerProfile
-import com.feishin.mobile.domain.repo.ProfileHealth
 import com.feishin.mobile.ui.login.LoginScreen
 import com.feishin.mobile.ui.theme.LocalVusicDark
 import com.feishin.mobile.ui.theme.VusicColors
@@ -331,19 +328,6 @@ private fun OfflineChip() {
 
 // ---------- Server & Account ----------
 
-private fun backendLabel(type: BackendType): String = when (type) {
-    BackendType.NAVIDROME -> "Navidrome"
-    BackendType.OPENSUBSONIC -> "OpenSubsonic"
-    BackendType.JELLYFIN -> "Jellyfin"
-    BackendType.GOOGLE_DRIVE -> "Google Drive"
-}
-
-private fun profileUsername(profile: ServerProfile): String = when (val c = profile.credentials) {
-    is ProfileCredentials.Subsonic -> c.username
-    is ProfileCredentials.Jellyfin -> c.username
-    is ProfileCredentials.GoogleDrive -> c.accountEmail
-}
-
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
@@ -352,10 +336,13 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
     val profileServerInfos by vm.profileServerInfos.collectAsStateWithLifecycle()
     val profileScanStates by vm.profileScanStates.collectAsStateWithLifecycle()
     val healthState by vm.healthState.collectAsStateWithLifecycle()
+    val authStates by vm.authStates.collectAsStateWithLifecycle()
+    val expandedIdsState = vm.expandedProfileIds.collectAsStateWithLifecycle()
     val online by vm.isOnline.collectAsStateWithLifecycle()
     val counts by vm.libraryCounts.collectAsStateWithLifecycle()
 
     var showAddBackend by rememberSaveable { mutableStateOf(false) }
+    var editingProfile by remember { mutableStateOf<ServerProfile?>(null) }
     var pendingRemoveProfile by remember { mutableStateOf<ServerProfile?>(null) }
 
     var displayProfiles by remember(profiles) { mutableStateOf(profiles) }
@@ -373,6 +360,9 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
     }
 
     LaunchedEffect(Unit) { vm.refreshServerInfo() }
+    DisposableEffect(Unit) {
+        onDispose { vm.collapseAllProfiles() }
+    }
 
     LazyColumn(
         state = listState,
@@ -391,7 +381,10 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
                 }
                 SettingsActionButton(
                     label = "+ Add backend",
-                    onClick = { showAddBackend = true },
+                    onClick = {
+                        vm.collapseAllProfiles()
+                        showAddBackend = true
+                    },
                     modifier = Modifier.align(Alignment.CenterVertically),
                 )
             }
@@ -408,7 +401,7 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Using device files only. Add a Navidrome or OpenSubsonic server to stream your remote library.",
+                            "Add a Navidrome, OpenSubsonic or Jellyfin server to stream your remote library.",
                             style = MaterialTheme.typography.bodySmall,
                             color = VusicColors.SecondaryText,
                         )
@@ -420,7 +413,38 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
         itemsIndexed(
             items = displayProfiles,
             key = { _, profile -> profile.id },
+            contentType = { _, _ -> "profile" },
         ) { index, profile ->
+            val expanded by remember(profile.id) {
+                derivedStateOf { profile.id in expandedIdsState.value }
+            }
+            val serverInfo = profileServerInfos[profile.id]
+            val testState = testStates[profile.id] ?: TestState.Idle
+            val health = healthState.profiles[profile.id]
+            val authStatus = authStates[profile.id] ?: ProfileAuthStatus.OK
+            val scanState = profileScanStates[profile.id] ?: ScanUiState.Idle()
+
+            val cardUi = remember(profile, serverInfo) {
+                profile.toServerProfileUi(serverInfo)
+            }
+            val statusUi = remember(profile.enabled, online, testState, health, authStatus) {
+                resolveProfileStatus(
+                    enabled = profile.enabled,
+                    online = online,
+                    testState = testState,
+                    health = health,
+                    authStatus = authStatus,
+                )
+            }
+            val scanUi = remember(profile.type, profile.enabled, online, scanState) {
+                resolveProfileScanUi(
+                    capabilities = BackendCapabilities.forType(profile.type),
+                    enabled = profile.enabled,
+                    online = online,
+                    scanState = scanState,
+                )
+            }
+
             ReorderableItem(reorderState, key = profile.id) { isDragging ->
                 val dragModifier = Modifier.draggableHandle(
                     onDragStarted = {
@@ -431,26 +455,27 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
                     },
                 )
                 ServerProfileCard(
-                    profile = profile,
+                    ui = cardUi,
                     rank = index + 1,
-                    canMoveUp = index > 0,
-                    canMoveDown = index < displayProfiles.lastIndex,
+                    expanded = expanded,
+                    onToggleExpanded = { vm.toggleExpanded(profile.id) },
                     isDragging = isDragging,
                     dragHandleModifier = dragModifier,
-                    serverInfo = profileServerInfos[profile.id],
-                    testState = testStates[profile.id] ?: TestState.Idle,
-                    health = healthState.profiles[profile.id],
-                    scanState = profileScanStates[profile.id] ?: ScanUiState.Idle(),
-                    online = online,
+                    canMoveUp = index > 0,
+                    canMoveDown = index < displayProfiles.lastIndex,
+                    status = statusUi,
+                    isTesting = testState is TestState.Testing,
+                    scanUi = scanUi,
                     onMoveUp = { vm.moveProfile(profile.id, -1) },
                     onMoveDown = { vm.moveProfile(profile.id, 1) },
                     onToggleEnabled = { vm.setProfileEnabled(profile.id, it) },
-                    onSaveEdit = { updated ->
-                        vm.updateProfile(updated)
-                        vm.testProfileConnection(updated)
+                    onEdit = {
+                        vm.collapseAllProfiles()
+                        editingProfile = profile
                     },
                     onTestConnection = { vm.testProfileConnection(profile) },
                     onScan = { vm.startScan(profile.id) },
+                    onCopyEndpoint = { vm.uiMessenger.show("Endpoint URL copied") },
                     onRequestRemove = { pendingRemoveProfile = profile },
                 )
             }
@@ -473,6 +498,65 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
                 }
             }
         }
+    }
+
+    editingProfile?.let { target ->
+        var editName by remember(target.id) { mutableStateOf(target.name) }
+        var editUrl by remember(target.id) { mutableStateOf(target.url) }
+        var editSelfSigned by remember(target.id) { mutableStateOf(target.allowSelfSigned) }
+        var editCleartext by remember(target.id) { mutableStateOf(target.allowCleartext) }
+        AlertDialog(
+            onDismissRequest = { editingProfile = null },
+            title = { Text("Edit ${target.name}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("Server name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = editUrl,
+                        onValueChange = { editUrl = it },
+                        label = { Text("Server URL") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    SwitchRow(
+                        label = "Allow self-signed certificate",
+                        value = editSelfSigned,
+                        onSet = { editSelfSigned = it },
+                        showDivider = true,
+                    )
+                    SwitchRow(
+                        label = "Allow cleartext HTTP",
+                        value = editCleartext,
+                        onSet = { editCleartext = it },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = editUrl.isNotBlank(),
+                    onClick = {
+                        val updated = target.copy(
+                            name = editName.trim().ifBlank { target.name },
+                            url = editUrl.trim(),
+                            allowSelfSigned = editSelfSigned,
+                            allowCleartext = editCleartext,
+                        )
+                        editingProfile = null
+                        vm.updateProfile(updated)
+                        vm.testProfileConnection(updated)
+                    },
+                ) { Text("Save & test") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingProfile = null }) { Text("Cancel") }
+            },
+        )
     }
 
     pendingRemoveProfile?.let { target ->
@@ -528,422 +612,6 @@ private fun ServerAccountScreen(vm: SettingsViewModel, onLogout: () -> Unit) {
                 },
                 onCancel = { showAddBackend = false },
             )
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun ServerProfileCard(
-    profile: ServerProfile,
-    rank: Int,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
-    isDragging: Boolean,
-    dragHandleModifier: Modifier,
-    serverInfo: ServerInfo?,
-    testState: TestState,
-    health: ProfileHealth?,
-    scanState: ScanUiState,
-    online: Boolean,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit,
-    onToggleEnabled: (Boolean) -> Unit,
-    onSaveEdit: (ServerProfile) -> Unit,
-    onTestConnection: () -> Unit,
-    onScan: () -> Unit,
-    onRequestRemove: () -> Unit,
-) {
-    var editing by rememberSaveable(profile.id) { mutableStateOf(false) }
-    var editName by remember(profile.id, profile.name) { mutableStateOf(profile.name) }
-    var editUrl by remember(profile.id, profile.url) { mutableStateOf(profile.url) }
-    var editSelfSigned by remember(profile.id, profile.allowSelfSigned) {
-        mutableStateOf(profile.allowSelfSigned)
-    }
-    var editCleartext by remember(profile.id, profile.allowCleartext) {
-        mutableStateOf(profile.allowCleartext)
-    }
-
-    val dark = LocalVusicDark.current
-    val okColor = if (dark) Color(0xFF81C784) else Color(0xFF1B5E20)
-    val cardShape = RoundedCornerShape(12.dp)
-    val borderColor = when {
-        isDragging -> MaterialTheme.colorScheme.primary
-        health?.degraded == true -> VusicColors.Warning.copy(alpha = 0.7f)
-        else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-    }
-    val borderWidth = if (isDragging) 1.5.dp else 1.dp
-
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(cardShape)
-            .background(VusicColors.SurfaceHigh)
-            .border(BorderStroke(borderWidth, borderColor), cardShape)
-            .padding(VusicSpacing.CardPadding),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            FlowRow(
-                modifier = Modifier.weight(1f).padding(end = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                ) {
-                    Text(
-                        "#$rank",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                ) {
-                    Text(
-                        backendLabel(profile.type),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(
-                    onClick = onMoveUp,
-                    enabled = canMoveUp && !editing,
-                    modifier = Modifier.size(34.dp),
-                ) {
-                    Icon(
-                        Icons.Default.KeyboardArrowUp,
-                        contentDescription = "Move ${profile.name} up",
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-                IconButton(
-                    onClick = onMoveDown,
-                    enabled = canMoveDown && !editing,
-                    modifier = Modifier.size(34.dp),
-                ) {
-                    Icon(
-                        Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Move ${profile.name} down",
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .then(dragHandleModifier),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.Default.DragHandle,
-                        contentDescription = "Drag to reorder ${profile.name}",
-                        tint = VusicColors.SecondaryText,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
-                Switch(
-                    checked = profile.enabled,
-                    onCheckedChange = onToggleEnabled,
-                    colors = VusicControlDefaults.switchColors(),
-                )
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = profile.name,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = profile.url,
-            style = MaterialTheme.typography.bodySmall,
-            color = VusicColors.SecondaryText,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        val userLabel = profileUsername(profile)
-        if (userLabel.isNotBlank()) {
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "User: $userLabel",
-                style = MaterialTheme.typography.bodySmall,
-                color = VusicColors.SecondaryText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (serverInfo != null) {
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "${serverInfo.product} · API ${serverInfo.apiVersion}",
-                style = MaterialTheme.typography.bodySmall,
-                color = VusicColors.SecondaryText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        val extensions = profile.openSubsonicExtensions.rawNames
-        if (extensions.isNotEmpty()) {
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "Extensions: ${extensions.joinToString(", ")}",
-                style = MaterialTheme.typography.bodySmall,
-                color = VusicColors.SecondaryText,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        Spacer(Modifier.height(6.dp))
-        when (testState) {
-            is TestState.Testing -> {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        "Testing connection…",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = VusicColors.SecondaryText,
-                    )
-                }
-            }
-            is TestState.Ok -> Text(
-                "Connection OK",
-                style = MaterialTheme.typography.bodySmall,
-                color = okColor,
-            )
-            is TestState.Failed -> Text(
-                "Failed: ${testState.message}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            TestState.Idle -> {
-                when {
-                    health?.degraded == true -> Text(
-                        "Degraded: ${health.lastError ?: "unreachable"}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = VusicColors.Warning,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    !profile.enabled -> Text(
-                        "Disabled",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = VusicColors.SecondaryText,
-                    )
-                    health?.degraded == false -> Text(
-                        "Healthy",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = okColor,
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-
-        if (!editing) {
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                SettingsActionButton(
-                    label = "Edit",
-                    onClick = {
-                        editName = profile.name
-                        editUrl = profile.url
-                        editSelfSigned = profile.allowSelfSigned
-                        editCleartext = profile.allowCleartext
-                        editing = true
-                    },
-                )
-                SettingsActionButton(
-                    label = "Test connection",
-                    enabled = testState !is TestState.Testing,
-                    onClick = onTestConnection,
-                )
-                SettingsActionButton(
-                    label = "Remove",
-                    danger = true,
-                    onClick = onRequestRemove,
-                )
-            }
-        } else {
-            OutlinedTextField(
-                value = editName,
-                onValueChange = { editName = it },
-                label = { Text("Server name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-            )
-            OutlinedTextField(
-                value = editUrl,
-                onValueChange = { editUrl = it },
-                label = { Text("Server URL") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-            )
-            SwitchRow(
-                label = "Allow self-signed certificate",
-                value = editSelfSigned,
-                onSet = { editSelfSigned = it },
-                showDivider = true,
-            )
-            SwitchRow(
-                label = "Allow cleartext HTTP",
-                value = editCleartext,
-                onSet = { editCleartext = it },
-            )
-            Spacer(Modifier.height(8.dp))
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                SettingsActionButton(
-                    label = "Save & test",
-                    enabled = editUrl.isNotBlank(),
-                    onClick = {
-                        editing = false
-                        onSaveEdit(
-                            profile.copy(
-                                name = editName.trim().ifBlank { profile.name },
-                                url = editUrl.trim(),
-                                allowSelfSigned = editSelfSigned,
-                                allowCleartext = editCleartext,
-                            ),
-                        )
-                    },
-                )
-                SettingsActionButton(
-                    label = "Cancel",
-                    onClick = { editing = false },
-                )
-            }
-        }
-
-        if (BackendCapabilities.forType(profile.type).supportsLibraryScan) {
-            Spacer(Modifier.height(8.dp))
-            SettingsDivider()
-            ScanLibraryRow(
-                state = scanState,
-                online = online && profile.enabled,
-                onScan = onScan,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ScanLibraryRow(
-    state: ScanUiState,
-    online: Boolean,
-    onScan: () -> Unit,
-) {
-    val isScanning = state is ScanUiState.Scanning
-    val description = formatScanDescription(state, online)
-    val buttonWidth = com.feishin.mobile.core.common.RowLayout.estimateButtonWidthDp("Scan", hasIcon = false, 1f)
-    Column(Modifier.fillMaxWidth()) {
-        androidx.compose.foundation.layout.BoxWithConstraints(
-            Modifier.fillMaxWidth()
-                .defaultMinSize(minHeight = VusicSpacing.RowMinHeight)
-                .padding(vertical = VusicSpacing.RowVertical),
-        ) {
-            val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
-            val rowWidth = maxWidth
-            val textEst = com.feishin.mobile.core.common.RowLayout.estimateTextWidthDp(
-                "Scan library", description, fontScale,
-            )
-            val placement = com.feishin.mobile.core.common.RowLayout.decide(
-                rowWidth.value, textEst, buttonWidth * fontScale, capControl = true,
-            )
-            val textContent = @Composable { modifier: Modifier ->
-                Column(modifier) {
-                    Text(
-                        "Scan library",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(VusicSpacing.TitleToDescription))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        if (isScanning) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(12.dp),
-                                strokeWidth = 1.5.dp,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        Text(
-                            description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = VusicColors.SecondaryText,
-                            maxLines = 3,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-            val buttonContent = @Composable {
-                SettingsActionButton(
-                    label = "Scan",
-                    onClick = onScan,
-                    enabled = online && !isScanning,
-                )
-            }
-            when (placement) {
-                is com.feishin.mobile.core.common.RowLayout.Placement.Beside -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        textContent(Modifier.weight(1f))
-                        Spacer(Modifier.width(VusicSpacing.ControlGap))
-                        androidx.compose.foundation.layout.Box(
-                            Modifier.widthIn(max = rowWidth * com.feishin.mobile.core.common.RowLayout.MAX_CONTROL_SHARE),
-                            contentAlignment = Alignment.CenterEnd,
-                        ) {
-                            buttonContent()
-                        }
-                    }
-                }
-                com.feishin.mobile.core.common.RowLayout.Placement.NextLineEnd -> {
-                    Column {
-                        textContent(Modifier.fillMaxWidth())
-                        Spacer(Modifier.height(com.feishin.mobile.core.common.RowLayout.STACKED_GAP_DP.dp))
-                        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-                            buttonContent()
-                        }
-                    }
-                }
-            }
         }
     }
 }
