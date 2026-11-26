@@ -1,6 +1,9 @@
 package com.feishin.mobile.data.remote
 
+import com.feishin.mobile.BuildConfig
+import com.feishin.mobile.core.network.ProfileIdTag
 import com.feishin.mobile.core.network.SubsonicAuth
+import com.feishin.mobile.data.auth.ProfileAuthStateStore
 import com.feishin.mobile.data.auth.ProfileStore
 import com.feishin.mobile.data.auth.TransientProbeRegistry
 import com.feishin.mobile.domain.model.BackendType
@@ -31,7 +34,13 @@ import okhttp3.Response
 class ProfileAuthInterceptor @Inject constructor(
     private val profileStore: ProfileStore,
     private val probeRegistry: TransientProbeRegistry,
+    private val profileAuthStateStore: ProfileAuthStateStore,
 ) : Interceptor {
+
+    internal constructor(
+        profileStore: ProfileStore,
+        probeRegistry: TransientProbeRegistry,
+    ) : this(profileStore, probeRegistry, ProfileAuthStateStore())
 
     private data class AuthTargetHost(
         val scheme: String,
@@ -41,7 +50,8 @@ class ProfileAuthInterceptor @Inject constructor(
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
-        val profileId = original.header(HEADER_PROFILE_ID)
+        val profileId = original.tag(ProfileIdTag::class.java)?.profileId?.takeIf { it.isNotBlank() }
+            ?: original.header(HEADER_PROFILE_ID)?.takeIf { it.isNotBlank() }
         // Always strip the internal routing header before the request hits the wire.
         val sanitizedBuilder = original.newBuilder().removeHeader(HEADER_PROFILE_ID)
 
@@ -51,7 +61,21 @@ class ProfileAuthInterceptor @Inject constructor(
         }
 
         val updated = applyCredentials(original, sanitizedBuilder, profile)
-        return chain.proceed(updated)
+        val response = chain.proceed(updated)
+        if (response.code == 401 &&
+            !isProbe &&
+            profile.type == BackendType.JELLYFIN &&
+            !isJellyfinAuthenticateByName(original.url)
+        ) {
+            val profileUrl = profile.url.toHttpUrlOrNull()
+            if (profileUrl != null &&
+                matchesOrigin(original.url, profileUrl) &&
+                matchesOrigin(response.request.url, profileUrl)
+            ) {
+                profileAuthStateStore.markExpired(profile.id)
+            }
+        }
+        return response
     }
 
     /**
@@ -152,11 +176,17 @@ class ProfileAuthInterceptor @Inject constructor(
                 val profileUrl = profile.url.toHttpUrlOrNull() ?: return builder.build()
                 if (!matchesOrigin(url, profileUrl)) return builder.build()
                 val creds = profile.credentials as? ProfileCredentials.Jellyfin ?: return builder.build()
+                val isAuthenticate = isJellyfinAuthenticateByName(url)
+                if (isAuthenticate) {
+                    builder.removeHeader(HEADER_EMBY_TOKEN)
+                } else if (creds.accessToken.isNotBlank()) {
+                    builder.header(HEADER_EMBY_TOKEN, creds.accessToken)
+                }
+                val tokenForHeader = if (isAuthenticate) null else creds.accessToken.takeIf { it.isNotBlank() }
                 builder
-                    .header(HEADER_EMBY_TOKEN, creds.accessToken)
                     .header(
                         HEADER_AUTHORIZATION,
-                        """MediaBrowser Client="Vusic", Device="Android", DeviceId="${creds.deviceId}", Version="$CLIENT_VERSION"""",
+                        jellyfinAuthHeader(deviceId = creds.deviceId, token = tokenForHeader),
                     )
                     .tag(
                         AuthTargetHost::class.java,
@@ -222,6 +252,16 @@ class ProfileAuthInterceptor @Inject constructor(
             url.host.equals(target.host, ignoreCase = true) &&
             url.port == target.port
 
+    private fun isJellyfinAuthenticateByName(url: HttpUrl): Boolean =
+        url.encodedPath.trimEnd('/').endsWith("/Users/AuthenticateByName", ignoreCase = true)
+
+    private fun jellyfinAuthHeader(deviceId: String, token: String?): String = buildString {
+        append("""MediaBrowser Client="Vusic", Device="Android", DeviceId="$deviceId", Version="$CLIENT_VERSION"""")
+        if (!token.isNullOrBlank()) {
+            append(""", Token="$token"""")
+        }
+    }
+
     private fun isGoogleDriveApiOrigin(url: HttpUrl): Boolean =
         url.isHttps &&
             url.host.equals(GOOGLE_API_HOST, ignoreCase = true) &&
@@ -232,6 +272,6 @@ class ProfileAuthInterceptor @Inject constructor(
         const val HEADER_AUTHORIZATION = "Authorization"
         const val HEADER_EMBY_TOKEN = "X-Emby-Token"
         const val GOOGLE_API_HOST = "www.googleapis.com"
-        const val CLIENT_VERSION = "1.5.0"
+        val CLIENT_VERSION: String get() = BuildConfig.VERSION_NAME
     }
 }

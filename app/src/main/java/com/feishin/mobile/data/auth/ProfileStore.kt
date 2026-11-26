@@ -191,6 +191,18 @@ class ProfileStore private constructor(
 
     fun nextPriority(): Int = (_profiles.value.maxOfOrNull { it.priority } ?: -1) + 1
 
+    /**
+     * Generates and persists a stable UUIDv4 Jellyfin device ID once, surviving
+     * profile updates and logouts so Jellyfin server sessions remain consistent.
+     */
+    fun getOrCreateJellyfinDeviceId(): String = synchronized(writeLock) {
+        val existing = prefs.getString(KEY_JELLYFIN_DEVICE_ID, null)?.takeIf { it.isNotBlank() }
+        if (existing != null) return@synchronized existing
+        val generated = UUID.randomUUID().toString()
+        prefs.edit().putString(KEY_JELLYFIN_DEVICE_ID, generated).commit()
+        generated
+    }
+
     private suspend fun migrateLegacyIfNeeded(skipIfPreloaded: Boolean) {
         val legacy = readLegacyCredentials()
         if (legacy == null) {
@@ -289,6 +301,7 @@ class ProfileStore private constructor(
         internal const val PREFS_NAME = "feishin_profiles"
         internal const val KEY_PROFILES_JSON = "profiles_json_v1"
         internal const val KEY_LEGACY_MIGRATED = "legacy_migrated_v1"
+        internal const val KEY_JELLYFIN_DEVICE_ID = "jellyfin_device_id"
 
         private fun createEncryptedPrefs(appContext: Context): SharedPreferences =
             EncryptedSharedPreferences.create(

@@ -327,7 +327,7 @@ class ProfileAuthInterceptorTest {
                 val jfA = serverARequests[1]
                 assertEquals("jf-secret-token", jfA.headers["x-emby-token"])
                 assertEquals(
-                    """MediaBrowser Client="Vusic", Device="Android", DeviceId="dev-123", Version="1.5.0"""",
+                    """MediaBrowser Client="Vusic", Device="Android", DeviceId="dev-123", Version="${com.feishin.mobile.BuildConfig.VERSION_NAME}", Token="jf-secret-token"""",
                     jfA.headers["authorization"],
                 )
                 assertNull(jfA.headers[ProfileAuthInterceptor.HEADER_PROFILE_ID.lowercase()])
@@ -651,6 +651,108 @@ class ProfileAuthInterceptorTest {
 
         val form = RedactingHttpLogger.redactForm("u=alice&p=hunter2&refresh_token=r1&client_id=vusic")
         assertEquals("u=***&p=***&refresh_token=***&client_id=vusic", form)
+    }
+
+    @Test
+    fun jellyfinProfileIdTagIsolatesSameHostAnd401MarksSessionExpired() = runTest {
+        val settings = newSettingsStore()
+        val profileStore = newProfileStore(settings)
+        val probeRegistry = TransientProbeRegistry()
+        val authStateStore = com.feishin.mobile.data.auth.ProfileAuthStateStore()
+        val requests = CopyOnWriteArrayList<RecordedRequest>()
+        var nextCode = 200
+
+        LocalTestServer { req ->
+            requests.add(req)
+            ServerResponse(nextCode, body = "{}")
+        }.use { server ->
+            val p1 = ServerProfile(
+                id = "jf1",
+                name = "Jellyfin 1",
+                type = BackendType.JELLYFIN,
+                url = server.baseUrl,
+                userId = "u1",
+                credentials = ProfileCredentials.Jellyfin("alice", "tok-1", "srv", "dev-1"),
+                allowCleartext = true,
+            )
+            val p2 = ServerProfile(
+                id = "jf2",
+                name = "Jellyfin 2",
+                type = BackendType.JELLYFIN,
+                url = server.baseUrl,
+                userId = "u2",
+                credentials = ProfileCredentials.Jellyfin("bob", "tok-2", "srv", "dev-2"),
+                allowCleartext = true,
+            )
+            profileStore.saveAll(listOf(p1, p2))
+
+            val interceptor = ProfileAuthInterceptor(profileStore, probeRegistry, authStateStore)
+            val client = OkHttpClient.Builder()
+                .addInterceptor(CleartextGuardInterceptor(profileStore, probeRegistry, settings))
+                .addInterceptor(interceptor)
+                .addNetworkInterceptor(interceptor.redirectGuard())
+                .build()
+
+            // 1. ProfileIdTag wins over HEADER_PROFILE_ID and isolates same-host profiles.
+            client.newCall(
+                Request.Builder()
+                    .url("${server.baseUrl}/Users/u2/Items")
+                    .tag(
+                        com.feishin.mobile.core.network.ProfileIdTag::class.java,
+                        com.feishin.mobile.core.network.ProfileIdTag("jf2"),
+                    )
+                    .header(ProfileAuthInterceptor.HEADER_PROFILE_ID, "jf1")
+                    .build(),
+            ).execute().use { assertEquals(200, it.code) }
+
+            assertEquals("tok-2", requests[0].headers["x-emby-token"])
+            assertEquals(
+                """MediaBrowser Client="Vusic", Device="Android", DeviceId="dev-2", Version="${com.feishin.mobile.BuildConfig.VERSION_NAME}", Token="tok-2"""",
+                requests[0].headers["authorization"],
+            )
+
+            // 2. Users/AuthenticateByName omits Token and X-Emby-Token, and 401 does NOT mark SESSION_EXPIRED.
+            nextCode = 401
+            client.newCall(
+                Request.Builder()
+                    .url("${server.baseUrl}/users/authenticatebyname")
+                    .tag(
+                        com.feishin.mobile.core.network.ProfileIdTag::class.java,
+                        com.feishin.mobile.core.network.ProfileIdTag("jf1"),
+                    )
+                    .build(),
+            ).execute().use { assertEquals(401, it.code) }
+
+            assertNull(requests[1].headers["x-emby-token"])
+            assertEquals(
+                """MediaBrowser Client="Vusic", Device="Android", DeviceId="dev-1", Version="${com.feishin.mobile.BuildConfig.VERSION_NAME}"""",
+                requests[1].headers["authorization"],
+            )
+            assertEquals(
+                com.feishin.mobile.data.auth.ProfileAuthStatus.OK,
+                authStateStore.statusFor("jf1"),
+            )
+
+            // 3. Authenticated Jellyfin 401 marks SESSION_EXPIRED non-blockingly for that profile only.
+            client.newCall(
+                Request.Builder()
+                    .url("${server.baseUrl}/Users/u1/Items")
+                    .tag(
+                        com.feishin.mobile.core.network.ProfileIdTag::class.java,
+                        com.feishin.mobile.core.network.ProfileIdTag("jf1"),
+                    )
+                    .build(),
+            ).execute().use { assertEquals(401, it.code) }
+
+            assertEquals(
+                com.feishin.mobile.data.auth.ProfileAuthStatus.SESSION_EXPIRED,
+                authStateStore.statusFor("jf1"),
+            )
+            assertEquals(
+                com.feishin.mobile.data.auth.ProfileAuthStatus.OK,
+                authStateStore.statusFor("jf2"),
+            )
+        }
     }
 
     private fun assertThrowsCleartext(block: () -> Unit) {
