@@ -109,6 +109,80 @@ import com.feishin.mobile.ui.components.rememberSavableGridState
 import com.feishin.mobile.ui.components.rememberSavableListState
 import com.feishin.mobile.ui.theme.VusicSpacing
 
+internal data class ViewMyTypeFilter(
+    val type: BackendType,
+    val key: String,
+    val label: String,
+    val count: Int,
+)
+
+internal data class ViewMyProfileFilter(
+    val id: String,
+    val key: String,
+    val name: String,
+    val subtitle: String,
+)
+
+internal data class ViewMyFilterModel(
+    val allSubtitle: String,
+    val typeFilters: List<ViewMyTypeFilter>,
+    val profileFilters: List<ViewMyProfileFilter>,
+    val showDeviceFiles: Boolean,
+)
+
+internal fun buildViewMyFilterModel(
+    profiles: List<ServerProfile>,
+    showDeviceFiles: Boolean,
+    degradedProfileIds: Set<String> = emptySet(),
+): ViewMyFilterModel {
+    val enabledProfiles = profiles
+        .filter { it.enabled }
+        .sortedBy { it.priority }
+    val distinctTypes = enabledProfiles.map { it.type }.distinct()
+    val allSubtitle = when (enabledProfiles.size) {
+        0 -> "No active remote servers"
+        1 -> "1 active server · ${enabledProfiles.single().name}"
+        else -> "${enabledProfiles.size} active servers"
+    }
+    val typeFilters = if (distinctTypes.size > 1) {
+        distinctTypes.map { type ->
+            ViewMyTypeFilter(
+                type = type,
+                key = "TYPE:${type.name}",
+                label = backendTypeLabel(type),
+                count = enabledProfiles.count { it.type == type },
+            )
+        }
+    } else {
+        emptyList()
+    }
+    val profileFilters = enabledProfiles.map { profile ->
+        val user = profileUsernameLabel(profile)
+        val subtitleParts = buildList {
+            add(backendTypeLabel(profile.type))
+            if (user.isNotBlank()) add(user)
+            if (profile.url.isNotBlank()) add(profile.url)
+        }
+        val subtitle = if (profile.id in degradedProfileIds) {
+            "${subtitleParts.joinToString(" · ")} · Degraded"
+        } else {
+            subtitleParts.joinToString(" · ")
+        }
+        ViewMyProfileFilter(
+            id = profile.id,
+            key = "PROFILE:${profile.id}",
+            name = profile.name,
+            subtitle = subtitle,
+        )
+    }
+    return ViewMyFilterModel(
+        allSubtitle = allSubtitle,
+        typeFilters = typeFilters,
+        profileFilters = profileFilters,
+        showDeviceFiles = showDeviceFiles,
+    )
+}
+
 private fun backendTypeLabel(type: BackendType): String = when (type) {
     BackendType.NAVIDROME -> "Navidrome"
     BackendType.OPENSUBSONIC -> "OpenSubsonic"
@@ -201,7 +275,9 @@ fun LibraryScreen(
     val sourceFilter by vm.librarySourceFilter.collectAsStateWithLifecycle()
     val healthState by vm.healthState.collectAsStateWithLifecycle()
     val showDeviceFiles = settings?.showDeviceFiles == true
-    val enabledProfiles = remember(profiles) { profiles.filter { it.enabled } }
+    val enabledProfiles = remember(profiles) {
+        profiles.filter { it.enabled }.sortedBy { it.priority }
+    }
     val canSwitchSource = showDeviceFiles || profiles.isNotEmpty()
     val isDeviceMode = showDeviceFiles && sourceFilter.equals("DEVICE", ignoreCase = true)
     val currentTitle = remember(sourceFilter, isDeviceMode, showDeviceFiles, profiles, enabledProfiles) {
@@ -723,13 +799,15 @@ fun LibraryScreen(
             vm.setLibrarySourceFilter(key)
             scope.launch { sheetState.hide() }.invokeOnCompletion { showViewMySheet = false }
         }
-        val distinctTypes = remember(enabledProfiles) {
-            enabledProfiles.map { it.type }.distinct()
+        val degradedIds = remember(healthState.profiles) {
+            healthState.profiles.filterValues { it.degraded }.keys
         }
-        val allSubtitle = when (enabledProfiles.size) {
-            0 -> "No active remote servers"
-            1 -> "1 active server · ${enabledProfiles.single().name}"
-            else -> "${enabledProfiles.size} active servers"
+        val filterModel = remember(profiles, showDeviceFiles, degradedIds) {
+            buildViewMyFilterModel(
+                profiles = profiles,
+                showDeviceFiles = showDeviceFiles,
+                degradedProfileIds = degradedIds,
+            )
         }
 
         ModalBottomSheet(
@@ -753,53 +831,36 @@ fun LibraryScreen(
                 )
                 ViewMySourceRow(
                     title = "All sources",
-                    subtitle = allSubtitle,
+                    subtitle = filterModel.allSubtitle,
                     selected = !isDeviceMode && sourceFilter.equals("ALL", ignoreCase = true),
                     onClick = { selectFilter("ALL") },
                 )
 
-                if (distinctTypes.size > 1) {
-                    distinctTypes.forEach { type ->
-                        Spacer(Modifier.height(6.dp))
-                        val count = enabledProfiles.count { it.type == type }
-                        val typeKey = "TYPE:${type.name}"
-                        ViewMySourceRow(
-                            title = backendTypeLabel(type),
-                            subtitle = "$count ${if (count == 1) "server" else "servers"}",
-                            selected = !isDeviceMode && sourceFilter.equals(typeKey, ignoreCase = true),
-                            onClick = { selectFilter(typeKey) },
-                        )
-                    }
-                }
-
-                enabledProfiles.forEach { profile ->
+                filterModel.typeFilters.forEach { typeFilter ->
                     Spacer(Modifier.height(6.dp))
-                    val profileKey = "PROFILE:${profile.id}"
-                    val user = profileUsernameLabel(profile)
-                    val subtitleParts = buildList {
-                        add(backendTypeLabel(profile.type))
-                        if (user.isNotBlank()) add(user)
-                        if (profile.url.isNotBlank()) add(profile.url)
-                    }
-                    val degraded = healthState.profiles[profile.id]?.degraded == true
-                    val subtitle = if (degraded) {
-                        "${subtitleParts.joinToString(" · ")} · Degraded"
-                    } else {
-                        subtitleParts.joinToString(" · ")
-                    }
-                    val isSelected = !isDeviceMode && (
-                        sourceFilter.equals(profileKey, ignoreCase = true) ||
-                            sourceFilter == profile.id
-                        )
                     ViewMySourceRow(
-                        title = profile.name,
-                        subtitle = subtitle,
-                        selected = isSelected,
-                        onClick = { selectFilter(profileKey) },
+                        title = typeFilter.label,
+                        subtitle = "${typeFilter.count} ${if (typeFilter.count == 1) "server" else "servers"}",
+                        selected = !isDeviceMode && sourceFilter.equals(typeFilter.key, ignoreCase = true),
+                        onClick = { selectFilter(typeFilter.key) },
                     )
                 }
 
-                if (showDeviceFiles) {
+                filterModel.profileFilters.forEach { profileFilter ->
+                    Spacer(Modifier.height(6.dp))
+                    val isSelected = !isDeviceMode && (
+                        sourceFilter.equals(profileFilter.key, ignoreCase = true) ||
+                            sourceFilter == profileFilter.id
+                        )
+                    ViewMySourceRow(
+                        title = profileFilter.name,
+                        subtitle = profileFilter.subtitle,
+                        selected = isSelected,
+                        onClick = { selectFilter(profileFilter.key) },
+                    )
+                }
+
+                if (filterModel.showDeviceFiles) {
                     Spacer(Modifier.height(6.dp))
                     ViewMySourceRow(
                         title = "Device files",
