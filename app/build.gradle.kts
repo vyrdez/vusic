@@ -156,6 +156,7 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.mockwebserver)
     // Part B: on-device MediaBrowser client verifying the Auto browse tree.
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

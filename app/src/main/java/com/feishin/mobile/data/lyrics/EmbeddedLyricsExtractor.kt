@@ -133,7 +133,7 @@ object EmbeddedLyricsExtractor {
         else -> StandardCharsets.ISO_8859_1
     }
 
-    private fun parseUslt(data: ByteArray): Lyrics? {
+    internal fun parseUslt(data: ByteArray): Lyrics? {
         if (data.size < 5) return null
         val encoding = parseCharset(data[0])
         val lang = String(data, 1, 3, StandardCharsets.ISO_8859_1)
@@ -164,7 +164,7 @@ object EmbeddedLyricsExtractor {
         }
     }
 
-    private fun parseSylt(data: ByteArray): Lyrics? {
+    internal fun parseSylt(data: ByteArray): Lyrics? {
         if (data.size < 6) return null
         val encoding = parseCharset(data[0])
         val lang = String(data, 1, 3, StandardCharsets.ISO_8859_1)
@@ -257,7 +257,7 @@ object EmbeddedLyricsExtractor {
         return null
     }
 
-    private fun parseVorbisComment(data: ByteArray): Lyrics? {
+    internal fun parseVorbisComment(data: ByteArray): Lyrics? {
         val bais = ByteArrayInputStream(data)
         fun readIntLe(): Int {
             val b = ByteArray(4)
@@ -344,40 +344,68 @@ object EmbeddedLyricsExtractor {
     private fun findMp4AtomLyrics(stream: InputStream, maxBytes: Long): Lyrics? {
         var remaining = maxBytes
         val header = ByteArray(8)
+        val extHeader = ByteArray(8)
         while (remaining >= 8) {
-            val n = stream.read(header)
-            if (n < 8) break
-            remaining -= 8
-            val size = (header[0].toLong() and 0xFF shl 24) or
-                (header[1].toLong() and 0xFF shl 16) or
-                (header[2].toLong() and 0xFF shl 8) or
+            if (readExact(stream, header) < 8) break
+            if (remaining != Long.MAX_VALUE) remaining -= 8
+
+            val size32 = ((header[0].toLong() and 0xFF) shl 24) or
+                ((header[1].toLong() and 0xFF) shl 16) or
+                ((header[2].toLong() and 0xFF) shl 8) or
                 (header[3].toLong() and 0xFF)
             val atomType = String(header, 4, 4, StandardCharsets.ISO_8859_1)
-            val contentSize = (size - 8).coerceAtLeast(0)
+
+            val contentSize: Long = when {
+                size32 == 1L -> {
+                    if (remaining < 8) break
+                    if (readExact(stream, extHeader) < 8) break
+                    if (remaining != Long.MAX_VALUE) remaining -= 8
+                    val size64 = ((extHeader[0].toLong() and 0xFF) shl 56) or
+                        ((extHeader[1].toLong() and 0xFF) shl 48) or
+                        ((extHeader[2].toLong() and 0xFF) shl 40) or
+                        ((extHeader[3].toLong() and 0xFF) shl 32) or
+                        ((extHeader[4].toLong() and 0xFF) shl 24) or
+                        ((extHeader[5].toLong() and 0xFF) shl 16) or
+                        ((extHeader[6].toLong() and 0xFF) shl 8) or
+                        (extHeader[7].toLong() and 0xFF)
+                    if (size64 < 16L) break
+                    size64 - 16L
+                }
+                size32 == 0L -> remaining
+                size32 >= 8L -> size32 - 8L
+                else -> break
+            }
 
             when (atomType) {
                 "moov", "udta", "ilst" -> {
-                    val result = findMp4AtomLyrics(stream, contentSize)
+                    val childBudget = if (remaining == Long.MAX_VALUE) contentSize else minOf(contentSize, remaining)
+                    val result = findMp4AtomLyrics(stream, childBudget)
                     if (result != null) return result
-                    remaining -= contentSize
+                    if (remaining != Long.MAX_VALUE) {
+                        remaining = (remaining - childBudget).coerceAtLeast(0L)
+                    }
                 }
                 "meta" -> {
                     // Meta atom has 4 bytes flags/version before sub-atoms
-                    if (contentSize >= 4) {
-                        stream.skip(4)
-                        val result = findMp4AtomLyrics(stream, contentSize - 4)
+                    val childBudget = if (remaining == Long.MAX_VALUE) contentSize else minOf(contentSize, remaining)
+                    if (childBudget >= 4) {
+                        skipExact(stream, 4)
+                        val result = findMp4AtomLyrics(stream, childBudget - 4)
                         if (result != null) return result
-                        remaining -= contentSize
                     } else {
-                        stream.skip(contentSize)
-                        remaining -= contentSize
+                        skipExact(stream, childBudget)
+                    }
+                    if (remaining != Long.MAX_VALUE) {
+                        remaining = (remaining - childBudget).coerceAtLeast(0L)
                     }
                 }
                 "©lyr" -> {
                     if (contentSize <= 0 || contentSize > MAX_TAG_BYTES) return null
                     val atomData = ByteArray(contentSize.toInt())
-                    stream.read(atomData)
-                    remaining -= contentSize
+                    if (readExact(stream, atomData) < atomData.size) return null
+                    if (remaining != Long.MAX_VALUE) {
+                        remaining = (remaining - contentSize).coerceAtLeast(0L)
+                    }
                     // Data atom inside ©lyr: 4 size + 4 'data' + 4 type + 4 locale + text
                     if (atomData.size >= 16) {
                         val subType = String(atomData, 4, 4, StandardCharsets.ISO_8859_1)
@@ -395,11 +423,41 @@ object EmbeddedLyricsExtractor {
                     }
                 }
                 else -> {
-                    stream.skip(contentSize)
-                    remaining -= contentSize
+                    if (contentSize == Long.MAX_VALUE) break
+                    val toSkip = if (remaining == Long.MAX_VALUE) contentSize else minOf(contentSize, remaining)
+                    if (skipExact(stream, toSkip) < toSkip) break
+                    if (remaining != Long.MAX_VALUE) {
+                        remaining = (remaining - toSkip).coerceAtLeast(0L)
+                    }
                 }
             }
         }
         return null
+    }
+
+    private fun readExact(stream: InputStream, buf: ByteArray): Int {
+        var total = 0
+        while (total < buf.size) {
+            val n = stream.read(buf, total, buf.size - total)
+            if (n <= 0) break
+            total += n
+        }
+        return total
+    }
+
+    private fun skipExact(stream: InputStream, bytes: Long): Long {
+        var remaining = bytes
+        val discard = ByteArray(4096)
+        while (remaining > 0) {
+            val skipped = stream.skip(remaining)
+            if (skipped > 0) {
+                remaining -= skipped
+            } else {
+                val n = stream.read(discard, 0, minOf(remaining, discard.size.toLong()).toInt())
+                if (n <= 0) break
+                remaining -= n
+            }
+        }
+        return bytes - remaining
     }
 }
