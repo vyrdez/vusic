@@ -103,6 +103,7 @@ class PlayerService : MediaLibraryService() {
     @Inject lateinit var imageLoader: ImageLoader
     @Inject lateinit var queueStore: com.feishin.mobile.data.queue.QueueStore
     @Inject lateinit var offlineSync: dagger.Lazy<OfflineSyncStore>
+    @Inject lateinit var localHistoryStore: com.feishin.mobile.data.history.LocalHistoryStore
     @Inject @Named("streaming") lateinit var okHttpClient: okhttp3.OkHttpClient
     @Inject lateinit var cache: androidx.media3.datasource.cache.SimpleCache
 
@@ -265,9 +266,13 @@ class PlayerService : MediaLibraryService() {
                             isDirect = startedNext.isDirect,
                         )
                     }
-                } else if (repo.capabilitiesFor(id).supportsScrobbling) {
-                    // "Now playing" scrobble + reset the submission rule for non-Jellyfin backends.
-                    scope.launch { repo.scrobble(id, submission = false) }
+                } else if (!isLocal(mediaItem)) {
+                    // Reset submission rule for non-Jellyfin tracks (Subsonic + Google Drive);
+                    // only send "now playing" scrobble when backend supports scrobbling.
+                    scrobblePolicy.reset()
+                    if (repo.capabilitiesFor(id).supportsScrobbling) {
+                        scope.launch { repo.scrobble(id, submission = false) }
+                    }
                 }
                 startTicker()
                 pushWidget()
@@ -287,8 +292,16 @@ class PlayerService : MediaLibraryService() {
                                 playSessionId = session.playSessionId,
                             )
                         }
-                    } else if (id != null && !isJellyfinTrack(id) && repo.capabilitiesFor(id).supportsScrobbling && scrobblePolicy.onTrackEnded(id, player?.duration ?: 0L)) {
-                        scope.launch { repo.scrobble(id, submission = true) }
+                    } else if (id != null && !isJellyfinTrack(id) && !isLocal(item) && scrobblePolicy.onTrackEnded(id, player?.duration ?: 0L)) {
+                        val track = resolvedTrackFor(item, id)
+                        scope.launch {
+                            submitPlayOrRecordLocal(
+                                id = id,
+                                trackProvider = { track },
+                                repo = repo,
+                                localHistoryStore = localHistoryStore,
+                            )
+                        }
                     }
                 }
             }
@@ -559,14 +572,24 @@ class PlayerService : MediaLibraryService() {
                                 isDirect = dueSession.isDirect,
                             )
                         }
-                    } else if (!isJellyfinTrack(id) && repo.capabilitiesFor(id).supportsScrobbling) {
+                    } else if (!isJellyfinTrack(id) && !isLocal(item)) {
                         val submit = scrobblePolicy.onProgress(
                             id = id,
                             positionMs = p.currentPosition,
                             durationMs = p.duration,
                             isPlaying = true,
                         )
-                        if (submit) repo.scrobble(id, submission = true)
+                        if (submit) {
+                            val track = resolvedTrackFor(item, id)
+                            scope.launch {
+                                submitPlayOrRecordLocal(
+                                    id = id,
+                                    trackProvider = { track },
+                                    repo = repo,
+                                    localHistoryStore = localHistoryStore,
+                                )
+                            }
+                        }
                     }
                 }
                 delay(1_000)
@@ -607,6 +630,11 @@ class PlayerService : MediaLibraryService() {
             resolvedSongs[t.id] = t
         }
     }
+
+    private fun resolvedTrackFor(item: MediaItem, id: String): Track? =
+        resolvedSongs[id]
+            ?: playerManager.current.value?.takeIf { it.id == id }
+            ?: TrackMediaItems.toTrack(item)?.copy(id = id)
 
     private fun isLocal(mediaItem: MediaItem?): Boolean {
         // Keyed on the id we mint for MediaStore tracks. Downloaded server songs
@@ -1177,6 +1205,20 @@ class PlayerService : MediaLibraryService() {
         const val EXTRA_PARENT_ID = "auto_parent_id"
         const val EXTRA_ACTION = "auto_action"
         private const val STOP_REPORT_TIMEOUT_MS = 2_500L
+
+        internal suspend fun submitPlayOrRecordLocal(
+            id: String,
+            trackProvider: () -> Track?,
+            repo: com.feishin.mobile.domain.repo.MusicDataRepository,
+            localHistoryStore: com.feishin.mobile.data.history.LocalHistoryStore,
+        ) {
+            if (repo.capabilitiesFor(id).supportsScrobbling) {
+                repo.scrobble(id, submission = true)
+            } else {
+                val track = trackProvider() ?: return
+                localHistoryStore.recordPlay(track)
+            }
+        }
     }
 }
 

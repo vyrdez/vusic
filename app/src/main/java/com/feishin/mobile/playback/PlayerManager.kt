@@ -1044,14 +1044,23 @@ class PlayerManager @Inject constructor(
         rememberRadioPlayed(seed.id)
         recordRecent(seed)
         scope.launch {
-            // Offline: build the batch from downloaded songs only. Never an error.
-            if (isOffline()) {
-                val batch = localRadioBatch(seed, exclusions())
+            val offline = isOffline()
+            // Offline or non-radio backend (e.g. Google Drive): build the batch locally via OfflineRadio.
+            if (offline || !repo.capabilitiesFor(seed.id).supportsRadioMix) {
+                val batchSize = settings.flow.first().radioBatchSize
+                val batch = localRadioBatch(
+                    seed = seed,
+                    excludeIds = exclusions(),
+                    want = batchSize,
+                    includeDriveTracks = !offline,
+                )
                 if (gen != radioTrigger.currentGeneration()) return@launch
                 if (batch.isNotEmpty()) {
                     radioFailures = 0
                     appendRadioBatch(batch, gen)
                     persist()
+                } else if (!offline) {
+                    onLibraryEmpty()
                 }
                 return@launch
             }
@@ -1128,10 +1137,21 @@ class PlayerManager @Inject constructor(
         prefetch.onQueue(_queue.value.toList(), _currentIndex.value)
     }
 
-    /** Offline radio: same genre first, then any downloaded song. */
-    private fun localRadioBatch(seed: Track, excludeIds: Set<String>): List<Track> {
-        val downloaded = _downloadedTracks
-        return OfflineRadio.pick(downloaded, seed.genre, excludeIds, RadioProgrammer.BATCH_SIZE)
+    /** Offline / local radio: same genre first, then downloaded + Drive tracks when online. */
+    private suspend fun localRadioBatch(
+        seed: Track,
+        excludeIds: Set<String>,
+        want: Int = RadioProgrammer.BATCH_SIZE,
+        includeDriveTracks: Boolean = false,
+    ): List<Track> {
+        refreshDownloadedTracks()
+        return fetcher.fetchLocalBatch(
+            seed = seed,
+            excludeIds = excludeIds,
+            want = want,
+            includeDriveTracks = includeDriveTracks,
+            downloadedOverride = _downloadedTracks,
+        )
     }
 
     /** Snapshot of downloaded tracks, refreshed alongside the queue. */
@@ -1155,12 +1175,19 @@ class PlayerManager @Inject constructor(
         if (!radioTrigger.tryBegin(gen)) return
         scope.launch {
             try {
-                // Offline: keep the queue alive from downloaded songs only. No
-                // retry/backoff loop is needed because this never hits the network.
-                if (isOffline()) {
+                val offline = isOffline()
+                val seedForRouting = _radioSeed.value ?: _current.value
+                // Offline or non-radio backend (e.g. Google Drive): keep the queue alive via OfflineRadio.
+                if (offline || (seedForRouting != null && !repo.capabilitiesFor(seedForRouting.id).supportsRadioMix)) {
                     val seed = _current.value ?: _radioSeed.value
                     if (seed != null) {
-                        val batch = localRadioBatch(seed, exclusions())
+                        val batchSize = settings.flow.first().radioBatchSize
+                        val batch = localRadioBatch(
+                            seed = seed,
+                            excludeIds = exclusions(),
+                            want = batchSize,
+                            includeDriveTracks = !offline,
+                        )
                         if (gen == radioTrigger.currentGeneration() && batch.isNotEmpty()) {
                             appendRadioBatch(batch, gen)
                             persist()
