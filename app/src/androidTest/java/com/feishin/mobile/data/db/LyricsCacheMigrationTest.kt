@@ -62,7 +62,7 @@ class LyricsCacheMigrationTest {
                 MusicDatabase::class.java,
                 dbName,
             )
-                .addMigrations(MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build()
             try {
                 runBlocking {

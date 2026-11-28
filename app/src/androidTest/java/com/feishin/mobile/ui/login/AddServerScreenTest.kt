@@ -15,6 +15,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -157,7 +158,7 @@ class AddServerScreenTest {
             ),
         )
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("alice@gmail.com").performScrollTo().assertIsDisplayed()
+        composeRule.onAllNodesWithText("alice@gmail.com").onFirst().performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Choose folder").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Test & Connect").performScrollTo().performClick()
         composeRule.waitForIdle()
