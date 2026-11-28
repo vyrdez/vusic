@@ -1,6 +1,9 @@
 package com.feishin.mobile.ui.settings
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -81,6 +84,7 @@ import com.feishin.mobile.core.common.QualityPolicy
 import com.feishin.mobile.core.common.ReplayGainMode
 import com.feishin.mobile.data.auth.ProfileAuthStatus
 import com.feishin.mobile.domain.model.BackendCapabilities
+import com.feishin.mobile.domain.model.BackendType
 import com.feishin.mobile.domain.model.ServerProfile
 import com.feishin.mobile.ui.login.LoginViewModel
 import com.feishin.mobile.ui.login.ServerFormContent
@@ -445,8 +449,40 @@ private fun ServerAccountScreen(
     val expandedIdsState = vm.expandedProfileIds.collectAsStateWithLifecycle()
     val online by vm.isOnline.collectAsStateWithLifecycle()
     val counts by vm.libraryCounts.collectAsStateWithLifecycle()
+    val driveTrackCounts by vm.driveTrackCounts.collectAsStateWithLifecycle()
 
     var pendingRemoveProfile by remember { mutableStateOf<ServerProfile?>(null) }
+    var pendingReconnectProfileId by remember { mutableStateOf("") }
+    var pendingReconnectEmail by remember { mutableStateOf("") }
+
+    val driveReconnectLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult(),
+    ) { activityResult ->
+        if (pendingReconnectProfileId.isNotBlank()) {
+            vm.onDriveReconnectResolution(
+                profileId = pendingReconnectProfileId,
+                resultCode = activityResult.resultCode,
+                data = activityResult.data,
+                fallbackEmail = pendingReconnectEmail,
+            )
+            pendingReconnectProfileId = ""
+            pendingReconnectEmail = ""
+        }
+    }
+
+    LaunchedEffect(vm) {
+        vm.events.collect { event ->
+            when (event) {
+                is SettingsEvent.LaunchDriveReconnect -> {
+                    pendingReconnectProfileId = event.profileId
+                    pendingReconnectEmail = event.email
+                    driveReconnectLauncher.launch(
+                        IntentSenderRequest.Builder(event.intentSender).build(),
+                    )
+                }
+            }
+        }
+    }
 
     var displayProfiles by remember(profiles) { mutableStateOf(profiles) }
     val listState = rememberLazyListState()
@@ -504,7 +540,7 @@ private fun ServerAccountScreen(
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Add a Navidrome, OpenSubsonic or Jellyfin server to stream your remote library.",
+                            "Add a Navidrome, OpenSubsonic, Jellyfin or Google Drive backend to stream your music library.",
                             style = MaterialTheme.typography.bodySmall,
                             color = VusicColors.SecondaryText,
                         )
@@ -526,17 +562,38 @@ private fun ServerAccountScreen(
             val health = healthState.profiles[profile.id]
             val authStatus = authStates[profile.id] ?: ProfileAuthStatus.OK
             val scanState = profileScanStates[profile.id] ?: ScanUiState.Idle()
+            val indexedTrackCount = driveTrackCounts[profile.id] ?: 0
+            val quotaLimited = (scanState as? ScanUiState.Finished)?.quotaLimited == true ||
+                (scanState as? ScanUiState.Scanning)?.quotaLimited == true
 
-            val cardUi = remember(profile, serverInfo) {
-                profile.toServerProfileUi(serverInfo)
+            val cardUi = remember(profile, serverInfo, indexedTrackCount, quotaLimited) {
+                profile.toServerProfileUi(
+                    serverInfo = serverInfo,
+                    indexedTrackCount = indexedTrackCount,
+                    quotaLimited = quotaLimited,
+                )
             }
-            val statusUi = remember(profile.enabled, online, testState, health, authStatus) {
+            val statusUi = remember(
+                profile.type,
+                profile.enabled,
+                online,
+                testState,
+                health,
+                authStatus,
+                scanState,
+                indexedTrackCount,
+                quotaLimited,
+            ) {
                 resolveProfileStatus(
                     enabled = profile.enabled,
                     online = online,
                     testState = testState,
                     health = health,
                     authStatus = authStatus,
+                    backendType = profile.type,
+                    scanState = scanState,
+                    indexedTrackCount = indexedTrackCount,
+                    quotaLimited = quotaLimited,
                 )
             }
             val scanUi = remember(profile.type, profile.enabled, online, scanState) {
@@ -545,6 +602,7 @@ private fun ServerAccountScreen(
                     enabled = profile.enabled,
                     online = online,
                     scanState = scanState,
+                    backendType = profile.type,
                 )
             }
 
@@ -580,6 +638,7 @@ private fun ServerAccountScreen(
                     onScan = { vm.startScan(profile.id) },
                     onCopyEndpoint = { vm.uiMessenger.show("Endpoint URL copied") },
                     onRequestRemove = { pendingRemoveProfile = profile },
+                    onReconnectDrive = { vm.reconnectGoogleDrive(profile) },
                 )
             }
         }

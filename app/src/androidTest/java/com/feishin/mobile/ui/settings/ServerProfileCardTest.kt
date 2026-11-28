@@ -1,5 +1,8 @@
 package com.feishin.mobile.ui.settings
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -14,7 +17,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.feishin.mobile.data.auth.ProfileAuthStatus
 import com.feishin.mobile.domain.model.BackendCapabilities
 import com.feishin.mobile.domain.model.BackendType
 import com.feishin.mobile.ui.theme.FeishinTheme
@@ -34,20 +39,27 @@ class ServerProfileCardTest {
         id: String = "p1",
         name: String = "Home Jellyfin",
         type: BackendType = BackendType.JELLYFIN,
+        username: String = "alice",
         enabled: Boolean = true,
         extensions: List<String> = emptyList(),
+        driveRootFolderName: String? = null,
+        indexedTrackCount: Int = 0,
+        quotaLimited: Boolean = false,
     ) = ServerProfileUi(
         id = id,
         name = name,
         type = type,
         url = "https://music.example.com:8096",
         host = "music.example.com:8096",
-        username = "alice",
+        username = username,
         enabled = enabled,
         extensions = ImmutableStrings(extensions),
         capabilities = BackendCapabilities.forType(type),
         productLabel = "Jellyfin",
         apiVersion = "10.9.11",
+        driveRootFolderName = driveRootFolderName,
+        indexedTrackCount = indexedTrackCount,
+        quotaLimited = quotaLimited,
     )
 
     private fun hasStateDescription(expected: String) = SemanticsMatcher.expectValue(
@@ -218,5 +230,143 @@ class ServerProfileCardTest {
 
         composeRule.onNodeWithContentDescription("Move Last Server up").assertIsEnabled()
         composeRule.onNodeWithContentDescription("Move Last Server down").assertIsNotEnabled()
+    }
+
+    @Test
+    fun googleDriveCard_showsEmailSubline_detailsRows_chips_reIndexAndReconnect() {
+        var reconnectClicks = 0
+        val driveUi = sampleUi(
+            id = "gd1",
+            name = "Personal Drive",
+            type = BackendType.GOOGLE_DRIVE,
+            username = "alice@gmail.com",
+            driveRootFolderName = "Music",
+            indexedTrackCount = 2431,
+        )
+        val status = resolveProfileStatus(
+            enabled = true,
+            online = true,
+            testState = TestState.Idle,
+            health = null,
+            authStatus = ProfileAuthStatus.OK,
+            backendType = BackendType.GOOGLE_DRIVE,
+            indexedTrackCount = 2431,
+        )
+        assertEquals("Indexed · 2,431 tracks", status.label)
+
+        var authStatus by mutableStateOf(ProfileAuthStatus.OK)
+
+        composeRule.setContent {
+            FeishinTheme(dark = true) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    val currentStatus = resolveProfileStatus(
+                        enabled = true,
+                        online = true,
+                        testState = TestState.Idle,
+                        health = null,
+                        authStatus = authStatus,
+                        backendType = BackendType.GOOGLE_DRIVE,
+                        indexedTrackCount = 2431,
+                    )
+                    ServerProfileCard(
+                        ui = driveUi,
+                        rank = 1,
+                        expanded = true,
+                        onToggleExpanded = {},
+                        isDragging = false,
+                        dragHandleModifier = Modifier,
+                        canMoveUp = false,
+                        canMoveDown = false,
+                        status = currentStatus,
+                        isTesting = false,
+                        scanUi = resolveProfileScanUi(
+                            capabilities = BackendCapabilities.forType(BackendType.GOOGLE_DRIVE),
+                            enabled = true,
+                            online = true,
+                            scanState = ScanUiState.Finished(
+                                count = 2431,
+                                lastScan = "2026-11-28T19:30:00Z",
+                            ),
+                            backendType = BackendType.GOOGLE_DRIVE,
+                        ),
+                        onMoveUp = {},
+                        onMoveDown = {},
+                        onToggleEnabled = {},
+                        onEdit = {},
+                        onTestConnection = {},
+                        onScan = {},
+                        onCopyEndpoint = {},
+                        onRequestRemove = {},
+                        onReconnectDrive = { reconnectClicks++ },
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Google Drive").assertIsDisplayed()
+        composeRule.onNodeWithText("alice@gmail.com · Indexed · 2,431 tracks").assertIsDisplayed()
+        composeRule.onNodeWithText("Music folder").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Music").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Google Drive v3").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Last index").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Local playlists").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Local favorites").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("No scrobbling").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Raw stream").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Re-index").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Reconnect Google Drive").assertDoesNotExist()
+
+        authStatus = ProfileAuthStatus.SESSION_EXPIRED
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("alice@gmail.com · Session expired").assertIsDisplayed()
+        composeRule.onNodeWithText("Reconnect Google Drive").performScrollTo().performClick()
+        assertEquals(1, reconnectClicks)
+    }
+
+    @Test
+    fun googleDriveStatus_formatsDiscoveringIndexingQuotaAndOffline() {
+        val discovering = resolveProfileStatus(
+            enabled = true,
+            online = true,
+            testState = TestState.Idle,
+            health = null,
+            authStatus = ProfileAuthStatus.OK,
+            backendType = BackendType.GOOGLE_DRIVE,
+            scanState = ScanUiState.Scanning(count = 420, twoStage = true),
+        )
+        assertEquals("Discovering… 420 files", discovering.label)
+
+        val indexing = resolveProfileStatus(
+            enabled = true,
+            online = true,
+            testState = TestState.Idle,
+            health = null,
+            authStatus = ProfileAuthStatus.OK,
+            backendType = BackendType.GOOGLE_DRIVE,
+            scanState = ScanUiState.Scanning(count = 160, totalCount = 420, twoStage = true),
+        )
+        assertEquals("Indexing… 38% (160/420)", indexing.label)
+
+        val quota = resolveProfileStatus(
+            enabled = true,
+            online = true,
+            testState = TestState.Idle,
+            health = null,
+            authStatus = ProfileAuthStatus.OK,
+            backendType = BackendType.GOOGLE_DRIVE,
+            scanState = ScanUiState.Finished(count = 100, quotaLimited = true),
+            quotaLimited = true,
+        )
+        assertEquals("Quota limited", quota.label)
+
+        val offline = resolveProfileStatus(
+            enabled = true,
+            online = false,
+            testState = TestState.Idle,
+            health = null,
+            authStatus = ProfileAuthStatus.OK,
+            backendType = BackendType.GOOGLE_DRIVE,
+        )
+        assertEquals("Offline", offline.label)
     }
 }

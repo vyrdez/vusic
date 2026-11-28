@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -101,6 +102,9 @@ internal data class ServerProfileUi(
     val capabilities: BackendCapabilities,
     val productLabel: String?,
     val apiVersion: String?,
+    val driveRootFolderName: String? = null,
+    val indexedTrackCount: Int = 0,
+    val quotaLimited: Boolean = false,
 )
 
 internal enum class ProfileStatusTone {
@@ -114,6 +118,7 @@ internal enum class ProfileStatusTone {
 internal data class ProfileStatusUi(
     val tone: ProfileStatusTone,
     val label: String,
+    val isSessionExpired: Boolean = false,
 )
 
 @Immutable
@@ -121,6 +126,7 @@ internal data class ProfileScanUi(
     val isScanning: Boolean,
     val sublabel: String,
     val canScan: Boolean,
+    val lastScanLabel: String? = null,
 )
 
 internal fun backendLabel(type: BackendType): String = when (type) {
@@ -151,7 +157,11 @@ internal fun extractHost(url: String): String {
     }
 }
 
-internal fun ServerProfile.toServerProfileUi(serverInfo: ServerInfo? = null): ServerProfileUi = ServerProfileUi(
+internal fun ServerProfile.toServerProfileUi(
+    serverInfo: ServerInfo? = null,
+    indexedTrackCount: Int = 0,
+    quotaLimited: Boolean = false,
+): ServerProfileUi = ServerProfileUi(
     id = id,
     name = name,
     type = type,
@@ -163,6 +173,14 @@ internal fun ServerProfile.toServerProfileUi(serverInfo: ServerInfo? = null): Se
     capabilities = BackendCapabilities.forType(type),
     productLabel = serverInfo?.product?.takeIf { it.isNotBlank() },
     apiVersion = serverInfo?.apiVersion?.takeIf { it.isNotBlank() },
+    driveRootFolderName = if (type == BackendType.GOOGLE_DRIVE) {
+        driveRootFolderName?.takeIf { it.isNotBlank() }
+            ?: if (driveRootFolderId.isNullOrBlank()) "All audio files" else null
+    } else {
+        driveRootFolderName
+    },
+    indexedTrackCount = indexedTrackCount,
+    quotaLimited = quotaLimited,
 )
 
 internal fun resolveProfileStatus(
@@ -172,6 +190,10 @@ internal fun resolveProfileStatus(
     health: ProfileHealth?,
     authStatus: ProfileAuthStatus,
     latencyMs: Long? = null,
+    backendType: BackendType = BackendType.NAVIDROME,
+    scanState: ScanUiState? = null,
+    indexedTrackCount: Int = 0,
+    quotaLimited: Boolean = false,
 ): ProfileStatusUi = when {
     testState is TestState.Testing -> ProfileStatusUi(
         tone = ProfileStatusTone.TESTING,
@@ -184,15 +206,52 @@ internal fun resolveProfileStatus(
     authStatus == ProfileAuthStatus.SESSION_EXPIRED -> ProfileStatusUi(
         tone = ProfileStatusTone.ERROR,
         label = "Session expired",
+        isSessionExpired = true,
     )
+    backendType == BackendType.GOOGLE_DRIVE && scanState is ScanUiState.Scanning -> {
+        val total = scanState.totalCount
+        val scanLabel = when {
+            total != null -> {
+                val pct = if (total > 0) {
+                    ((scanState.count.coerceIn(0, total) * 100L) / total).toInt()
+                } else {
+                    100
+                }
+                "Indexing… $pct% (${formatScanCount(scanState.count)}/${formatScanCount(total)})"
+            }
+            scanState.count > 0 -> "Discovering… ${formatScanCount(scanState.count)} files"
+            else -> "Discovering…"
+        }
+        ProfileStatusUi(
+            tone = ProfileStatusTone.TESTING,
+            label = scanLabel,
+        )
+    }
     !online -> ProfileStatusUi(
         tone = ProfileStatusTone.OFFLINE_OR_DISABLED,
         label = "Offline",
     )
-    testState is TestState.Failed || health?.degraded == true -> ProfileStatusUi(
+    backendType == BackendType.GOOGLE_DRIVE &&
+        (quotaLimited || (scanState is ScanUiState.Finished && scanState.quotaLimited)) -> ProfileStatusUi(
         tone = ProfileStatusTone.ERROR,
-        label = "Unreachable",
+        label = "Quota limited",
     )
+    testState is TestState.Failed || health?.degraded == true ||
+        (backendType == BackendType.GOOGLE_DRIVE && scanState is ScanUiState.Error) -> ProfileStatusUi(
+        tone = ProfileStatusTone.ERROR,
+        label = if (backendType == BackendType.GOOGLE_DRIVE && scanState is ScanUiState.Error) {
+            scanState.message
+        } else {
+            "Unreachable"
+        },
+    )
+    backendType == BackendType.GOOGLE_DRIVE -> {
+        val noun = if (indexedTrackCount == 1) "track" else "tracks"
+        ProfileStatusUi(
+            tone = ProfileStatusTone.HEALTHY,
+            label = "Indexed · ${formatScanCount(indexedTrackCount)} $noun",
+        )
+    }
     else -> ProfileStatusUi(
         tone = ProfileStatusTone.HEALTHY,
         label = if (latencyMs != null) "Healthy · $latencyMs ms" else "Healthy",
@@ -204,9 +263,11 @@ internal fun resolveProfileScanUi(
     enabled: Boolean,
     online: Boolean,
     scanState: ScanUiState,
+    backendType: BackendType = BackendType.NAVIDROME,
 ): ProfileScanUi {
     val isScanning = scanState is ScanUiState.Scanning
     val canScan = enabled && online && capabilities.supportsLibraryScan && !isScanning
+    val formattedLastScan = formatLastScan(scanState.lastScan)
     val sublabel = when {
         !capabilities.supportsLibraryScan -> "Not supported"
         !enabled -> "Disabled"
@@ -232,20 +293,25 @@ internal fun resolveProfileScanUi(
             }
         }
         scanState is ScanUiState.Finished -> {
-            val formatted = formatLastScan(scanState.lastScan)
-            val base = if (formatted != null) "Scanned $formatted" else "Scan finished"
+            val base = if (formattedLastScan != null) "Scanned $formattedLastScan" else "Scan finished"
             if (scanState.quotaLimited) "$base (rate limited)" else base
         }
         scanState is ScanUiState.Error -> scanState.message
         else -> {
-            val formatted = formatLastScan(scanState.lastScan)
-            if (formatted != null) "Scanned $formatted" else "Ready to scan"
+            if (formattedLastScan != null) {
+                "Scanned $formattedLastScan"
+            } else if (backendType == BackendType.GOOGLE_DRIVE) {
+                "Ready to index"
+            } else {
+                "Ready to scan"
+            }
         }
     }
     return ProfileScanUi(
         isScanning = isScanning,
         sublabel = sublabel,
         canScan = canScan,
+        lastScanLabel = formattedLastScan,
     )
 }
 
@@ -265,6 +331,13 @@ private fun capabilityChips(capabilities: BackendCapabilities): List<String> = b
     if (capabilities.supportsServerLyrics) add("Lyrics")
     if (capabilities.supportsTranscoding) add("Transcoding")
     if (capabilities.supportsRadioMix) add("Radio")
+}
+
+private fun driveCapabilityChips(capabilities: BackendCapabilities): List<String> = buildList {
+    add(if (capabilities.supportsServerPlaylists) "Server playlists" else "Local playlists")
+    add(if (capabilities.supportsServerFavorites) "Server favorites" else "Local favorites")
+    add(if (capabilities.supportsScrobbling) "Scrobbling" else "No scrobbling")
+    add(if (capabilities.supportsTranscoding) "Transcoding" else "Raw stream")
 }
 
 @Composable
@@ -312,6 +385,7 @@ internal fun ServerProfileCard(
     onScan: () -> Unit,
     onCopyEndpoint: () -> Unit,
     onRequestRemove: () -> Unit,
+    onReconnectDrive: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val dark = LocalVusicDark.current
@@ -404,6 +478,7 @@ internal fun ServerProfileCard(
                 onMoveDown = onMoveDown,
                 onEdit = onEdit,
                 onRequestRemove = onRequestRemove,
+                onReconnectDrive = onReconnectDrive,
             )
         }
     }
@@ -429,7 +504,7 @@ private fun CollapsedProfileHeader(
             }
             .clickable(
                 role = Role.Button,
-                onClickLabel = "Expand ${ui.name}",
+                onClickLabel = if (expanded) "Collapse ${ui.name}" else "Expand ${ui.name}",
                 onClick = onToggleExpanded,
             )
             .padding(horizontal = VusicSpacing.CardPadding, vertical = 12.dp),
@@ -491,8 +566,13 @@ private fun CollapsedProfileHeader(
 
             Spacer(Modifier.height(2.dp))
 
-            val subline = if (ui.host.isNotBlank()) {
-                "${ui.host} · ${status.label}"
+            val sublineSource = if (ui.type == BackendType.GOOGLE_DRIVE) {
+                ui.username.takeIf { it.isNotBlank() }
+            } else {
+                ui.host.takeIf { it.isNotBlank() }
+            }
+            val subline = if (sublineSource != null) {
+                "$sublineSource · ${status.label}"
             } else {
                 status.label
             }
@@ -555,6 +635,7 @@ private fun ExpandedProfileBody(
     onMoveDown: () -> Unit,
     onEdit: () -> Unit,
     onRequestRemove: () -> Unit,
+    onReconnectDrive: () -> Unit,
 ) {
     val clipboardManager = LocalClipboardManager.current
     val panelShape = RoundedCornerShape(10.dp)
@@ -584,36 +665,38 @@ private fun ExpandedProfileBody(
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Endpoint",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = VusicColors.SecondaryText,
-                    )
-                    Text(
-                        text = ui.url,
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                IconButton(
-                    onClick = {
-                        clipboardManager.setText(AnnotatedString(ui.url))
-                        onCopyEndpoint()
-                    },
+            if (ui.type != BackendType.GOOGLE_DRIVE) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.ContentCopy,
-                        contentDescription = "Copy endpoint URL",
-                        tint = VusicColors.SecondaryText,
-                        modifier = Modifier.size(18.dp),
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Endpoint",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = VusicColors.SecondaryText,
+                        )
+                        Text(
+                            text = ui.url,
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(ui.url))
+                            onCopyEndpoint()
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy endpoint URL",
+                            tint = VusicColors.SecondaryText,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             }
 
@@ -621,10 +704,22 @@ private fun ExpandedProfileBody(
                 label = "Account",
                 value = ui.username.ifBlank { "—" },
             )
+            if (ui.type == BackendType.GOOGLE_DRIVE) {
+                DetailKeyValueRow(
+                    label = "Music folder",
+                    value = ui.driveRootFolderName?.ifBlank { "All audio files" } ?: "All audio files",
+                )
+            }
             DetailKeyValueRow(
                 label = "Protocol",
                 value = formatProtocolLabel(ui),
             )
+            if (ui.type == BackendType.GOOGLE_DRIVE) {
+                DetailKeyValueRow(
+                    label = "Last index",
+                    value = scanUi.lastScanLabel ?: "Never",
+                )
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -635,22 +730,25 @@ private fun ExpandedProfileBody(
                     style = MaterialTheme.typography.labelSmall,
                     color = VusicColors.SecondaryText,
                 )
+                Spacer(Modifier.width(12.dp))
                 Surface(
                     shape = RoundedCornerShape(6.dp),
                     color = statusColor.copy(alpha = 0.14f),
+                    modifier = Modifier.weight(1f, fill = false),
                 ) {
                     Text(
                         text = status.label,
                         style = MaterialTheme.typography.labelSmall,
                         color = statusColor,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                     )
                 }
             }
         }
 
-        // Extensions (OpenSubsonic) or Capabilities (Jellyfin)
+        // Extensions (OpenSubsonic) or Capabilities (Jellyfin / Google Drive)
         val chipLabel: String?
         val chips: List<String>
         when {
@@ -661,6 +759,10 @@ private fun ExpandedProfileBody(
             ui.type == BackendType.JELLYFIN -> {
                 chipLabel = "Capabilities"
                 chips = capabilityChips(ui.capabilities)
+            }
+            ui.type == BackendType.GOOGLE_DRIVE -> {
+                chipLabel = "Capabilities"
+                chips = driveCapabilityChips(ui.capabilities)
             }
             else -> {
                 chipLabel = null
@@ -699,7 +801,30 @@ private fun ExpandedProfileBody(
 
         Spacer(Modifier.height(12.dp))
 
-        // Primary action grid: Test connection & Scan library
+        if (ui.type == BackendType.GOOGLE_DRIVE &&
+            (status.isSessionExpired || status.label == "Session expired")
+        ) {
+            Button(
+                onClick = onReconnectDrive,
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = VusicColors.Accent,
+                    contentColor = VusicColors.OnAccent,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 48.dp),
+            ) {
+                Text(
+                    text = "Reconnect Google Drive",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        // Primary action grid: Test connection & Scan library / Re-index
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -762,7 +887,7 @@ private fun ExpandedProfileBody(
                             )
                         }
                         Text(
-                            text = "Scan library",
+                            text = if (ui.type == BackendType.GOOGLE_DRIVE) "Re-index" else "Scan library",
                             style = MaterialTheme.typography.labelLarge,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,

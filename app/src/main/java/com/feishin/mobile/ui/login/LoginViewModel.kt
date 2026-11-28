@@ -1,16 +1,36 @@
 package com.feishin.mobile.ui.login
 
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.content.IntentSender
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.network.JellyfinUrl
 import com.feishin.mobile.data.auth.AuthRepository
 import com.feishin.mobile.data.auth.ConnectionResult
+import com.feishin.mobile.data.auth.DriveAuthError
+import com.feishin.mobile.data.auth.DriveScanCancellationRegistry
+import com.feishin.mobile.data.auth.TransientProbeRegistry
+import com.feishin.mobile.data.backend.BackendClientFactory
+import com.feishin.mobile.data.cache.LibraryRefresh
+import com.feishin.mobile.data.db.CachedCoverDao
+import com.feishin.mobile.data.db.DriveTrackDao
+import com.feishin.mobile.data.db.LocalFavoriteDao
+import com.feishin.mobile.data.db.LocalPlayHistoryDao
+import com.feishin.mobile.data.remote.drive.DriveAuthCoordinator
+import com.feishin.mobile.data.remote.drive.DriveAuthResult
+import com.feishin.mobile.data.remote.drive.DriveFileDto
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.BackendType
+import com.feishin.mobile.domain.model.ProfileCredentials
 import com.feishin.mobile.domain.model.ServerProfile
+import com.feishin.mobile.ui.settings.ScanCoordinator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +40,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
@@ -31,7 +52,21 @@ enum class LoginAction {
 
 sealed interface LoginEvent {
     data class Snackbar(val message: String) : LoginEvent
+    data class LaunchDriveConsent(val intentSender: IntentSender, val email: String) : LoginEvent
 }
+
+/**
+ * Ephemeral in-memory Google Drive sign-in and folder-selection state.
+ * Never persisted to SavedStateHandle or rememberSaveable; cleared in [onCleared].
+ */
+data class DriveFormState(
+    val accountEmail: String = "",
+    val accessToken: String = "",
+    val expiresAtEpochMs: Long = 0L,
+    val driveRootFolderId: String? = null,
+    val driveRootFolderName: String? = null,
+    val scanAllAudio: Boolean = false,
+)
 
 /**
  * Login form state.
@@ -52,13 +87,71 @@ data class LoginUi(
     val banner: ConnectionBannerState = ConnectionBannerState.Idle,
 )
 
+private class LoginDriveDeps(
+    val driveAuthCoordinator: DriveAuthCoordinator? = null,
+    val backendFactory: BackendClientFactory? = null,
+    val probeRegistry: TransientProbeRegistry? = null,
+    val scanCoordinator: ScanCoordinator? = null,
+    val driveTrackDao: DriveTrackDao? = null,
+    val localFavoriteDao: LocalFavoriteDao? = null,
+    val localPlayHistoryDao: LocalPlayHistoryDao? = null,
+    val cachedCoverDao: CachedCoverDao? = null,
+    val driveScanCancellationRegistry: DriveScanCancellationRegistry? = null,
+    val libraryRefresh: LibraryRefresh? = null,
+)
+
 @HiltViewModel
-class LoginViewModel @Inject constructor(
+class LoginViewModel private constructor(
     private val auth: AuthRepository,
     val settings: SettingsStore,
+    private val driveDeps: LoginDriveDeps,
 ) : ViewModel() {
+
+    @Inject
+    constructor(
+        auth: AuthRepository,
+        settings: SettingsStore,
+        driveAuthCoordinator: DriveAuthCoordinator,
+        backendFactory: BackendClientFactory,
+        probeRegistry: TransientProbeRegistry,
+        scanCoordinator: ScanCoordinator,
+        driveTrackDao: DriveTrackDao,
+        localFavoriteDao: LocalFavoriteDao,
+        localPlayHistoryDao: LocalPlayHistoryDao,
+        cachedCoverDao: CachedCoverDao,
+        driveScanCancellationRegistry: DriveScanCancellationRegistry,
+        libraryRefresh: LibraryRefresh,
+    ) : this(
+        auth = auth,
+        settings = settings,
+        driveDeps = LoginDriveDeps(
+            driveAuthCoordinator = driveAuthCoordinator,
+            backendFactory = backendFactory,
+            probeRegistry = probeRegistry,
+            scanCoordinator = scanCoordinator,
+            driveTrackDao = driveTrackDao,
+            localFavoriteDao = localFavoriteDao,
+            localPlayHistoryDao = localPlayHistoryDao,
+            cachedCoverDao = cachedCoverDao,
+            driveScanCancellationRegistry = driveScanCancellationRegistry,
+            libraryRefresh = libraryRefresh,
+        ),
+    )
+
+    internal constructor(
+        auth: AuthRepository,
+        settings: SettingsStore,
+    ) : this(
+        auth = auth,
+        settings = settings,
+        driveDeps = LoginDriveDeps(),
+    )
+
     private val _ui = MutableStateFlow(LoginUi())
     val ui: StateFlow<LoginUi> = _ui.asStateFlow()
+
+    private val _driveState = MutableStateFlow(DriveFormState())
+    val driveState: StateFlow<DriveFormState> = _driveState.asStateFlow()
 
     private val _events = Channel<LoginEvent>(Channel.BUFFERED)
     val events: Flow<LoginEvent> = _events.receiveAsFlow()
@@ -66,8 +159,451 @@ class LoginViewModel @Inject constructor(
     private var activeJob: Job? = null
     private val connectTimeoutMs = 10_000L
 
+    override fun onCleared() {
+        activeJob?.cancel()
+        activeJob = null
+        _driveState.value = DriveFormState()
+        super.onCleared()
+    }
+
     fun profileForEdit(profileId: String): ServerProfile? =
         auth.profiles.value.firstOrNull { it.id == profileId }
+
+    fun initDriveEditState(profile: ServerProfile) {
+        if (profile.type != BackendType.GOOGLE_DRIVE) return
+        val creds = profile.credentials as? ProfileCredentials.GoogleDrive
+        val rootId = profile.driveRootFolderId?.trim()?.takeIf { it.isNotBlank() }
+        val scanAll = rootId == null
+        val rootName = profile.driveRootFolderName?.trim()?.takeIf { it.isNotBlank() }
+            ?: if (scanAll) ALL_AUDIO_FILES_LABEL else null
+        _driveState.value = DriveFormState(
+            accountEmail = creds?.accountEmail.orEmpty(),
+            accessToken = "",
+            expiresAtEpochMs = creds?.expiresAtEpochMs ?: 0L,
+            driveRootFolderId = rootId,
+            driveRootFolderName = rootName,
+            scanAllAudio = scanAll,
+        )
+    }
+
+    fun signInWithGoogle(activityContext: Context) {
+        activeJob?.cancel()
+        activeJob = viewModelScope.launch {
+            _ui.value = LoginUi(
+                busy = true,
+                activeAction = LoginAction.NONE,
+                failureNonce = _ui.value.failureNonce,
+                banner = ConnectionBannerState.Testing("Waiting for Google sign-in…"),
+            )
+            val coordinator = driveDeps.driveAuthCoordinator
+            val result = if (coordinator != null) {
+                coordinator.signInAndAuthorize(activityContext)
+            } else {
+                DriveAuthResult.Unavailable("Google Sign-In is unavailable.")
+            }
+            handleDriveAuthResult(result, fromResolution = false)
+        }
+    }
+
+    fun onDriveResolutionResult(
+        resultCode: Int,
+        data: Intent?,
+        fallbackEmail: String,
+    ) {
+        if (resultCode != Activity.RESULT_OK || data == null) {
+            handleDriveAuthResult(DriveAuthResult.Cancelled, fromResolution = true)
+            return
+        }
+        val coordinator = driveDeps.driveAuthCoordinator
+        val result = if (coordinator != null) {
+            coordinator.resolveAuthorizationIntent(data, fallbackEmail)
+        } else {
+            DriveAuthResult.Unavailable("Google Sign-In is unavailable.")
+        }
+        handleDriveAuthResult(result, fromResolution = true)
+    }
+
+    internal fun handleDriveAuthResult(
+        result: DriveAuthResult,
+        fromResolution: Boolean = false,
+    ) {
+        when (result) {
+            is DriveAuthResult.Authorized -> {
+                val prev = _driveState.value
+                val switchedAccount = prev.accountEmail.isNotBlank() &&
+                    !prev.accountEmail.equals(result.email, ignoreCase = true)
+                _driveState.value = if (switchedAccount) {
+                    DriveFormState(
+                        accountEmail = result.email,
+                        accessToken = result.accessToken,
+                        expiresAtEpochMs = result.expiresAtEpochMs,
+                    )
+                } else {
+                    prev.copy(
+                        accountEmail = result.email,
+                        accessToken = result.accessToken,
+                        expiresAtEpochMs = result.expiresAtEpochMs,
+                    )
+                }
+                _ui.value = LoginUi(failureNonce = _ui.value.failureNonce)
+            }
+
+            is DriveAuthResult.ResolutionRequired -> {
+                _ui.value = LoginUi(
+                    busy = true,
+                    activeAction = LoginAction.NONE,
+                    failureNonce = _ui.value.failureNonce,
+                    banner = ConnectionBannerState.Testing("Waiting for Google sign-in…"),
+                )
+                _events.trySend(
+                    LoginEvent.LaunchDriveConsent(
+                        intentSender = result.pendingIntent.intentSender,
+                        email = result.email,
+                    ),
+                )
+            }
+
+            DriveAuthResult.Cancelled -> {
+                _ui.value = LoginUi(
+                    failureNonce = _ui.value.failureNonce,
+                    banner = ConnectionBannerState.Info("Google sign-in cancelled"),
+                )
+            }
+
+            is DriveAuthResult.Unavailable -> {
+                _ui.value = errorUi(
+                    message = DRIVE_UNAVAILABLE_ERROR,
+                    details = result.reason.takeIf { it.isNotBlank() && it != DRIVE_UNAVAILABLE_ERROR },
+                    nonce = _ui.value.failureNonce + 1,
+                )
+            }
+
+            is DriveAuthResult.Error -> {
+                val isConsentError = fromResolution || isConsentDeniedMessage(result.message)
+                val message = if (isConsentError) {
+                    DRIVE_CONSENT_DENIED_ERROR
+                } else {
+                    result.message.ifBlank { DRIVE_UNAVAILABLE_ERROR }
+                }
+                _ui.value = errorUi(
+                    message = message,
+                    details = result.message.takeIf { it.isNotBlank() && it != message },
+                    nonce = _ui.value.failureNonce + 1,
+                )
+            }
+        }
+    }
+
+    fun setDriveFolderSelection(folderId: String?, folderName: String?) {
+        clearError()
+        val cleanedId = folderId?.trim()?.takeIf { it.isNotBlank() }
+        val cleanedName = folderName?.trim()?.takeIf { it.isNotBlank() }
+        _driveState.value = _driveState.value.copy(
+            driveRootFolderId = cleanedId,
+            driveRootFolderName = if (cleanedId == null) ALL_AUDIO_FILES_LABEL else cleanedName,
+            scanAllAudio = cleanedId == null,
+        )
+    }
+
+    fun setDriveScanAllAudio(enabled: Boolean) {
+        clearError()
+        val prev = _driveState.value
+        _driveState.value = if (enabled) {
+            prev.copy(
+                scanAllAudio = true,
+                driveRootFolderId = null,
+                driveRootFolderName = ALL_AUDIO_FILES_LABEL,
+            )
+        } else {
+            prev.copy(
+                scanAllAudio = false,
+                driveRootFolderName = if (prev.driveRootFolderId == null) null else prev.driveRootFolderName,
+            )
+        }
+    }
+
+    suspend fun listDriveSubfolders(
+        parentId: String,
+        existingProfileId: String? = null,
+    ): Result<List<DriveFileDto>> {
+        val state = _driveState.value
+        val factory = driveDeps.backendFactory
+            ?: return Result.Err("Google Drive client is unavailable.")
+
+        if (state.accessToken.isNotBlank()) {
+            val registry = driveDeps.probeRegistry
+                ?: return Result.Err("Google Drive probe registry is unavailable.")
+            val candidate = ServerProfile(
+                id = "__probe__",
+                name = state.accountEmail.ifBlank { "Google Drive" },
+                type = BackendType.GOOGLE_DRIVE,
+                url = BackendClientFactory.GOOGLE_DRIVE_BASE_URL,
+                userId = state.accountEmail,
+                credentials = ProfileCredentials.GoogleDrive(
+                    accountEmail = state.accountEmail,
+                    accessToken = state.accessToken,
+                    expiresAtEpochMs = state.expiresAtEpochMs,
+                ),
+                allowSelfSigned = false,
+                allowCleartext = false,
+            )
+            val probeId = registry.register(candidate)
+            val probeProfile = registry.get(probeId) ?: candidate.copy(id = probeId)
+            return try {
+                val api = factory.createEphemeralDriveApi(probeProfile)
+                fetchDriveSubfolders(api, parentId)
+            } finally {
+                registry.remove(probeId)
+            }
+        }
+
+        val savedProfile = existingProfileId?.let(::profileForEdit)
+            ?.takeIf { it.type == BackendType.GOOGLE_DRIVE }
+            ?: return Result.Err("Sign in with Google first")
+        val api = factory.driveApi(savedProfile)
+        return fetchDriveSubfolders(api, parentId)
+    }
+
+    fun needsDriveReindexOnSave(existingProfile: ServerProfile?): Boolean {
+        if (existingProfile == null || existingProfile.type != BackendType.GOOGLE_DRIVE) return false
+        val state = _driveState.value
+        val existingEmail = (existingProfile.credentials as? ProfileCredentials.GoogleDrive)
+            ?.accountEmail
+            .orEmpty()
+        val effectiveFolderId = if (state.scanAllAudio) {
+            null
+        } else {
+            state.driveRootFolderId?.trim()?.takeIf { it.isNotBlank() }
+        }
+        val accountChanged = state.accountEmail.isNotBlank() &&
+            !existingEmail.equals(state.accountEmail.trim(), ignoreCase = true)
+        val folderChanged = existingProfile.driveRootFolderId != effectiveFolderId
+        return accountChanged || folderChanged
+    }
+
+    fun testDriveOnly(existingProfileId: String? = null) {
+        val state = _driveState.value
+        val editMode = !existingProfileId.isNullOrBlank()
+        if (!canTestDrive(state.accountEmail, state.accessToken, editMode)) {
+            notifyDriveIncomplete(hasAuth = false)
+            return
+        }
+
+        activeJob?.cancel()
+        activeJob = viewModelScope.launch {
+            _ui.value = LoginUi(
+                busy = true,
+                activeAction = LoginAction.TEST_ONLY,
+                failureNonce = _ui.value.failureNonce,
+                banner = ConnectionBannerState.Testing("Contacting Google Drive…"),
+            )
+
+            val result: Result<String>? = withTimeoutOrNull(connectTimeoutMs) {
+                if (state.accessToken.isNotBlank()) {
+                    when (
+                        val probe = auth.probeGoogleDrive(
+                            email = state.accountEmail,
+                            accessToken = state.accessToken,
+                        )
+                    ) {
+                        is Result.Ok -> {
+                            val resolvedEmail = (probe.value.profile.credentials as? ProfileCredentials.GoogleDrive)
+                                ?.accountEmail
+                                ?.ifBlank { state.accountEmail }
+                                ?: state.accountEmail
+                            Result.Ok(resolvedEmail)
+                        }
+                        is Result.Err -> probe
+                    }
+                } else {
+                    val saved = existingProfileId?.let(::profileForEdit)
+                        ?.takeIf { it.type == BackendType.GOOGLE_DRIVE }
+                    if (saved == null) {
+                        Result.Err("Google Drive profile not found.")
+                    } else {
+                        verifySavedDriveProfile(saved)
+                    }
+                }
+            }
+
+            _ui.value = when (result) {
+                is Result.Ok -> {
+                    val okMessage = "Connection OK · Google Drive (${result.value})"
+                    LoginUi(
+                        message = okMessage,
+                        failureNonce = _ui.value.failureNonce,
+                        banner = ConnectionBannerState.Success(okMessage),
+                    )
+                }
+                is Result.Err -> errorUi(
+                    message = result.message.ifBlank { DRIVE_UNAVAILABLE_ERROR },
+                    nonce = _ui.value.failureNonce + 1,
+                )
+                null -> timeoutFailureUi(_ui.value.failureNonce + 1)
+            }
+        }
+    }
+
+    fun connectGoogleDrive(
+        serverName: String = "",
+        addMode: Boolean = false,
+        existingProfileId: String? = null,
+        onSuccess: () -> Unit = {},
+    ) {
+        val state = _driveState.value
+        val editMode = !existingProfileId.isNullOrBlank()
+        if (!canTestDrive(state.accountEmail, state.accessToken, editMode)) {
+            notifyDriveIncomplete(hasAuth = false)
+            return
+        }
+        if (!canConnectDrive(
+                accountEmail = state.accountEmail,
+                accessToken = state.accessToken,
+                driveRootFolderId = state.driveRootFolderId,
+                scanAllAudio = state.scanAllAudio,
+                editMode = editMode,
+            )
+        ) {
+            notifyDriveIncomplete(hasAuth = true)
+            return
+        }
+
+        activeJob?.cancel()
+        activeJob = viewModelScope.launch {
+            val current = settings.latestSettings ?: runCatching { settings.flow.first() }.getOrNull()
+            val existingProfile = existingProfileId?.let(::profileForEdit)
+            val effectiveFolderId = if (state.scanAllAudio) {
+                null
+            } else {
+                state.driveRootFolderId?.trim()?.takeIf { it.isNotBlank() }
+            }
+            val effectiveFolderName = if (state.scanAllAudio) {
+                ALL_AUDIO_FILES_LABEL
+            } else {
+                state.driveRootFolderName?.trim()?.takeIf { it.isNotBlank() }
+            }
+            val resolvedName = serverName.trim().ifBlank { state.accountEmail.trim() }
+            val needsReindex = needsDriveReindexOnSave(existingProfile)
+
+            _ui.value = LoginUi(
+                busy = true,
+                activeAction = LoginAction.CONNECT,
+                failureNonce = _ui.value.failureNonce,
+                banner = ConnectionBannerState.Testing("Verifying Google Drive…"),
+            )
+
+            val savedResult: Result<ServerProfile>? = withTimeoutOrNull(connectTimeoutMs) {
+                if (state.accessToken.isNotBlank()) {
+                    when (
+                        val conn = auth.connectGoogleDrive(
+                            name = resolvedName,
+                            email = state.accountEmail,
+                            accessToken = state.accessToken,
+                            expiresAtEpochMs = state.expiresAtEpochMs,
+                            rootFolderId = effectiveFolderId,
+                            rootFolderName = effectiveFolderName,
+                            existingProfileId = existingProfileId,
+                        )
+                    ) {
+                        is Result.Ok -> Result.Ok(conn.value.profile)
+                        is Result.Err -> conn
+                    }
+                } else if (existingProfile != null && existingProfile.type == BackendType.GOOGLE_DRIVE) {
+                    when (val verified = verifySavedDriveProfile(existingProfile)) {
+                        is Result.Err -> verified
+                        is Result.Ok -> {
+                            val updated = existingProfile.copy(
+                                name = resolvedName,
+                                driveRootFolderId = effectiveFolderId,
+                                driveRootFolderName = effectiveFolderName,
+                            )
+                            when (val res = auth.updateProfile(updated)) {
+                                is Result.Ok -> Result.Ok(updated)
+                                is Result.Err -> res
+                            }
+                        }
+                    }
+                } else {
+                    Result.Err("Sign in with Google first")
+                }
+            }
+
+            when (savedResult) {
+                is Result.Ok -> {
+                    val savedProfile = savedResult.value
+                    if (!addMode && existingProfileId == null) {
+                        if (current?.deviceFilesStandalone == true) {
+                            settings.setDeviceFilesStandalone(false)
+                        }
+                        if (current?.librarySourceFilter == "DEVICE") {
+                            settings.setLibrarySourceFilter("ALL")
+                            settings.setLibraryViewMode("SERVER")
+                        }
+                    }
+
+                    val shouldIndex = existingProfileId == null || needsReindex
+                    if (needsReindex) {
+                        cleanupDriveProfileForReindex(savedProfile.id)
+                    }
+                    if (shouldIndex) {
+                        driveDeps.scanCoordinator?.startScan(savedProfile.id)
+                    }
+
+                    val snackbar = if (existingProfileId != null && !needsReindex) {
+                        "Updated \"${savedProfile.name}\""
+                    } else {
+                        "Connected to Google Drive · indexing started"
+                    }
+                    _events.trySend(LoginEvent.Snackbar(snackbar))
+                    _ui.value = LoginUi(failureNonce = _ui.value.failureNonce)
+                    onSuccess()
+                }
+                is Result.Err -> _ui.value = errorUi(
+                    message = savedResult.message.ifBlank { DRIVE_UNAVAILABLE_ERROR },
+                    nonce = _ui.value.failureNonce + 1,
+                )
+                null -> _ui.value = timeoutFailureUi(_ui.value.failureNonce + 1)
+            }
+        }
+    }
+
+    private suspend fun verifySavedDriveProfile(profile: ServerProfile): Result<String> =
+        withContext(Dispatchers.IO) {
+            val factory = driveDeps.backendFactory
+            val creds = profile.credentials as? ProfileCredentials.GoogleDrive
+                ?: return@withContext Result.Err("Google Drive credentials missing.")
+            if (factory != null) {
+                try {
+                    val about = factory.driveApi(profile).getAbout()
+                    val resolved = about.user?.emailAddress?.trim()?.takeIf { it.isNotBlank() }
+                        ?: creds.accountEmail
+                    return@withContext Result.Ok(resolved)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    return@withContext Result.Err(DriveAuthError.userMessage(e), e)
+                }
+            }
+            when (
+                val probe = auth.probeGoogleDrive(
+                    email = creds.accountEmail,
+                    accessToken = creds.accessToken,
+                )
+            ) {
+                is Result.Ok -> Result.Ok(creds.accountEmail)
+                is Result.Err -> probe
+            }
+        }
+
+    private suspend fun cleanupDriveProfileForReindex(profileId: String) = withContext(Dispatchers.IO) {
+        runCatching { driveDeps.driveScanCancellationRegistry?.cancel(profileId) }
+        runCatching { driveDeps.driveTrackDao?.clearProfile(profileId) }
+        runCatching { driveDeps.localFavoriteDao?.clearProfile(profileId) }
+        runCatching { driveDeps.localPlayHistoryDao?.clearProfile(profileId) }
+        runCatching { driveDeps.cachedCoverDao?.deleteByPrefix("$profileId:cov:") }
+        runCatching { driveDeps.cachedCoverDao?.deleteByPrefix("drive-cover://$profileId/") }
+        runCatching { driveDeps.libraryRefresh?.invalidateAll() }
+    }
 
     /** Test the server and connect on success. Persists nothing on failure. */
     fun testAndConnect(
@@ -82,6 +618,15 @@ class LoginViewModel @Inject constructor(
         existingProfileId: String? = null,
         onSuccess: () -> Unit = {},
     ) {
+        if (backendType == BackendType.GOOGLE_DRIVE) {
+            connectGoogleDrive(
+                serverName = serverName,
+                addMode = addMode,
+                existingProfileId = existingProfileId,
+                onSuccess = onSuccess,
+            )
+            return
+        }
         activeJob?.cancel()
         activeJob = viewModelScope.launch {
             val current = settings.latestSettings ?: runCatching { settings.flow.first() }.getOrNull()
@@ -168,6 +713,10 @@ class LoginViewModel @Inject constructor(
         backendType: BackendType = BackendType.NAVIDROME,
         existingProfileId: String? = null,
     ) {
+        if (backendType == BackendType.GOOGLE_DRIVE) {
+            testDriveOnly(existingProfileId = existingProfileId)
+            return
+        }
         activeJob?.cancel()
         activeJob = viewModelScope.launch {
             val existingProfile = existingProfileId?.let(::profileForEdit)
@@ -245,11 +794,25 @@ class LoginViewModel @Inject constructor(
         }
     }
 
-    fun notifyComingSoon() {
-        _events.trySend(LoginEvent.Snackbar("Google Drive backend support is coming soon"))
+    fun notifyDriveIncomplete(hasAuth: Boolean) {
+        val message = if (hasAuth) {
+            DRIVE_INCOMPLETE_FOLDER_SNACKBAR
+        } else {
+            DRIVE_SIGN_IN_FIRST_SNACKBAR
+        }
+        _events.trySend(LoginEvent.Snackbar(message))
     }
 
     fun notifyIncomplete(backendType: BackendType, editMode: Boolean) {
+        if (backendType == BackendType.GOOGLE_DRIVE) {
+            val hasAuth = canTestDrive(
+                accountEmail = _driveState.value.accountEmail,
+                accessToken = _driveState.value.accessToken,
+                editMode = editMode,
+            )
+            notifyDriveIncomplete(hasAuth = hasAuth)
+            return
+        }
         val message = if (backendType == BackendType.JELLYFIN || editMode) {
             "Fill in Server URL and Username first"
         } else {
@@ -291,6 +854,7 @@ class LoginViewModel @Inject constructor(
         activeJob?.cancel()
         activeJob = null
         _ui.value = LoginUi()
+        _driveState.value = DriveFormState()
     }
 
     private fun validateClientInput(
@@ -351,6 +915,45 @@ class LoginViewModel @Inject constructor(
     }
 
     companion object {
+        internal fun forTest(
+            auth: AuthRepository,
+            settings: SettingsStore,
+            driveAuthCoordinator: DriveAuthCoordinator? = null,
+            backendFactory: BackendClientFactory? = null,
+            probeRegistry: TransientProbeRegistry? = null,
+            scanCoordinator: ScanCoordinator? = null,
+            driveTrackDao: DriveTrackDao? = null,
+            localFavoriteDao: LocalFavoriteDao? = null,
+            localPlayHistoryDao: LocalPlayHistoryDao? = null,
+            cachedCoverDao: CachedCoverDao? = null,
+            driveScanCancellationRegistry: DriveScanCancellationRegistry? = null,
+            libraryRefresh: LibraryRefresh? = null,
+        ): LoginViewModel = LoginViewModel(
+            auth = auth,
+            settings = settings,
+            driveDeps = LoginDriveDeps(
+                driveAuthCoordinator = driveAuthCoordinator,
+                backendFactory = backendFactory,
+                probeRegistry = probeRegistry,
+                scanCoordinator = scanCoordinator,
+                driveTrackDao = driveTrackDao,
+                localFavoriteDao = localFavoriteDao,
+                localPlayHistoryDao = localPlayHistoryDao,
+                cachedCoverDao = cachedCoverDao,
+                driveScanCancellationRegistry = driveScanCancellationRegistry,
+                libraryRefresh = libraryRefresh,
+            ),
+        )
+
+        const val ALL_AUDIO_FILES_LABEL = "All audio files"
+        const val DRIVE_UNAVAILABLE_ERROR =
+            "Google Sign-In is not configured or Play Services is unavailable."
+        const val DRIVE_CONSENT_DENIED_ERROR =
+            "Vusic needs read-only access to your Drive to play your music."
+        const val DRIVE_SIGN_IN_FIRST_SNACKBAR = "Sign in with Google first"
+        const val DRIVE_INCOMPLETE_FOLDER_SNACKBAR =
+            "Choose a Music folder or turn on \"Scan all audio files\""
+
         fun canTest(
             url: String,
             username: String,
@@ -374,6 +977,32 @@ class LoginViewModel @Inject constructor(
             backendType = backendType,
             editMode = editMode,
         )
+
+        fun canTestDrive(
+            accountEmail: String,
+            accessToken: String,
+            editMode: Boolean = false,
+        ): Boolean = accountEmail.isNotBlank() && (accessToken.isNotBlank() || editMode)
+
+        fun canConnectDrive(
+            accountEmail: String,
+            accessToken: String,
+            driveRootFolderId: String?,
+            scanAllAudio: Boolean,
+            editMode: Boolean = false,
+        ): Boolean = canTestDrive(
+            accountEmail = accountEmail,
+            accessToken = accessToken,
+            editMode = editMode,
+        ) && (!driveRootFolderId.isNullOrBlank() || scanAllAudio)
+
+        private fun isConsentDeniedMessage(message: String): Boolean {
+            val lower = message.lowercase()
+            return lower.contains("consent") ||
+                lower.contains("denied") ||
+                lower.contains("access_denied") ||
+                lower.contains("403")
+        }
 
         internal fun formatSuccessBanner(result: ConnectionResult): String =
             if (result.apiInfo.isNotBlank()) {

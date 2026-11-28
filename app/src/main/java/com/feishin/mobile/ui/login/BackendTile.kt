@@ -89,7 +89,7 @@ private val BackendOptions = listOf(
     BackendTileOption(BackendType.NAVIDROME, "Navidrome", "Native & OpenSubsonic"),
     BackendTileOption(BackendType.OPENSUBSONIC, "OpenSubsonic", "Subsonic API v1.16+"),
     BackendTileOption(BackendType.JELLYFIN, "Jellyfin", "Direct audio stream"),
-    BackendTileOption(BackendType.GOOGLE_DRIVE, "Google Drive", "Cloud folder library", soon = true),
+    BackendTileOption(BackendType.GOOGLE_DRIVE, "Google Drive", "Cloud folder library", soon = false),
 )
 
 /**
@@ -104,7 +104,7 @@ fun BackendTileGrid(
     enabled: Boolean,
     locked: Boolean,
     onSelect: (BackendType) -> Unit,
-    onSoonClick: () -> Unit,
+    onSoonClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val interactive = enabled && !locked

@@ -33,6 +33,7 @@ import com.feishin.mobile.data.backend.BackendClientFactory
 import com.feishin.mobile.data.remote.CleartextGuardInterceptor
 import com.feishin.mobile.data.remote.ProfileAuthInterceptor
 import com.feishin.mobile.data.remote.ProfileTrustManager
+import com.feishin.mobile.data.remote.drive.DriveAuthResult
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.BackendType
 import com.feishin.mobile.domain.model.ProfileCredentials
@@ -107,7 +108,7 @@ class AddServerScreenTest {
     }
 
     @Test
-    fun driveTileTap_showsComingSoonSnackbar_andDoesNotSelect() {
+    fun driveTileTap_selectsGoogleDrive_hidesSecurityAndServerFields_andGatesConnect() {
         val vm = createTestViewModel()
         val messenger = UiMessenger()
         val shown = mutableStateListOf<String>()
@@ -135,8 +136,32 @@ class AddServerScreenTest {
         composeRule.onNodeWithText("Google Drive").performClick()
         composeRule.waitForIdle()
 
-        assertTrue(shown.contains("Google Drive backend support is coming soon"))
-        composeRule.onNodeWithText("Navidrome").assertIsSelected()
+        composeRule.onNodeWithText("Google Drive").assertIsSelected()
+        assertTrue(shown.none { it.contains("coming soon", ignoreCase = true) })
+        composeRule.onNodeWithText("Server name").assertIsDisplayed()
+        composeRule.onNodeWithText("Sign in with Google").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Allow self-signed certificate").assertDoesNotExist()
+        composeRule.onNodeWithText("Server URL").assertDoesNotExist()
+
+        // Muted Test & Connect tap before sign-in prompts sign-in
+        composeRule.onNodeWithText("Test & Connect").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        assertTrue(shown.contains("Sign in with Google first"))
+
+        // After Google sign-in without a folder or scan-all toggle, muted Connect tap prompts folder choice
+        vm.handleDriveAuthResult(
+            DriveAuthResult.Authorized(
+                email = "alice@gmail.com",
+                accessToken = "tok-1",
+                expiresAtEpochMs = 1_900_000_000_000L,
+            ),
+        )
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("alice@gmail.com").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Choose folder").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Test & Connect").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        assertTrue(shown.contains("Choose a Music folder or turn on \"Scan all audio files\""))
     }
 
     @Test

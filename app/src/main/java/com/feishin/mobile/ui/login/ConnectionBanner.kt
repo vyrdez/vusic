@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +53,7 @@ import com.feishin.mobile.ui.theme.VusicColors
 sealed interface ConnectionBannerState {
     data object Idle : ConnectionBannerState
     data class Testing(val message: String) : ConnectionBannerState
+    data class Info(val message: String) : ConnectionBannerState
     data class Success(val message: String) : ConnectionBannerState
     data class Error(val message: String, val details: String? = null) : ConnectionBannerState
 }
@@ -94,12 +96,14 @@ fun ConnectionBanner(
 
         val targetContainer = when (visibleState) {
             is ConnectionBannerState.Testing -> VusicColors.SurfaceHigh
+            is ConnectionBannerState.Info -> VusicColors.SurfaceHigh
             is ConnectionBannerState.Success -> MaterialTheme.colorScheme.primaryContainer
             is ConnectionBannerState.Error -> MaterialTheme.colorScheme.errorContainer
             is ConnectionBannerState.Idle -> VusicColors.SurfaceHigh
         }
         val targetContent = when (visibleState) {
             is ConnectionBannerState.Testing -> MaterialTheme.colorScheme.onSurface
+            is ConnectionBannerState.Info -> MaterialTheme.colorScheme.onSurface
             is ConnectionBannerState.Success -> MaterialTheme.colorScheme.onPrimaryContainer
             is ConnectionBannerState.Error -> MaterialTheme.colorScheme.onErrorContainer
             is ConnectionBannerState.Idle -> MaterialTheme.colorScheme.onSurface
@@ -152,6 +156,39 @@ fun ConnectionBanner(
                                 text = current.message,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = contentColor,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(
+                                onClick = onDismiss,
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                            ) {
+                                Text(
+                                    "Dismiss",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = contentColor,
+                                )
+                            }
+                        }
+                    }
+                    is ConnectionBannerState.Info -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Info,
+                                contentDescription = null,
+                                tint = VusicColors.SecondaryText,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = current.message,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = contentColor,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
                             )
                             Spacer(Modifier.width(8.dp))

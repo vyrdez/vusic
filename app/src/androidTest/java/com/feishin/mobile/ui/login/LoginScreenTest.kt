@@ -101,7 +101,7 @@ class LoginScreenTest {
     }
 
     @Test
-    fun subtitleFollowsSelectedBackendTile_andDriveSoonDoesNotChangeIt() {
+    fun subtitleFollowsSelectedBackendTile_includingGoogleDrive_andHidesSecurityCard() {
         val vm = createTestViewModel()
         val messenger = UiMessenger()
         val shown = mutableStateListOf<String>()
@@ -131,9 +131,32 @@ class LoginScreenTest {
 
         composeRule.onNodeWithText("Google Drive").performClick()
         composeRule.waitForIdle()
-        assertTrue(shown.contains("Google Drive backend support is coming soon"))
-        composeRule.onNodeWithText("Jellyfin").assertIsSelected()
-        composeRule.onNodeWithText("Connect to your Jellyfin server").assertIsDisplayed()
+        assertTrue(shown.none { it.contains("coming soon", ignoreCase = true) })
+        composeRule.onNodeWithText("Google Drive").assertIsSelected()
+        composeRule.onNodeWithText("Connect to your Google Drive").assertIsDisplayed()
+        composeRule.onNodeWithText("Sign in with Google").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Allow self-signed certificate").assertDoesNotExist()
+    }
+
+    @Test
+    fun connectionBanner_infoState_rendersAndDismisses() {
+        var state by mutableStateOf<ConnectionBannerState>(
+            ConnectionBannerState.Info("Google sign-in cancelled"),
+        )
+
+        composeRule.setContent {
+            FeishinTheme(dark = true) {
+                ConnectionBanner(
+                    state = state,
+                    onDismiss = { state = ConnectionBannerState.Idle },
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Google sign-in cancelled").assertIsDisplayed()
+        composeRule.onNodeWithText("Dismiss").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Google sign-in cancelled").assertDoesNotExist()
     }
 
     @Test

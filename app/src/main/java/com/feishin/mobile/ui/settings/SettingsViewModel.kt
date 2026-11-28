@@ -2,14 +2,15 @@
 
 package com.feishin.mobile.ui.settings
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.IntentSender
 import android.os.Build
 import android.os.PowerManager
 import android.os.StatFs
 import android.provider.Settings
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feishin.mobile.BuildConfig
 import com.feishin.mobile.core.common.CacheSizePolicy
@@ -20,14 +21,18 @@ import com.feishin.mobile.data.auth.ProfileAuthStateStore
 import com.feishin.mobile.data.auth.ProfileAuthStatus
 import com.feishin.mobile.data.cache.CachedTrackStore
 import com.feishin.mobile.data.cache.MetadataCache
+import com.feishin.mobile.data.db.DriveTrackDao
 import com.feishin.mobile.data.download.DownloadRepository
 import com.feishin.mobile.data.download.OfflineSyncStore
 import com.feishin.mobile.data.network.NetworkMonitor
+import com.feishin.mobile.data.remote.drive.DriveAuthCoordinator
+import com.feishin.mobile.data.remote.drive.DriveAuthResult
 import com.feishin.mobile.data.settings.BackgroundStyle
 import com.feishin.mobile.data.settings.LayoutMode
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.data.settings.ThemeMode
 import com.feishin.mobile.domain.model.BackendCapabilities
+import com.feishin.mobile.domain.model.BackendType
 import com.feishin.mobile.domain.model.ProfileCredentials
 import com.feishin.mobile.domain.model.ServerInfo
 import com.feishin.mobile.domain.model.ServerProfile
@@ -39,6 +44,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -46,6 +53,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -81,6 +89,14 @@ data class StorageStats(
     val queuedDownloads: Int = 0,
 )
 
+sealed interface SettingsEvent {
+    data class LaunchDriveReconnect(
+        val profileId: String,
+        val intentSender: IntentSender,
+        val email: String,
+    ) : SettingsEvent
+}
+
 private class SettingsOptionalDeps(
     val downloads: DownloadRepository,
     val cache: MetadataCache,
@@ -93,6 +109,8 @@ private class SettingsOptionalDeps(
     val imageLoader: coil.ImageLoader,
     val lyricsRepo: com.feishin.mobile.data.repo.LyricsRepository,
     val context: Context,
+    val driveTrackDao: DriveTrackDao? = null,
+    val driveAuthCoordinator: DriveAuthCoordinator? = null,
 )
 
 @HiltViewModel
@@ -105,6 +123,8 @@ class SettingsViewModel private constructor(
     val libraryRefresh: com.feishin.mobile.data.cache.LibraryRefresh? = null,
     val messenger: com.feishin.mobile.ui.components.UiMessenger? = null,
     profileAuthStateStore: ProfileAuthStateStore? = null,
+    driveTrackDao: DriveTrackDao? = null,
+    driveAuthCoordinator: DriveAuthCoordinator? = null,
 ) : ViewModel() {
 
     val downloads: DownloadRepository? = deps?.downloads
@@ -118,6 +138,8 @@ class SettingsViewModel private constructor(
     private val imageLoader: coil.ImageLoader? = deps?.imageLoader
     private val lyricsRepo: com.feishin.mobile.data.repo.LyricsRepository? = deps?.lyricsRepo
     private val context: Context? = deps?.context
+    private val driveTrackDao: DriveTrackDao? = driveTrackDao ?: deps?.driveTrackDao
+    private val driveAuthCoordinator: DriveAuthCoordinator? = driveAuthCoordinator ?: deps?.driveAuthCoordinator
 
     @Inject
     constructor(
@@ -136,6 +158,8 @@ class SettingsViewModel private constructor(
         lyricsRepo: com.feishin.mobile.data.repo.LyricsRepository,
         @ApplicationContext context: Context,
         profileAuthStateStore: ProfileAuthStateStore,
+        driveTrackDao: DriveTrackDao,
+        driveAuthCoordinator: DriveAuthCoordinator,
         scanCoordinator: ScanCoordinator? = null,
         libraryRefresh: com.feishin.mobile.data.cache.LibraryRefresh? = null,
         messenger: com.feishin.mobile.ui.components.UiMessenger? = null,
@@ -155,11 +179,15 @@ class SettingsViewModel private constructor(
             imageLoader = imageLoader,
             lyricsRepo = lyricsRepo,
             context = context,
+            driveTrackDao = driveTrackDao,
+            driveAuthCoordinator = driveAuthCoordinator,
         ),
         scanCoordinator = scanCoordinator,
         libraryRefresh = libraryRefresh,
         messenger = messenger,
         profileAuthStateStore = profileAuthStateStore,
+        driveTrackDao = driveTrackDao,
+        driveAuthCoordinator = driveAuthCoordinator,
     )
 
     internal constructor(
@@ -170,6 +198,8 @@ class SettingsViewModel private constructor(
         libraryRefresh: com.feishin.mobile.data.cache.LibraryRefresh? = null,
         messenger: com.feishin.mobile.ui.components.UiMessenger? = null,
         profileAuthStateStore: ProfileAuthStateStore? = null,
+        driveTrackDao: DriveTrackDao? = null,
+        driveAuthCoordinator: DriveAuthCoordinator? = null,
     ) : this(
         store = store,
         repo = repo,
@@ -179,6 +209,8 @@ class SettingsViewModel private constructor(
         libraryRefresh = libraryRefresh,
         messenger = messenger,
         profileAuthStateStore = profileAuthStateStore,
+        driveTrackDao = driveTrackDao,
+        driveAuthCoordinator = driveAuthCoordinator,
     )
 
     val isOnline: StateFlow<Boolean> = network?.isOnline ?: MutableStateFlow(true)
@@ -197,11 +229,18 @@ class SettingsViewModel private constructor(
     val profileScanStates: StateFlow<Map<String, ScanUiState>> = coordinator.profileStates
     val healthState: StateFlow<FederatedHealthState> = repo.healthState
 
+    private val _events = Channel<SettingsEvent>(Channel.BUFFERED)
+    val events: Flow<SettingsEvent> = _events.receiveAsFlow()
+
+    private val _driveTrackCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val driveTrackCounts: StateFlow<Map<String, Int>> = _driveTrackCounts.asStateFlow()
+
     init {
         viewModelScope.launch {
             coordinator.state.collect { s ->
                 if (s is ScanUiState.Finished) {
                     refreshLibraryCounts()
+                    refreshDriveTrackCounts()
                 }
             }
         }
@@ -209,6 +248,16 @@ class SettingsViewModel private constructor(
             coordinator.profileStates.collect { map ->
                 if (map.values.any { it is ScanUiState.Finished }) {
                     refreshLibraryCounts()
+                    refreshDriveTrackCounts()
+                }
+            }
+        }
+        viewModelScope.launch {
+            auth.profiles.collect { list ->
+                if (list.any { it.type == BackendType.GOOGLE_DRIVE }) {
+                    refreshDriveTrackCounts()
+                } else if (_driveTrackCounts.value.isNotEmpty()) {
+                    _driveTrackCounts.value = emptyMap()
                 }
             }
         }
@@ -550,7 +599,124 @@ class SettingsViewModel private constructor(
                     }
                 }
             }
+            refreshDriveTrackCounts()
             refreshLibraryCounts()
+        }
+    }
+
+    fun refreshDriveTrackCounts() {
+        val dao = driveTrackDao ?: return
+        val driveProfiles = auth.profiles.value.filter { it.type == BackendType.GOOGLE_DRIVE }
+        if (driveProfiles.isEmpty()) {
+            _driveTrackCounts.value = emptyMap()
+            return
+        }
+        viewModelScope.launch {
+            val counts = withContext(Dispatchers.IO) {
+                buildMap {
+                    for (profile in driveProfiles) {
+                        val c = runCatching { dao.countForProfile(profile.id) }.getOrDefault(0)
+                        put(profile.id, c)
+                    }
+                }
+            }
+            _driveTrackCounts.value = counts
+        }
+    }
+
+    fun reconnectGoogleDrive(profile: ServerProfile) {
+        if (profile.type != BackendType.GOOGLE_DRIVE) return
+        val creds = profile.credentials as? ProfileCredentials.GoogleDrive ?: return
+        val coordinator = driveAuthCoordinator
+        if (coordinator == null) {
+            uiMessenger.show("Google Sign-In is not configured or Play Services is unavailable.")
+            return
+        }
+        _profileTestStates.update { it + (profile.id to TestState.Testing) }
+        viewModelScope.launch {
+            val result = coordinator.authorizeAccount(email = creds.accountEmail)
+            handleDriveReconnectResult(profile.id, result)
+        }
+    }
+
+    fun onDriveReconnectResolution(
+        profileId: String,
+        resultCode: Int,
+        data: Intent?,
+        fallbackEmail: String,
+    ) {
+        if (resultCode != Activity.RESULT_OK || data == null) {
+            handleDriveReconnectResult(profileId, DriveAuthResult.Cancelled)
+            return
+        }
+        val coordinator = driveAuthCoordinator
+        if (coordinator == null) {
+            handleDriveReconnectResult(
+                profileId,
+                DriveAuthResult.Unavailable("Google Sign-In is unavailable."),
+            )
+            return
+        }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                coordinator.resolveAuthorizationIntent(data, fallbackEmail)
+            }
+            handleDriveReconnectResult(profileId, result)
+        }
+    }
+
+    private fun handleDriveReconnectResult(
+        profileId: String,
+        result: DriveAuthResult,
+    ) {
+        when (result) {
+            is DriveAuthResult.Authorized -> {
+                val profile = auth.profiles.value.firstOrNull { it.id == profileId }
+                val existingCreds = profile?.credentials as? ProfileCredentials.GoogleDrive
+                if (profile != null && existingCreds != null) {
+                    viewModelScope.launch {
+                        val updated = profile.copy(
+                            credentials = existingCreds.copy(
+                                accountEmail = result.email.ifBlank { existingCreds.accountEmail },
+                                accessToken = result.accessToken,
+                                expiresAtEpochMs = result.expiresAtEpochMs,
+                            ),
+                        )
+                        auth.updateProfile(updated)
+                        authStateStore.clear(profileId)
+                        refreshProfileInfo(profileId)
+                        _profileTestStates.update { it + (profileId to TestState.Ok) }
+                        uiMessenger.show("Reconnected Google Drive (${result.email})")
+                    }
+                } else {
+                    _profileTestStates.update { it - profileId }
+                }
+            }
+
+            is DriveAuthResult.ResolutionRequired -> {
+                _events.trySend(
+                    SettingsEvent.LaunchDriveReconnect(
+                        profileId = profileId,
+                        intentSender = result.pendingIntent.intentSender,
+                        email = result.email,
+                    ),
+                )
+            }
+
+            DriveAuthResult.Cancelled -> {
+                _profileTestStates.update { it - profileId }
+                uiMessenger.show("Google sign-in cancelled")
+            }
+
+            is DriveAuthResult.Unavailable -> {
+                _profileTestStates.update { it - profileId }
+                uiMessenger.show("Google Sign-In is not configured or Play Services is unavailable.")
+            }
+
+            is DriveAuthResult.Error -> {
+                _profileTestStates.update { it + (profileId to TestState.Failed(result.message)) }
+                uiMessenger.show(result.message.ifBlank { "Google Drive reconnection failed." })
+            }
         }
     }
 

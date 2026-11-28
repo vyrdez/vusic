@@ -1,12 +1,19 @@
 package com.feishin.mobile.ui.login
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -41,7 +48,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -67,6 +77,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -83,6 +94,7 @@ import com.feishin.mobile.domain.model.ServerProfile
 import com.feishin.mobile.ui.components.UiMessenger
 import com.feishin.mobile.ui.settings.LoginToggleRow
 import com.feishin.mobile.ui.settings.SettingsCard
+import com.feishin.mobile.ui.settings.SettingsDivider
 import com.feishin.mobile.ui.theme.Motion.pressScale
 import com.feishin.mobile.ui.theme.VusicColors
 import com.feishin.mobile.ui.theme.VusicSpacing
@@ -324,9 +336,11 @@ fun ServerFormContent(
     bottomExtraContent: @Composable ColumnScope.() -> Unit = {},
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
+    val driveState by vm.driveState.collectAsStateWithLifecycle()
     val existingId = existingProfile?.id
     val editMode = existingId != null
     val reduceMotion = rememberLoginReduceMotion()
+    val context = LocalContext.current
 
     // Text fields survive configuration changes; password stays in plain remember
     // so process death never writes secrets into the saved-instance bundle.
@@ -350,9 +364,26 @@ fun ServerFormContent(
     var allowCleartext by rememberSaveable(existingId) {
         mutableStateOf(existingProfile?.allowCleartext ?: false)
     }
+    var showFolderPicker by remember { mutableStateOf(false) }
+    var folderPickerSession by remember { mutableStateOf(0) }
+    var showDriveReindexConfirm by remember { mutableStateOf(false) }
+    var pendingResolutionEmail by remember { mutableStateOf("") }
+
+    val driveConsentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult(),
+    ) { activityResult ->
+        vm.onDriveResolutionResult(
+            resultCode = activityResult.resultCode,
+            data = activityResult.data,
+            fallbackEmail = pendingResolutionEmail,
+        )
+    }
 
     LaunchedEffect(existingId) {
         vm.resetUi()
+        if (existingProfile != null && existingProfile.type == BackendType.GOOGLE_DRIVE) {
+            vm.initDriveEditState(existingProfile)
+        }
     }
 
     LaunchedEffect(backendType) {
@@ -363,29 +394,69 @@ fun ServerFormContent(
         vm.events.collect { event ->
             when (event) {
                 is LoginEvent.Snackbar -> messenger.show(event.message)
+                is LoginEvent.LaunchDriveConsent -> {
+                    pendingResolutionEmail = event.email
+                    driveConsentLauncher.launch(
+                        IntentSenderRequest.Builder(event.intentSender).build(),
+                    )
+                }
             }
         }
     }
 
+    val isDrive = backendType == BackendType.GOOGLE_DRIVE
+    val hasDriveAuth = LoginViewModel.canTestDrive(
+        accountEmail = driveState.accountEmail,
+        accessToken = driveState.accessToken,
+        editMode = editMode,
+    )
     val busy = ui.busy
-    val canConnect = LoginViewModel.canConnect(
-        url = url,
-        username = user,
-        password = pass,
-        backendType = backendType,
-        editMode = editMode,
-    )
-    val canTest = LoginViewModel.canTest(
-        url = url,
-        username = user,
-        password = pass,
-        backendType = backendType,
-        editMode = editMode,
-    )
+    val canConnect = if (isDrive) {
+        LoginViewModel.canConnectDrive(
+            accountEmail = driveState.accountEmail,
+            accessToken = driveState.accessToken,
+            driveRootFolderId = driveState.driveRootFolderId,
+            scanAllAudio = driveState.scanAllAudio,
+            editMode = editMode,
+        )
+    } else {
+        LoginViewModel.canConnect(
+            url = url,
+            username = user,
+            password = pass,
+            backendType = backendType,
+            editMode = editMode,
+        )
+    }
+    val canTest = if (isDrive) {
+        hasDriveAuth
+    } else {
+        LoginViewModel.canTest(
+            url = url,
+            username = user,
+            password = pass,
+            backendType = backendType,
+            editMode = editMode,
+        )
+    }
 
     val onConnectClick: () -> Unit = {
         if (!busy) {
-            if (canConnect) {
+            if (isDrive) {
+                when {
+                    !canTest -> vm.notifyDriveIncomplete(hasAuth = false)
+                    !canConnect -> vm.notifyDriveIncomplete(hasAuth = true)
+                    editMode && vm.needsDriveReindexOnSave(existingProfile) -> {
+                        showDriveReindexConfirm = true
+                    }
+                    else -> vm.connectGoogleDrive(
+                        serverName = serverName.trim(),
+                        addMode = addMode || editMode,
+                        existingProfileId = existingId,
+                        onSuccess = onSuccess,
+                    )
+                }
+            } else if (canConnect) {
                 vm.testAndConnect(
                     serverUrl = url.trim(),
                     username = user.trim(),
@@ -406,7 +477,13 @@ fun ServerFormContent(
 
     val onTestOnlyClick: () -> Unit = {
         if (!busy) {
-            if (canTest) {
+            if (isDrive) {
+                if (canTest) {
+                    vm.testDriveOnly(existingProfileId = existingId)
+                } else {
+                    vm.notifyDriveIncomplete(hasAuth = false)
+                }
+            } else if (canTest) {
                 vm.testOnly(
                     serverUrl = url.trim(),
                     username = user.trim(),
@@ -437,7 +514,6 @@ fun ServerFormContent(
                     vm.clearError()
                 }
             },
-            onSoonClick = { vm.notifyComingSoon() },
         )
 
         Spacer(Modifier.height(22.dp))
@@ -452,6 +528,16 @@ fun ServerFormContent(
             unfocusedIndicatorColor = Color.Transparent,
             disabledIndicatorColor = Color.Transparent,
         )
+        val fieldHideEnter = if (reduceMotion) {
+            fadeIn(snap()) + expandVertically(snap())
+        } else {
+            fadeIn(tween(170)) + expandVertically(spring(dampingRatio = 0.9f))
+        }
+        val fieldHideExit = if (reduceMotion) {
+            fadeOut(snap()) + shrinkVertically(snap())
+        } else {
+            fadeOut(tween(120)) + shrinkVertically()
+        }
 
         SettingsCard {
             Column(
@@ -465,129 +551,369 @@ fun ServerFormContent(
                     hint = "Optional",
                     value = serverName,
                     onValueChange = { serverName = it; vm.clearError() },
-                    placeholder = "e.g. Home Library",
-                    enabled = !busy,
-                    colors = fieldColors,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text,
-                        imeAction = ImeAction.Next,
-                    ),
-                )
-                LabeledFormField(
-                    label = "Server URL",
-                    hint = "HTTPS or HTTP",
-                    value = url,
-                    onValueChange = { url = it; vm.clearError() },
-                    placeholder = if (backendType == BackendType.JELLYFIN) {
-                        "https://jellyfin.example.com:8096"
+                    placeholder = if (isDrive) {
+                        driveState.accountEmail.ifBlank { "e.g. Google Drive" }
                     } else {
-                        "https://host:4533/music"
+                        "e.g. Home Library"
                     },
                     enabled = !busy,
                     colors = fieldColors,
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Uri,
-                        imeAction = ImeAction.Next,
-                    ),
-                )
-                LabeledFormField(
-                    label = "Username",
-                    hint = null,
-                    value = user,
-                    onValueChange = { user = it; vm.clearError() },
-                    placeholder = "Enter username",
-                    enabled = !busy,
-                    colors = fieldColors,
-                    keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Text,
-                        imeAction = ImeAction.Next,
+                        imeAction = if (isDrive) ImeAction.Done else ImeAction.Next,
                     ),
                 )
-                LabeledFormField(
-                    label = "Password",
-                    hint = if (backendType == BackendType.JELLYFIN) "Optional" else null,
-                    value = pass,
-                    onValueChange = { pass = it; vm.clearError() },
-                    placeholder = if (editMode) "Leave blank to keep current" else "Enter password",
-                    enabled = !busy,
-                    colors = fieldColors,
-                    visualTransformation = if (showPassword) {
-                        VisualTransformation.None
-                    } else {
-                        PasswordVisualTransformation()
-                    },
-                    trailingIcon = {
-                        IconButton(
-                            onClick = { showPassword = !showPassword },
+                AnimatedVisibility(
+                    visible = !isDrive,
+                    enter = fieldHideEnter,
+                    exit = fieldHideExit,
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        LabeledFormField(
+                            label = "Server URL",
+                            hint = "HTTPS or HTTP",
+                            value = url,
+                            onValueChange = { url = it; vm.clearError() },
+                            placeholder = if (backendType == BackendType.JELLYFIN) {
+                                "https://jellyfin.example.com:8096"
+                            } else {
+                                "https://host:4533/music"
+                            },
                             enabled = !busy,
-                        ) {
-                            Crossfade(
-                                targetState = showPassword,
-                                animationSpec = if (reduceMotion) snap() else tween(120),
-                                label = "password-visibility",
-                            ) { visible ->
-                                Icon(
-                                    imageVector = if (visible) {
-                                        Icons.Filled.VisibilityOff
-                                    } else {
-                                        Icons.Filled.Visibility
-                                    },
-                                    contentDescription = if (visible) {
-                                        "Hide password"
-                                    } else {
-                                        "Show password"
-                                    },
-                                )
-                            }
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Done,
-                    ),
-                    keyboardActions = KeyboardActions(onDone = { onConnectClick() }),
-                )
+                            colors = fieldColors,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Uri,
+                                imeAction = ImeAction.Next,
+                            ),
+                        )
+                        LabeledFormField(
+                            label = "Username",
+                            hint = null,
+                            value = user,
+                            onValueChange = { user = it; vm.clearError() },
+                            placeholder = "Enter username",
+                            enabled = !busy,
+                            colors = fieldColors,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Text,
+                                imeAction = ImeAction.Next,
+                            ),
+                        )
+                        LabeledFormField(
+                            label = "Password",
+                            hint = if (backendType == BackendType.JELLYFIN) "Optional" else null,
+                            value = pass,
+                            onValueChange = { pass = it; vm.clearError() },
+                            placeholder = if (editMode) "Leave blank to keep current" else "Enter password",
+                            enabled = !busy,
+                            colors = fieldColors,
+                            visualTransformation = if (showPassword) {
+                                VisualTransformation.None
+                            } else {
+                                PasswordVisualTransformation()
+                            },
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = { showPassword = !showPassword },
+                                    enabled = !busy,
+                                ) {
+                                    Crossfade(
+                                        targetState = showPassword,
+                                        animationSpec = if (reduceMotion) snap() else tween(120),
+                                        label = "password-visibility",
+                                    ) { visible ->
+                                        Icon(
+                                            imageVector = if (visible) {
+                                                Icons.Filled.VisibilityOff
+                                            } else {
+                                                Icons.Filled.Visibility
+                                            },
+                                            contentDescription = if (visible) {
+                                                "Hide password"
+                                            } else {
+                                                "Show password"
+                                            },
+                                        )
+                                    }
+                                }
+                            },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Password,
+                                imeAction = ImeAction.Done,
+                            ),
+                            keyboardActions = KeyboardActions(onDone = { onConnectClick() }),
+                        )
+                    }
+                }
             }
         }
 
-        Spacer(Modifier.height(22.dp))
-        FormSectionLabel("TRANSPORT & SECURITY")
-        Spacer(Modifier.height(10.dp))
+        AnimatedVisibility(
+            visible = isDrive,
+            enter = fieldHideEnter,
+            exit = fieldHideExit,
+        ) {
+            Column(Modifier.fillMaxWidth()) {
+                Spacer(Modifier.height(14.dp))
+                SettingsCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.AccountCircle,
+                                contentDescription = null,
+                                tint = if (hasDriveAuth) VusicColors.Accent else VusicColors.SecondaryText,
+                                modifier = Modifier.size(22.dp),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (hasDriveAuth) driveState.accountEmail else "Google account",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = if (hasDriveAuth) {
+                                        "Read-only Google Drive access"
+                                    } else {
+                                        "Sign in to browse and stream your Drive music"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = VusicColors.SecondaryText,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        if (hasDriveAuth) {
+                            OutlinedButton(
+                                onClick = {
+                                    vm.clearError()
+                                    vm.signInWithGoogle(context)
+                                },
+                                enabled = !busy,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 48.dp),
+                            ) {
+                                Text("Switch account", maxLines = 1)
+                            }
+                        } else {
+                            Button(
+                                onClick = {
+                                    vm.clearError()
+                                    vm.signInWithGoogle(context)
+                                },
+                                enabled = !busy,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = VusicColors.Accent,
+                                    contentColor = VusicColors.OnAccent,
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 48.dp),
+                            ) {
+                                Text("Sign in with Google", maxLines = 1)
+                            }
+                        }
+                    }
+                }
 
-        val isHttpUrl = url.trim().startsWith("http://", ignoreCase = true)
-        SettingsCard {
-            LoginToggleRow(
-                title = "Allow self-signed certificate",
-                subtitle = "For trusted local or home-lab servers using custom TLS",
-                checked = allowSelfSigned,
-                enabled = !busy,
-                onToggle = { allowSelfSigned = it; vm.clearError() },
-                warning = if (allowSelfSigned) {
-                    "TLS certificate chain won't be strictly verified"
-                } else {
-                    null
+                AnimatedVisibility(
+                    visible = hasDriveAuth,
+                    enter = fieldHideEnter,
+                    exit = fieldHideExit,
+                ) {
+                    Column(Modifier.fillMaxWidth()) {
+                        Spacer(Modifier.height(14.dp))
+                        SettingsCard {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Folder,
+                                        contentDescription = null,
+                                        tint = if (driveState.driveRootFolderId != null || driveState.scanAllAudio) {
+                                            VusicColors.Accent
+                                        } else {
+                                            VusicColors.SecondaryText
+                                        },
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Music folder",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                        )
+                                        val folderLabel = when {
+                                            driveState.scanAllAudio -> "All audio files (entire Drive)"
+                                            !driveState.driveRootFolderName.isNullOrBlank() ->
+                                                driveState.driveRootFolderName.orEmpty()
+                                            !driveState.driveRootFolderId.isNullOrBlank() ->
+                                                "Selected folder"
+                                            else -> "No folder selected"
+                                        }
+                                        Text(
+                                            text = folderLabel,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = VusicColors.SecondaryText,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    OutlinedButton(
+                                        onClick = {
+                                            vm.clearError()
+                                            folderPickerSession++
+                                            showFolderPicker = true
+                                        },
+                                        enabled = !busy,
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                                    ) {
+                                        Text("Choose folder", maxLines = 1)
+                                    }
+                                }
+                                SettingsDivider()
+                                LoginToggleRow(
+                                    title = "Scan all audio files (entire Drive)",
+                                    subtitle = "Index all audio files in My Drive instead of a single folder",
+                                    checked = driveState.scanAllAudio,
+                                    enabled = !busy,
+                                    onToggle = { vm.setDriveScanAllAudio(it) },
+                                    showDivider = false,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = !isDrive,
+            enter = fieldHideEnter,
+            exit = fieldHideExit,
+        ) {
+            Column(Modifier.fillMaxWidth()) {
+                Spacer(Modifier.height(22.dp))
+                FormSectionLabel("TRANSPORT & SECURITY")
+                Spacer(Modifier.height(10.dp))
+
+                val isHttpUrl = url.trim().startsWith("http://", ignoreCase = true)
+                SettingsCard {
+                    LoginToggleRow(
+                        title = "Allow self-signed certificate",
+                        subtitle = "For trusted local or home-lab servers using custom TLS",
+                        checked = allowSelfSigned,
+                        enabled = !busy,
+                        onToggle = { allowSelfSigned = it; vm.clearError() },
+                        warning = if (allowSelfSigned) {
+                            "TLS certificate chain won't be strictly verified"
+                        } else {
+                            null
+                        },
+                        warningIsError = true,
+                        showDivider = true,
+                    )
+                    LoginToggleRow(
+                        title = "Allow cleartext HTTP",
+                        subtitle = "Permit unencrypted http:// connections on local networks",
+                        checked = allowCleartext,
+                        enabled = !busy,
+                        onToggle = { allowCleartext = it; vm.clearError() },
+                        warning = if (allowCleartext && isHttpUrl) {
+                            "Traffic can be read on public networks"
+                        } else {
+                            null
+                        },
+                        warningIsError = false,
+                        hint = if (!allowCleartext && isHttpUrl) {
+                            "This URL uses HTTP — enable cleartext to connect"
+                        } else {
+                            null
+                        },
+                        showDivider = false,
+                    )
+                }
+            }
+        }
+
+        if (showFolderPicker) {
+            DriveFolderPickerDialog(
+                initialSelectedFolderId = driveState.driveRootFolderId,
+                sessionKey = folderPickerSession,
+                loadSubfolders = { parentId ->
+                    vm.listDriveSubfolders(
+                        parentId = parentId,
+                        existingProfileId = existingId,
+                    )
                 },
-                warningIsError = true,
-                showDivider = true,
+                onSelectFolder = { folderId, folderName ->
+                    vm.setDriveFolderSelection(folderId, folderName)
+                    showFolderPicker = false
+                },
+                onScanAllAudio = { _ ->
+                    vm.setDriveScanAllAudio(true)
+                    showFolderPicker = false
+                },
+                onDismiss = { showFolderPicker = false },
             )
-            LoginToggleRow(
-                title = "Allow cleartext HTTP",
-                subtitle = "Permit unencrypted http:// connections on local networks",
-                checked = allowCleartext,
-                enabled = !busy,
-                onToggle = { allowCleartext = it; vm.clearError() },
-                warning = if (allowCleartext && isHttpUrl) {
-                    "Traffic can be read on public networks"
-                } else {
-                    null
+        }
+
+        if (showDriveReindexConfirm) {
+            AlertDialog(
+                onDismissRequest = { showDriveReindexConfirm = false },
+                title = { Text("Re-index Google Drive library?") },
+                text = {
+                    Text(
+                        "Changing the Google account or Music folder will clear cached Drive tracks, " +
+                            "local favorites, play history, and Drive covers for this profile and " +
+                            "start a fresh index. Your local playlists will be kept.",
+                    )
                 },
-                warningIsError = false,
-                hint = if (!allowCleartext && isHttpUrl) {
-                    "This URL uses HTTP — enable cleartext to connect"
-                } else {
-                    null
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showDriveReindexConfirm = false
+                            vm.connectGoogleDrive(
+                                serverName = serverName.trim(),
+                                addMode = addMode || editMode,
+                                existingProfileId = existingId,
+                                onSuccess = onSuccess,
+                            )
+                        },
+                    ) {
+                        Text("Save & Re-index")
+                    }
                 },
-                showDivider = false,
+                dismissButton = {
+                    TextButton(onClick = { showDriveReindexConfirm = false }) {
+                        Text("Cancel")
+                    }
+                },
             )
         }
 

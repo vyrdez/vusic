@@ -7,19 +7,52 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feishin.mobile.core.common.Result
+import com.feishin.mobile.core.network.SyncedLyrics
 import com.feishin.mobile.data.auth.AuthRepository
 import com.feishin.mobile.data.auth.CredentialsStore
+import com.feishin.mobile.data.auth.DriveScanCancellationRegistry
 import com.feishin.mobile.data.auth.ProfileAuthStateStore
 import com.feishin.mobile.data.auth.ProfileStore
 import com.feishin.mobile.data.auth.TransientProbeRegistry
 import com.feishin.mobile.data.backend.BackendClientFactory
+import com.feishin.mobile.data.cache.LibraryRefresh
+import com.feishin.mobile.data.db.CachedCoverDao
+import com.feishin.mobile.data.db.CachedCoverEntity
+import com.feishin.mobile.data.db.DriveAlbumRow
+import com.feishin.mobile.data.db.DriveArtistRow
+import com.feishin.mobile.data.db.DriveFileModTime
+import com.feishin.mobile.data.db.DriveGenreRow
+import com.feishin.mobile.data.db.DriveTrackDao
+import com.feishin.mobile.data.db.DriveTrackEntity
+import com.feishin.mobile.data.db.LocalAlbumPlayStats
+import com.feishin.mobile.data.db.LocalFavoriteDao
+import com.feishin.mobile.data.db.LocalFavoriteEntity
+import com.feishin.mobile.data.db.LocalPlayHistoryDao
+import com.feishin.mobile.data.db.LocalPlayHistoryEntity
 import com.feishin.mobile.data.remote.CleartextGuardInterceptor
 import com.feishin.mobile.data.remote.ProfileAuthInterceptor
 import com.feishin.mobile.data.remote.ProfileTrustManager
+import com.feishin.mobile.data.remote.drive.DriveAuthResult
 import com.feishin.mobile.data.settings.SettingsStore
+import com.feishin.mobile.domain.model.Album
+import com.feishin.mobile.domain.model.AlbumDetail
+import com.feishin.mobile.domain.model.Artist
+import com.feishin.mobile.domain.model.ArtistDetail
+import com.feishin.mobile.domain.model.ArtistInfo
 import com.feishin.mobile.domain.model.BackendType
+import com.feishin.mobile.domain.model.Genre
+import com.feishin.mobile.domain.model.Playlist
+import com.feishin.mobile.domain.model.PlaylistDetail
 import com.feishin.mobile.domain.model.ProfileCredentials
+import com.feishin.mobile.domain.model.SearchResults
+import com.feishin.mobile.domain.model.ServerInfo
 import com.feishin.mobile.domain.model.ServerProfile
+import com.feishin.mobile.domain.model.StarredCollection
+import com.feishin.mobile.domain.model.Track
+import com.feishin.mobile.domain.repo.MusicDataRepository
+import com.feishin.mobile.domain.repo.ScanStatus
+import com.feishin.mobile.ui.components.UiMessenger
+import com.feishin.mobile.ui.settings.ScanCoordinator
 import java.io.BufferedReader
 import java.io.Closeable
 import java.io.File
@@ -42,7 +75,12 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.json.Json
+import okhttp3.Interceptor
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -91,11 +129,14 @@ class LoginViewModelTest {
     private data class AuthHarness(
         val auth: AuthRepository,
         val profileStore: ProfileStore,
+        val backendFactory: BackendClientFactory,
+        val probeRegistry: TransientProbeRegistry,
     )
 
     private fun newAuthHarness(
         settings: SettingsStore,
         initialProfiles: List<ServerProfile> = emptyList(),
+        driveInterceptor: Interceptor? = null,
     ): AuthHarness {
         val profilePrefs = InMemorySharedPreferences()
         val legacyPrefs = InMemorySharedPreferences()
@@ -108,13 +149,16 @@ class LoginViewModelTest {
         val cleartextGuard = CleartextGuardInterceptor(profileStore, probeRegistry, settings)
         val profileAuth = ProfileAuthInterceptor(profileStore, probeRegistry)
         val trustManager = ProfileTrustManager(profileStore, probeRegistry, settings)
-        val baseClient = OkHttpClient.Builder()
+        val clientBuilder = OkHttpClient.Builder()
             .sslSocketFactory(trustManager.sslContext().socketFactory, trustManager)
             .hostnameVerifier(trustManager.hostnameVerifier())
             .addInterceptor(cleartextGuard)
             .addInterceptor(profileAuth)
             .addNetworkInterceptor(profileAuth.redirectGuard())
-            .build()
+        if (driveInterceptor != null) {
+            clientBuilder.addInterceptor(driveInterceptor)
+        }
+        val baseClient = clientBuilder.build()
         val json = Json {
             ignoreUnknownKeys = true
             explicitNulls = false
@@ -130,7 +174,7 @@ class LoginViewModelTest {
             profileAuthStateStore = ProfileAuthStateStore(),
         )
         runBlocking { auth.preload() }
-        return AuthHarness(auth, profileStore)
+        return AuthHarness(auth, profileStore, backendFactory, probeRegistry)
     }
 
     private fun awaitCondition(timeoutMs: Long = 5_000L, predicate: () -> Boolean) {
@@ -456,22 +500,235 @@ class LoginViewModelTest {
         val events = CopyOnWriteArrayList<LoginEvent>()
         val job = launch(start = CoroutineStart.UNDISPATCHED) { vm.events.collect { events += it } }
 
-        vm.notifyComingSoon()
+        vm.notifyDriveIncomplete(hasAuth = false)
+        vm.notifyDriveIncomplete(hasAuth = true)
         vm.notifyIncomplete(BackendType.NAVIDROME, editMode = false)
         vm.notifyIncomplete(BackendType.JELLYFIN, editMode = false)
         vm.useDeviceFilesOnly()
 
-        awaitSuspendCondition { events.size >= 4 }
+        awaitSuspendCondition { events.size >= 5 }
         assertEquals(
             listOf(
-                LoginEvent.Snackbar("Google Drive backend support is coming soon"),
+                LoginEvent.Snackbar("Sign in with Google first"),
+                LoginEvent.Snackbar("Choose a Music folder or turn on \"Scan all audio files\""),
                 LoginEvent.Snackbar("Fill in Server URL, Username, and Password first"),
                 LoginEvent.Snackbar("Fill in Server URL and Username first"),
                 LoginEvent.Snackbar("Offline mode · Using local device files only"),
             ),
-            events.take(4),
+            events.take(5),
         )
         job.cancel()
+    }
+
+    @Test
+    fun driveReadinessHelpers_enforceAuthAndFolderOrScanAll() {
+        assertFalse(LoginViewModel.canTestDrive("", "tok"))
+        assertFalse(LoginViewModel.canTestDrive("alice@gmail.com", ""))
+        assertTrue(LoginViewModel.canTestDrive("alice@gmail.com", "tok"))
+        assertTrue(LoginViewModel.canTestDrive("alice@gmail.com", "", editMode = true))
+
+        assertFalse(
+            LoginViewModel.canConnectDrive(
+                accountEmail = "alice@gmail.com",
+                accessToken = "tok",
+                driveRootFolderId = null,
+                scanAllAudio = false,
+            ),
+        )
+        assertTrue(
+            LoginViewModel.canConnectDrive(
+                accountEmail = "alice@gmail.com",
+                accessToken = "tok",
+                driveRootFolderId = "folder-1",
+                scanAllAudio = false,
+            ),
+        )
+        assertTrue(
+            LoginViewModel.canConnectDrive(
+                accountEmail = "alice@gmail.com",
+                accessToken = "tok",
+                driveRootFolderId = null,
+                scanAllAudio = true,
+            ),
+        )
+    }
+
+    @Test
+    fun driveAuthOutcomesAndTestOnly_matchExactBannerAndSnackbarCopy() = runBlocking {
+        val settings = newSettings()
+        val aboutInterceptor = Interceptor { chain ->
+            val req = chain.request()
+            if (req.url.host == "www.googleapis.com" && req.url.encodedPath == "/drive/v3/about") {
+                Response.Builder()
+                    .request(req)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body(
+                        """{"user":{"emailAddress":"alice@gmail.com","displayName":"Alice"}}"""
+                            .toResponseBody("application/json".toMediaType()),
+                    )
+                    .build()
+            } else {
+                chain.proceed(req)
+            }
+        }
+        val harness = newAuthHarness(settings, driveInterceptor = aboutInterceptor)
+        val vm = track(
+            LoginViewModel.forTest(
+                auth = harness.auth,
+                settings = settings,
+                backendFactory = harness.backendFactory,
+                probeRegistry = harness.probeRegistry,
+            ),
+        )
+
+        vm.handleDriveAuthResult(DriveAuthResult.Cancelled)
+        assertEquals(
+            ConnectionBannerState.Info("Google sign-in cancelled"),
+            vm.ui.value.banner,
+        )
+        vm.clearError()
+        assertEquals(ConnectionBannerState.Idle, vm.ui.value.banner)
+
+        vm.handleDriveAuthResult(DriveAuthResult.Unavailable("missing client id"))
+        assertEquals(
+            LoginViewModel.DRIVE_UNAVAILABLE_ERROR,
+            (vm.ui.value.banner as ConnectionBannerState.Error).message,
+        )
+
+        vm.handleDriveAuthResult(DriveAuthResult.Error("Access denied"), fromResolution = true)
+        assertEquals(
+            LoginViewModel.DRIVE_CONSENT_DENIED_ERROR,
+            (vm.ui.value.banner as ConnectionBannerState.Error).message,
+        )
+
+        vm.handleDriveAuthResult(
+            DriveAuthResult.Authorized(
+                email = "alice@gmail.com",
+                accessToken = "tok-drive-1",
+                expiresAtEpochMs = 1_900_000_000_000L,
+            ),
+        )
+        assertEquals("alice@gmail.com", vm.driveState.value.accountEmail)
+        assertEquals("tok-drive-1", vm.driveState.value.accessToken)
+        assertEquals(ConnectionBannerState.Idle, vm.ui.value.banner)
+
+        vm.testDriveOnly()
+        awaitSuspendCondition { vm.ui.value.banner is ConnectionBannerState.Success }
+        assertEquals(
+            "Connection OK · Google Drive (alice@gmail.com)",
+            (vm.ui.value.banner as ConnectionBannerState.Success).message,
+        )
+    }
+
+    @Test
+    fun driveEditMode_folderChangeClearsDriveTablesAndCovers_andStartsReindex() = runBlocking {
+        val settings = newSettings()
+        val aboutInterceptor = Interceptor { chain ->
+            val req = chain.request()
+            if (req.url.host == "www.googleapis.com" && req.url.encodedPath == "/drive/v3/about") {
+                Response.Builder()
+                    .request(req)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body(
+                        """{"user":{"emailAddress":"alice@gmail.com","displayName":"Alice"}}"""
+                            .toResponseBody("application/json".toMediaType()),
+                    )
+                    .build()
+            } else {
+                chain.proceed(req)
+            }
+        }
+        val existingDrive = ServerProfile(
+            id = "p-drive",
+            name = "My Drive",
+            type = BackendType.GOOGLE_DRIVE,
+            url = BackendClientFactory.GOOGLE_DRIVE_BASE_URL,
+            userId = "alice@gmail.com",
+            credentials = ProfileCredentials.GoogleDrive(
+                accountEmail = "alice@gmail.com",
+                accessToken = "stored-drive-tok",
+                expiresAtEpochMs = 1_900_000_000_000L,
+            ),
+            allowSelfSigned = false,
+            allowCleartext = false,
+            driveRootFolderId = "folder-old",
+            driveRootFolderName = "Old Music",
+        )
+        val harness = newAuthHarness(
+            settings = settings,
+            initialProfiles = listOf(existingDrive),
+            driveInterceptor = aboutInterceptor,
+        )
+        val clearedDriveProfiles = CopyOnWriteArrayList<String>()
+        val clearedFavProfiles = CopyOnWriteArrayList<String>()
+        val clearedHistoryProfiles = CopyOnWriteArrayList<String>()
+        val clearedCoverPrefixes = CopyOnWriteArrayList<String>()
+        val cancelledScans = CopyOnWriteArrayList<String>()
+        val startedScans = CopyOnWriteArrayList<String>()
+
+        val cancellationRegistry = DriveScanCancellationRegistry().apply {
+            register("test") { cancelledScans += it }
+        }
+        val scanRepo = object : StubMusicRepo() {
+            override suspend fun startScan(profileId: String): Result<Unit> {
+                startedScans += profileId
+                return Result.Ok(Unit)
+            }
+        }
+        val scanCoordinator = ScanCoordinator(
+            repo = scanRepo,
+            libraryRefresh = LibraryRefresh(),
+            messenger = UiMessenger(),
+        )
+        val vm = track(
+            LoginViewModel.forTest(
+                auth = harness.auth,
+                settings = settings,
+                backendFactory = harness.backendFactory,
+                probeRegistry = harness.probeRegistry,
+                scanCoordinator = scanCoordinator,
+                driveTrackDao = FakeDriveTrackDao(clearedDriveProfiles),
+                localFavoriteDao = FakeLocalFavoriteDao(clearedFavProfiles),
+                localPlayHistoryDao = FakeLocalPlayHistoryDao(clearedHistoryProfiles),
+                cachedCoverDao = FakeCachedCoverDao(clearedCoverPrefixes),
+                driveScanCancellationRegistry = cancellationRegistry,
+                libraryRefresh = LibraryRefresh(),
+            ),
+        )
+        val events = CopyOnWriteArrayList<LoginEvent>()
+        val job = launch(start = CoroutineStart.UNDISPATCHED) { vm.events.collect { events += it } }
+
+        vm.initDriveEditState(existingDrive)
+        assertFalse(vm.needsDriveReindexOnSave(existingDrive))
+
+        vm.setDriveFolderSelection("folder-new", "Lossless")
+        assertTrue(vm.needsDriveReindexOnSave(existingDrive))
+
+        var savedOk = false
+        vm.connectGoogleDrive(
+            serverName = "Updated Drive",
+            addMode = true,
+            existingProfileId = "p-drive",
+            onSuccess = { savedOk = true },
+        )
+        awaitSuspendCondition { savedOk && startedScans.contains("p-drive") }
+
+        val updated = harness.auth.profiles.value.single()
+        assertEquals("Updated Drive", updated.name)
+        assertEquals("folder-new", updated.driveRootFolderId)
+        assertEquals("Lossless", updated.driveRootFolderName)
+        assertEquals(listOf("p-drive"), cancelledScans)
+        assertEquals(listOf("p-drive"), clearedDriveProfiles)
+        assertEquals(listOf("p-drive"), clearedFavProfiles)
+        assertEquals(listOf("p-drive"), clearedHistoryProfiles)
+        assertTrue(clearedCoverPrefixes.contains("p-drive:cov:"))
+        assertTrue(events.any { it == LoginEvent.Snackbar("Connected to Google Drive · indexing started") })
+        job.cancel()
+        scanCoordinator.cancelPolling()
     }
 
     @Test
@@ -630,5 +887,96 @@ class LoginViewModelTest {
             }
             override fun apply() { commit() }
         }
+    }
+
+    private open class StubMusicRepo : MusicDataRepository {
+        override suspend fun ping() = Result.Ok(Unit)
+        override suspend fun albumList(type: String, size: Int, offset: Int, genre: String?) = Result.Ok(emptyList<Album>())
+        override suspend fun artists() = Result.Ok(emptyList<Artist>())
+        override suspend fun genres() = Result.Ok(emptyList<Genre>())
+        override suspend fun playlists() = Result.Ok(emptyList<Playlist>())
+        override suspend fun search(query: String) = Result.Ok(SearchResults())
+        override suspend fun search(query: String, artistCount: Int, albumCount: Int, songCount: Int) = Result.Ok(SearchResults())
+        override suspend fun serverInfo() = Result.Ok(ServerInfo())
+        override suspend fun startScan() = Result.Ok(Unit)
+        override suspend fun scanStatus() = Result.Ok(ScanStatus(false, 0))
+        override suspend fun album(id: String): Result<AlbumDetail> = Result.Err("stub")
+        override suspend fun artist(id: String): Result<ArtistDetail> = Result.Err("stub")
+        override suspend fun artistInfo(id: String) = Result.Ok(ArtistInfo())
+        override suspend fun randomSongs(size: Int, genre: String?) = Result.Ok(emptyList<Track>())
+        override suspend fun topSongs(artist: String, count: Int) = Result.Ok(emptyList<Track>())
+        override suspend fun similarSongs(songId: String?, artistId: String?, count: Int) = Result.Ok(emptyList<Track>())
+        override suspend fun playlist(id: String): Result<PlaylistDetail> = Result.Err("stub")
+        override suspend fun starred() = Result.Ok(StarredCollection())
+        override suspend fun starTrack(id: String, starred: Boolean) = Result.Ok(Unit)
+        override suspend fun starAlbum(id: String, starred: Boolean) = Result.Ok(Unit)
+        override suspend fun starArtist(id: String, starred: Boolean) = Result.Ok(Unit)
+        override suspend fun createPlaylist(name: String, trackIds: List<String>) = Result.Ok("pl1")
+        override suspend fun addToPlaylist(playlistId: String, trackIds: List<String>) = Result.Ok(Unit)
+        override suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>) = Result.Ok(Unit)
+        override suspend fun deletePlaylist(id: String) = Result.Ok(Unit)
+        override suspend fun scrobble(id: String, submission: Boolean) = Result.Ok(Unit)
+        override suspend fun scrobbleAt(id: String, timeMs: Long, submission: Boolean) = Result.Ok(Unit)
+        override suspend fun lyrics(artist: String, title: String) = Result.Ok("")
+        override suspend fun lyricsForTrack(id: String, artist: String, title: String) = Result.Ok(SyncedLyrics.plain(""))
+        override fun streamUrl(track: Track, maxBitrate: Int, format: String) = ""
+        override fun coverArtUrl(coverArtId: String?, size: Int): String? = null
+        override fun downloadUrl(track: Track) = ""
+    }
+
+    private class FakeDriveTrackDao(private val cleared: MutableList<String>) : DriveTrackDao {
+        override suspend fun allIdsAndModTimes(profileId: String) = emptyList<DriveFileModTime>()
+        override suspend fun upsertAll(tracks: List<DriveTrackEntity>) = Unit
+        override suspend fun deleteByIds(songIds: List<String>) = Unit
+        override suspend fun clearProfile(profileId: String) { cleared += profileId }
+        override suspend fun countForProfile(profileId: String) = 0
+        override suspend fun tracksForProfile(profileId: String) = emptyList<DriveTrackEntity>()
+        override suspend fun trackById(songId: String): DriveTrackEntity? = null
+        override suspend fun embeddedLyrics(songId: String): String? = null
+        override suspend fun albumsForProfile(profileId: String) = emptyList<DriveAlbumRow>()
+        override suspend fun albumsRecentFromHistory(profileId: String, limit: Int, offset: Int) = emptyList<DriveAlbumRow>()
+        override suspend fun albumsFrequentFromHistory(profileId: String, limit: Int, offset: Int) = emptyList<DriveAlbumRow>()
+        override suspend fun artistsForProfile(profileId: String) = emptyList<DriveArtistRow>()
+        override suspend fun genresForProfile(profileId: String) = emptyList<DriveGenreRow>()
+        override suspend fun tracksInAlbum(albumKey: String) = emptyList<DriveTrackEntity>()
+        override suspend fun tracksByArtist(artistKey: String) = emptyList<DriveTrackEntity>()
+        override suspend fun tracksByParentFolder(profileId: String, parentFolderId: String) = emptyList<DriveTrackEntity>()
+        override suspend fun allSongsForProfile(profileId: String, limit: Int, offset: Int) = emptyList<DriveTrackEntity>()
+        override suspend fun randomTracks(profileId: String, limit: Int, genre: String?) = emptyList<DriveTrackEntity>()
+        override suspend fun searchTracks(profileId: String, query: String, limit: Int) = emptyList<DriveTrackEntity>()
+        override suspend fun searchAlbums(profileId: String, query: String, limit: Int) = emptyList<DriveAlbumRow>()
+        override suspend fun searchArtists(profileId: String, query: String, limit: Int) = emptyList<DriveArtistRow>()
+    }
+
+    private class FakeLocalFavoriteDao(private val cleared: MutableList<String>) : LocalFavoriteDao {
+        override suspend fun all() = emptyList<LocalFavoriteEntity>()
+        override suspend fun byKind(kind: String) = emptyList<LocalFavoriteEntity>()
+        override suspend fun byProfile(profileId: String) = emptyList<LocalFavoriteEntity>()
+        override suspend fun byProfileAndKind(profileId: String, kind: String) = emptyList<LocalFavoriteEntity>()
+        override suspend fun idsByKind(kind: String) = emptyList<String>()
+        override suspend fun isStarred(targetId: String) = false
+        override suspend fun upsert(favorite: LocalFavoriteEntity) = Unit
+        override suspend fun delete(targetId: String) = Unit
+        override suspend fun clearProfile(profileId: String) { cleared += profileId }
+        override suspend fun clear() = Unit
+    }
+
+    private class FakeLocalPlayHistoryDao(private val cleared: MutableList<String>) : LocalPlayHistoryDao {
+        override suspend fun insert(entry: LocalPlayHistoryEntity) = 0L
+        override suspend fun recentForProfile(profileId: String, limit: Int) = emptyList<LocalPlayHistoryEntity>()
+        override suspend fun recent(limit: Int) = emptyList<LocalPlayHistoryEntity>()
+        override suspend fun recentAlbumsForProfile(profileId: String, limit: Int, offset: Int) = emptyList<LocalAlbumPlayStats>()
+        override suspend fun frequentAlbumsForProfile(profileId: String, limit: Int, offset: Int) = emptyList<LocalAlbumPlayStats>()
+        override suspend fun clearProfile(profileId: String) { cleared += profileId }
+        override suspend fun clear() = Unit
+    }
+
+    private class FakeCachedCoverDao(private val prefixes: MutableList<String>) : CachedCoverDao {
+        override suspend fun path(id: String): String? = null
+        override suspend fun upsert(cover: CachedCoverEntity) = Unit
+        override suspend fun allSizes() = emptyList<Long>()
+        override suspend fun delete(id: String) = Unit
+        override suspend fun deleteByPrefix(prefix: String) { prefixes += prefix }
+        override suspend fun clear() = Unit
     }
 }
