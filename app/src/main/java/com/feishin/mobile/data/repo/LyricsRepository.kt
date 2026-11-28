@@ -13,6 +13,7 @@ import com.feishin.mobile.data.auth.ProfileStore
 import com.feishin.mobile.data.db.LyricsCacheDao
 import com.feishin.mobile.data.db.LyricsCacheEntity
 import com.feishin.mobile.data.lyrics.BetterLyricsProvider
+import com.feishin.mobile.data.lyrics.DriveEmbeddedLyricsProvider
 import com.feishin.mobile.data.lyrics.FileTagLyricsProvider
 import com.feishin.mobile.data.lyrics.KuGouLyricsProvider
 import com.feishin.mobile.data.lyrics.LrclibLyricsProvider
@@ -44,6 +45,7 @@ class LyricsRepository private constructor(
     private val kugou: LyricsProvider,
     private val navidrome: LyricsProvider,
     private val jellyfin: LyricsProvider,
+    private val driveLyricsProvider: LyricsProvider,
     private val fileTags: LyricsProvider,
     private val profileStore: ProfileStore,
     private val settingsStore: SettingsStore,
@@ -59,6 +61,7 @@ class LyricsRepository private constructor(
         kugou: KuGouLyricsProvider,
         navidrome: NavidromeLyricsProvider,
         jellyfin: JellyfinLyricsProvider,
+        driveLyricsProvider: DriveEmbeddedLyricsProvider,
         fileTags: FileTagLyricsProvider,
         profileStore: ProfileStore,
         settingsStore: SettingsStore,
@@ -72,6 +75,7 @@ class LyricsRepository private constructor(
         kugou = kugou as LyricsProvider,
         navidrome = navidrome as LyricsProvider,
         jellyfin = jellyfin as LyricsProvider,
+        driveLyricsProvider = driveLyricsProvider as LyricsProvider,
         fileTags = fileTags as LyricsProvider,
         profileStore = profileStore,
         settingsStore = settingsStore,
@@ -87,6 +91,7 @@ class LyricsRepository private constructor(
         kugou: LyricsProvider,
         navidrome: LyricsProvider,
         jellyfin: LyricsProvider,
+        driveLyricsProvider: LyricsProvider = NoopLyricsProvider,
         fileTags: LyricsProvider,
         profileStore: ProfileStore,
         settingsStore: SettingsStore,
@@ -101,12 +106,25 @@ class LyricsRepository private constructor(
         kugou = kugou,
         navidrome = navidrome,
         jellyfin = jellyfin,
+        driveLyricsProvider = driveLyricsProvider,
         fileTags = fileTags,
         profileStore = profileStore,
         settingsStore = settingsStore,
         json = json,
         context = context,
     )
+
+    private object NoopLyricsProvider : LyricsProvider {
+        override suspend fun lyricsForSong(
+            songId: String,
+            title: String,
+            artist: String,
+            album: String?,
+            durationMs: Long,
+            localUri: String?,
+            localModifiedSec: Long,
+        ): Result<Lyrics> = Result.Ok(Lyrics(kind = LyricsKind.NONE))
+    }
     /** 7-day TTL for negative cache entries ("nothing found"). */
     private val negativeTtlMs = 7 * 24 * 60 * 60 * 1000L
 
@@ -123,6 +141,9 @@ class LyricsRepository private constructor(
     private val sessionFailedKeys = ConcurrentHashMap.newKeySet<String>()
 
     fun cacheKeyForTrack(track: Track): String = LyricsCacheKey.of(track)
+
+    private fun trackProfileId(track: Track): String =
+        GlobalId.profileIdOrNull(track.id) ?: "p1"
 
     suspend fun getLyrics(track: Track, bypassCache: Boolean = false): Result<Lyrics> = withContext(Dispatchers.IO) {
         val key = cacheKeyForTrack(track)
@@ -194,8 +215,11 @@ class LyricsRepository private constructor(
                             "KUGOU" -> kugou
                             "LOCAL_DATA" -> when {
                                 track.isLocal -> fileTags
-                                GlobalId.profileIdOrNull(track.id)?.let { profileStore.byId(it)?.type } == BackendType.JELLYFIN -> jellyfin
-                                else -> navidrome
+                                else -> when (GlobalId.profileIdOrNull(track.id)?.let { profileStore.byId(it)?.type }) {
+                                    BackendType.JELLYFIN -> jellyfin
+                                    BackendType.GOOGLE_DRIVE -> driveLyricsProvider
+                                    else -> navidrome
+                                }
                             }
                             else -> continue
                         }
@@ -257,7 +281,7 @@ class LyricsRepository private constructor(
                 val processed = com.feishin.mobile.data.lyrics.Romanizer.romanizeLyrics(finalLyrics!!)
                 runCatching {
                     val encoded = json.encodeToString(Lyrics.serializer(), processed)
-                    cache.put(LyricsCacheEntity(key, encoded, System.currentTimeMillis()))
+                    cache.put(LyricsCacheEntity(key, encoded, System.currentTimeMillis(), profileId = trackProfileId(track)))
                 }
                 return@withContext Result.Ok(processed)
             } else if (transientError != null || budgetExpired) {
@@ -270,7 +294,7 @@ class LyricsRepository private constructor(
                 val emptyLyrics = Lyrics(emptyList(), 0, LyricsKind.NONE, source = LyricsSource.CACHE)
                 runCatching {
                     val encoded = json.encodeToString(Lyrics.serializer(), emptyLyrics)
-                    cache.put(LyricsCacheEntity(key, encoded, System.currentTimeMillis()))
+                    cache.put(LyricsCacheEntity(key, encoded, System.currentTimeMillis(), profileId = trackProfileId(track)))
                 }
                 return@withContext Result.Ok(emptyLyrics)
             }
@@ -290,7 +314,7 @@ class LyricsRepository private constructor(
         sessionFailedKeys.remove(key)
         val processed = com.feishin.mobile.data.lyrics.Romanizer.romanizeLyrics(lyrics)
         val encoded = json.encodeToString(Lyrics.serializer(), processed)
-        cache.put(LyricsCacheEntity(key, encoded, System.currentTimeMillis()))
+        cache.put(LyricsCacheEntity(key, encoded, System.currentTimeMillis(), profileId = trackProfileId(track)))
     }
 
     suspend fun removeCached(track: Track) = withContext(Dispatchers.IO) {
