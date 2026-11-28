@@ -449,6 +449,112 @@ val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
     }
 }
 
+/**
+ * 7 -> 8: adds `drive_tracks`, `local_playlists`, `local_playlist_tracks`,
+ * `local_favorites`, and `local_play_history` for Google Drive indexing and
+ * local cross-server persistence.
+ */
+val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `drive_tracks` (
+                `songId` TEXT NOT NULL,
+                `profileId` TEXT NOT NULL,
+                `driveFileId` TEXT NOT NULL,
+                `fileName` TEXT NOT NULL,
+                `parentFolderId` TEXT,
+                `parentFolderPath` TEXT NOT NULL DEFAULT '',
+                `title` TEXT NOT NULL,
+                `artist` TEXT NOT NULL,
+                `albumArtist` TEXT NOT NULL DEFAULT '',
+                `album` TEXT NOT NULL,
+                `albumKey` TEXT NOT NULL,
+                `artistKey` TEXT NOT NULL,
+                `trackNo` INTEGER,
+                `year` INTEGER,
+                `genre` TEXT,
+                `durationSec` INTEGER NOT NULL DEFAULT 0,
+                `bitRate` INTEGER,
+                `suffix` TEXT,
+                `sizeBytes` INTEGER NOT NULL DEFAULT 0,
+                `mimeType` TEXT NOT NULL DEFAULT '',
+                `coverArtId` TEXT,
+                `embeddedLyricsJson` TEXT,
+                `modifiedTimeMs` INTEGER NOT NULL DEFAULT 0,
+                `indexedAtMs` INTEGER NOT NULL DEFAULT 0,
+                `tagsParsed` INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(`songId`)
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_drive_tracks_profileId` ON `drive_tracks` (`profileId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_drive_tracks_profileId_albumKey` ON `drive_tracks` (`profileId`, `albumKey`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_drive_tracks_profileId_artistKey` ON `drive_tracks` (`profileId`, `artistKey`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_drive_tracks_profileId_parentFolderId` ON `drive_tracks` (`profileId`, `parentFolderId`)")
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `local_playlists` (
+                `playlistId` TEXT NOT NULL,
+                `name` TEXT NOT NULL,
+                `sourceM3uName` TEXT,
+                `createdAtMs` INTEGER NOT NULL,
+                `updatedAtMs` INTEGER NOT NULL,
+                PRIMARY KEY(`playlistId`)
+            )
+            """.trimIndent(),
+        )
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `local_playlist_tracks` (
+                `entryId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                `playlistId` TEXT NOT NULL,
+                `trackId` TEXT NOT NULL,
+                `position` INTEGER NOT NULL,
+                `trackJson` TEXT NOT NULL,
+                `addedAtMs` INTEGER NOT NULL,
+                FOREIGN KEY(`playlistId`) REFERENCES `local_playlists`(`playlistId`) ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_local_playlist_tracks_playlistId` ON `local_playlist_tracks` (`playlistId`)")
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `local_favorites` (
+                `targetId` TEXT NOT NULL,
+                `kind` TEXT NOT NULL,
+                `profileId` TEXT NOT NULL,
+                `payloadJson` TEXT NOT NULL,
+                `starredAtMs` INTEGER NOT NULL,
+                PRIMARY KEY(`targetId`)
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_local_favorites_kind` ON `local_favorites` (`kind`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_local_favorites_profileId` ON `local_favorites` (`profileId`)")
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `local_play_history` (
+                `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                `trackId` TEXT NOT NULL,
+                `profileId` TEXT NOT NULL,
+                `albumKey` TEXT NOT NULL,
+                `artistKey` TEXT NOT NULL,
+                `trackJson` TEXT NOT NULL,
+                `albumJson` TEXT,
+                `playedAtMs` INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_local_play_history_profileId_playedAtMs` ON `local_play_history` (`profileId`, `playedAtMs`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_local_play_history_albumKey` ON `local_play_history` (`albumKey`)")
+    }
+}
+
 @androidx.room.Database(
     entities = [
         DownloadEntity::class,
@@ -458,8 +564,13 @@ val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
         PendingActionEntity::class,
         CachedTrackEntity::class,
         LyricsCacheEntity::class,
+        DriveTrackEntity::class,
+        LocalPlaylistEntity::class,
+        LocalPlaylistTrackEntity::class,
+        LocalFavoriteEntity::class,
+        LocalPlayHistoryEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class MusicDatabase : RoomDatabase() {
@@ -470,4 +581,8 @@ abstract class MusicDatabase : RoomDatabase() {
     abstract fun pendingActionDao(): PendingActionDao
     abstract fun cachedTrackDao(): CachedTrackDao
     abstract fun lyricsCacheDao(): LyricsCacheDao
+    abstract fun driveTrackDao(): DriveTrackDao
+    abstract fun localPlaylistDao(): LocalPlaylistDao
+    abstract fun localFavoriteDao(): LocalFavoriteDao
+    abstract fun localPlayHistoryDao(): LocalPlayHistoryDao
 }
