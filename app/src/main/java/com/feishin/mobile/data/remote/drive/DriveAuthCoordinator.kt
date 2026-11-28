@@ -1,6 +1,7 @@
 package com.feishin.mobile.data.remote.drive
 
 import android.accounts.Account
+import android.accounts.AccountManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -12,7 +13,10 @@ import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.GetCredentialProviderConfigurationException
 import androidx.credentials.exceptions.NoCredentialException
 import com.feishin.mobile.BuildConfig
+import com.google.android.gms.auth.GoogleAuthException
 import com.google.android.gms.auth.GoogleAuthUtil
+import com.google.android.gms.auth.GooglePlayServicesAvailabilityException
+import com.google.android.gms.auth.UserRecoverableAuthException
 import com.google.android.gms.auth.api.identity.AuthorizationClient
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
@@ -127,13 +131,12 @@ class DriveAuthCoordinator internal constructor(
         } catch (_: GetCredentialCancellationException) {
             return DriveAuthResult.Cancelled
         } catch (_: NoCredentialException) {
-            return DriveAuthResult.Unavailable("No Google account is available on this device.")
-        } catch (e: GetCredentialProviderConfigurationException) {
-            return DriveAuthResult.Unavailable(
-                e.message ?: "Google Play Services Credential Manager is unavailable.",
-            )
-        } catch (e: GetCredentialException) {
-            return DriveAuthResult.Error(e.message ?: "Google sign-in failed.", e)
+            return authorizeWithAccountPicker()
+        } catch (_: GetCredentialProviderConfigurationException) {
+            // Older Play Services cannot serve GetSignInWithGoogleOption; use the account picker.
+            return authorizeWithAccountPicker()
+        } catch (_: GetCredentialException) {
+            return authorizeWithAccountPicker()
         } catch (e: GooglePlayServicesNotAvailableException) {
             return DriveAuthResult.Unavailable("Google Play Services is not available.")
         } catch (e: Exception) {
@@ -165,6 +168,78 @@ class DriveAuthCoordinator internal constructor(
             displayName = googleIdToken.displayName?.trim()?.takeIf { it.isNotBlank() },
         )
     }
+
+    /**
+     * Fallback when Credential Manager cannot return a Google ID token: GMS shows its own
+     * account chooser + Drive consent via the returned [DriveAuthResult.ResolutionRequired].
+     */
+    suspend fun authorizeWithAccountPicker(): DriveAuthResult = withContext(Dispatchers.IO) {
+        try {
+            mapAuthorizationResult(
+                result = awaitAuthorize("", includeEmailScope = true),
+                fallbackEmail = "",
+                displayName = null,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            mapAuthorizationFailure(e)
+        }
+    }
+
+    /**
+     * Legacy token path (`GoogleAuthUtil`) used when the newer Authorization UI fails, e.g. on
+     * older Play Services where the reauth step returns INTERNAL_ERROR. [emailHint] may be blank
+     * when exactly one Google account is visible to the app (granted by the account chooser).
+     */
+    suspend fun authorizeLegacy(emailHint: String): DriveAuthResult = withContext(Dispatchers.IO) {
+        val email = emailHint.trim().ifBlank { visibleGoogleAccountNames().singleOrNull().orEmpty() }
+        if (email.isBlank()) return@withContext DriveAuthResult.Cancelled
+        try {
+            val token = GoogleAuthUtil.getToken(
+                appContext,
+                Account(email, GOOGLE_ACCOUNT_TYPE),
+                "oauth2:$DRIVE_READONLY_SCOPE",
+            ).trim()
+            if (token.isBlank()) {
+                DriveAuthResult.Error("Google Drive authorization returned an empty access token.")
+            } else {
+                DriveAuthResult.Authorized(
+                    email = email,
+                    accessToken = token,
+                    expiresAtEpochMs = System.currentTimeMillis() + DEFAULT_TOKEN_TTL_MS,
+                    displayName = null,
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: GooglePlayServicesAvailabilityException) {
+            DriveAuthResult.Unavailable("Google Play Services is unavailable.")
+        } catch (e: UserRecoverableAuthException) {
+            val consent = e.intent
+            if (consent == null) {
+                DriveAuthResult.Error("Google Drive authorization requires consent, but no intent was provided.", e)
+            } else {
+                val pending = PendingIntent.getActivity(
+                    appContext,
+                    0,
+                    consent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                )
+                DriveAuthResult.ResolutionRequired(pending, email)
+            }
+        } catch (e: GoogleAuthException) {
+            DriveAuthResult.Error(e.message ?: "Google Drive authorization failed.", e)
+        } catch (e: java.io.IOException) {
+            DriveAuthResult.Error(e.message ?: "Network error while authorizing Google Drive.", e)
+        } catch (e: Exception) {
+            DriveAuthResult.Error(e.message ?: "Google Drive authorization failed.", e)
+        }
+    }
+
+    private fun visibleGoogleAccountNames(): List<String> = runCatching {
+        AccountManager.get(appContext).getAccountsByType(GOOGLE_ACCOUNT_TYPE).map { it.name }
+    }.getOrDefault(emptyList())
 
     /** Requests `drive.readonly` OAuth access for a known Google [email]. */
     suspend fun authorizeAccount(
@@ -270,9 +345,15 @@ class DriveAuthCoordinator internal constructor(
         }
     }
 
-    private fun awaitAuthorize(accountEmail: String): AuthorizationResult {
-        val builder = AuthorizationRequest.builder()
-            .setRequestedScopes(listOf(Scope(DRIVE_READONLY_SCOPE)))
+    private fun awaitAuthorize(
+        accountEmail: String,
+        includeEmailScope: Boolean = false,
+    ): AuthorizationResult {
+        val scopes = buildList {
+            add(Scope(DRIVE_READONLY_SCOPE))
+            if (includeEmailScope) add(Scope("email"))
+        }
+        val builder = AuthorizationRequest.builder().setRequestedScopes(scopes)
         if (accountEmail.isNotBlank()) {
             builder.setAccount(Account(accountEmail, GOOGLE_ACCOUNT_TYPE))
         }
@@ -289,7 +370,9 @@ class DriveAuthCoordinator internal constructor(
         displayName: String?,
     ): DriveAuthResult {
         val account = result.toGoogleSignInAccount()
-        val resolvedEmail = account?.email?.trim()?.takeIf { it.isNotBlank() } ?: fallbackEmail
+        val resolvedEmail = account?.email?.trim()?.takeIf { it.isNotBlank() }
+            ?: fallbackEmail.trim().takeIf { it.isNotBlank() }
+            ?: visibleGoogleAccountNames().singleOrNull().orEmpty()
         if (result.hasResolution()) {
             val pendingIntent = result.pendingIntent
             return if (pendingIntent != null) {
@@ -328,6 +411,23 @@ class DriveAuthCoordinator internal constructor(
             }
             else -> DriveAuthResult.Error(root.message ?: "Google Drive authorization failed.", root)
         }
+    }
+
+    /** Fetches the authenticated user's email from Drive `about.get` when GMS omits it. */
+    suspend fun fetchAboutEmail(accessToken: String): String? = withContext(Dispatchers.IO) {
+        if (accessToken.isBlank()) return@withContext null
+        runCatching {
+            val req = okhttp3.Request.Builder()
+                .url("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)")
+                .header("Authorization", "Bearer $accessToken")
+                .build()
+            okhttp3.OkHttpClient().newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val body = resp.body?.string().orEmpty()
+                val match = Regex(""""emailAddress"\s*:\s*"([^"]+)"""").find(body)
+                match?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
+            }
+        }.getOrNull()
     }
 
     companion object {

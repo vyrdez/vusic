@@ -205,22 +205,61 @@ class LoginViewModel private constructor(
         }
     }
 
+    private var legacyConsentPending = false
+
     fun onDriveResolutionResult(
         resultCode: Int,
         data: Intent?,
         fallbackEmail: String,
     ) {
-        if (resultCode != Activity.RESULT_OK || data == null) {
-            handleDriveAuthResult(DriveAuthResult.Cancelled, fromResolution = true)
+        val coordinator = driveDeps.driveAuthCoordinator
+        if (coordinator == null) {
+            handleDriveAuthResult(DriveAuthResult.Unavailable("Google Sign-In is unavailable."), fromResolution = true)
             return
         }
-        val coordinator = driveDeps.driveAuthCoordinator
-        val result = if (coordinator != null) {
-            coordinator.resolveAuthorizationIntent(data, fallbackEmail)
-        } else {
-            DriveAuthResult.Unavailable("Google Sign-In is unavailable.")
+        viewModelScope.launch {
+            if (legacyConsentPending) {
+                legacyConsentPending = false
+                val retried = if (resultCode == Activity.RESULT_OK) {
+                    coordinator.authorizeLegacy(fallbackEmail)
+                } else {
+                    DriveAuthResult.Cancelled
+                }
+                handleDriveAuthResult(
+                    if (retried is DriveAuthResult.ResolutionRequired) DriveAuthResult.Cancelled else retried,
+                    fromResolution = true,
+                )
+                return@launch
+            }
+            val primary = if (resultCode == Activity.RESULT_OK && data != null) {
+                coordinator.resolveAuthorizationIntent(data, fallbackEmail)
+            } else {
+                DriveAuthResult.Cancelled
+            }
+            if (primary is DriveAuthResult.Authorized) {
+                val resolved = if (primary.email.isBlank()) {
+                    val aboutEmail = coordinator.fetchAboutEmail(primary.accessToken)
+                    if (aboutEmail != null) primary.copy(email = aboutEmail) else primary
+                } else {
+                    primary
+                }
+                if (resolved.email.isNotBlank()) {
+                    handleDriveAuthResult(resolved, fromResolution = true)
+                    return@launch
+                }
+            }
+            // Older Play Services can fail the Authorization UI (reauth INTERNAL_ERROR); retry
+            // with the legacy token API for the account the user just picked.
+            val legacy = coordinator.authorizeLegacy(fallbackEmail)
+            when (legacy) {
+                is DriveAuthResult.Authorized -> handleDriveAuthResult(legacy, fromResolution = true)
+                is DriveAuthResult.ResolutionRequired -> {
+                    legacyConsentPending = true
+                    handleDriveAuthResult(legacy, fromResolution = false)
+                }
+                else -> handleDriveAuthResult(primary, fromResolution = true)
+            }
         }
-        handleDriveAuthResult(result, fromResolution = true)
     }
 
     internal fun handleDriveAuthResult(
