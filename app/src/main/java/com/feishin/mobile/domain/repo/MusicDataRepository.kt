@@ -29,6 +29,9 @@ data class ScanStatus(
     val count: Int = 0,
     val folderCount: Int? = null,
     val lastScan: String? = null,
+    val totalCount: Int? = null,
+    val quotaLimited: Boolean = false,
+    val twoStage: Boolean = false,
 )
 
 /** UI-facing music data contract. Implementations map wire DTOs to domain models. */

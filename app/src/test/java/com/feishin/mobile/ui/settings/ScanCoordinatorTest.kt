@@ -2,6 +2,7 @@ package com.feishin.mobile.ui.settings
 
 import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.network.SyncedLyrics
+import com.feishin.mobile.data.auth.DriveScanCancellationRegistry
 import com.feishin.mobile.data.cache.LibraryRefresh
 import com.feishin.mobile.data.cache.MetadataCacheKeys
 import com.feishin.mobile.domain.model.Album
@@ -37,6 +38,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -519,5 +521,59 @@ class ScanCoordinatorTest {
         assertTrue(coordinator.profileStates.value["missing"] is ScanUiState.Error)
         assertEquals("Server not found", (coordinator.profileStates.value["missing"] as ScanUiState.Error).message)
         coordinator.cancelPolling()
+    }
+
+    @Test
+    fun testTwoStageProgressRenderingAndCancellationRegistryStopsPolling() = runTest {
+        val stage1 = ScanUiState.Scanning(count = 42, totalCount = null, twoStage = true)
+        assertEquals("Discovering… 42 files", formatScanDescription(stage1, online = true))
+
+        val stage2 = ScanUiState.Scanning(count = 25, totalCount = 100, twoStage = true)
+        assertEquals("Indexing… 25% (25/100)", formatScanDescription(stage2, online = true))
+
+        val repo = FakeRepo()
+        val gd1 = FakeScanBackend("gd1")
+        gd1.scanStatusSequence.addAll(
+            listOf(
+                Result.Ok(ScanStatus(scanning = true, count = 12, totalCount = null, twoStage = true)),
+                Result.Ok(ScanStatus(scanning = true, count = 5, totalCount = 20, twoStage = true)),
+                Result.Ok(ScanStatus(scanning = true, count = 10, totalCount = 20, twoStage = true)),
+            ),
+        )
+        val registry = FakeBackendRegistry(listOf(gd1))
+        val cancellationRegistry = DriveScanCancellationRegistry()
+        val scope = TestScope(StandardTestDispatcher(testScheduler))
+
+        val coordinator = ScanCoordinator(
+            repo = repo,
+            libraryRefresh = LibraryRefresh(),
+            messenger = UiMessenger(),
+            externalScope = scope,
+            delayMs = 1000L,
+            backends = registry,
+            cancellationRegistry = cancellationRegistry,
+        )
+
+        coordinator.startScan("gd1")
+        scope.testScheduler.advanceTimeBy(1)
+        assertTrue(coordinator.profileStates.value["gd1"] is ScanUiState.Scanning)
+
+        scope.testScheduler.advanceTimeBy(1000L)
+        val s1 = coordinator.profileStates.value["gd1"] as ScanUiState.Scanning
+        assertEquals(12, s1.count)
+        assertNull(s1.totalCount)
+        assertTrue(s1.twoStage)
+
+        scope.testScheduler.advanceTimeBy(1000L)
+        val s2 = coordinator.profileStates.value["gd1"] as ScanUiState.Scanning
+        assertEquals(5, s2.count)
+        assertEquals(20, s2.totalCount)
+
+        val callsBeforeCancel = gd1.scanStatusCalls
+        cancellationRegistry.cancel("gd1")
+        assertTrue(coordinator.profileStates.value["gd1"] is ScanUiState.Idle)
+
+        scope.testScheduler.advanceTimeBy(5000L)
+        assertEquals(callsBeforeCancel, gd1.scanStatusCalls)
     }
 }

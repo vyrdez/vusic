@@ -1,8 +1,10 @@
 package com.feishin.mobile.ui.settings
 
 import com.feishin.mobile.core.common.Result
+import com.feishin.mobile.data.auth.DriveScanCancellationRegistry
 import com.feishin.mobile.data.cache.LibraryRefresh
 import com.feishin.mobile.data.cache.MetadataCacheKeys
+import com.feishin.mobile.domain.model.BackendType
 import com.feishin.mobile.domain.repo.BackendRegistry
 import com.feishin.mobile.domain.repo.MusicDataRepository
 import com.feishin.mobile.domain.repo.ScanStatus
@@ -44,12 +46,16 @@ sealed interface ScanUiState {
         override val count: Int = 0,
         override val folderCount: Int? = null,
         override val lastScan: String? = null,
+        val totalCount: Int? = null,
+        val quotaLimited: Boolean = false,
+        val twoStage: Boolean = false,
     ) : ScanUiState
 
     data class Finished(
         override val count: Int = 0,
         override val folderCount: Int? = null,
         override val lastScan: String? = null,
+        val quotaLimited: Boolean = false,
     ) : ScanUiState
 
     data class Error(
@@ -124,14 +130,28 @@ fun formatScanDescription(
             }
         }
         is ScanUiState.Scanning -> {
-            if (state.count <= 0) {
-                "Scanning…"
-            } else {
-                val files = "${formatScanCount(state.count)} files"
-                if (state.folderCount != null && state.folderCount > 0) {
-                    "Scanning… $files (${formatScanCount(state.folderCount)} folders)"
-                } else {
-                    "Scanning… $files"
+            val total = state.totalCount
+            when {
+                total != null -> {
+                    val pct = if (total > 0) {
+                        ((state.count.coerceIn(0, total) * 100L) / total).toInt()
+                    } else {
+                        100
+                    }
+                    "Indexing… $pct% (${formatScanCount(state.count)}/${formatScanCount(total)})"
+                }
+                state.twoStage -> {
+                    if (state.count <= 0) "Discovering…"
+                    else "Discovering… ${formatScanCount(state.count)} files"
+                }
+                state.count <= 0 -> "Scanning…"
+                else -> {
+                    val files = "${formatScanCount(state.count)} files"
+                    if (state.folderCount != null && state.folderCount > 0) {
+                        "Scanning… $files (${formatScanCount(state.folderCount)} folders)"
+                    } else {
+                        "Scanning… $files"
+                    }
                 }
             }
         }
@@ -142,8 +162,9 @@ fun formatScanDescription(
             } else {
                 "Scan finished: $files"
             }
+            val withQuota = if (state.quotaLimited) "$base (rate limited)" else base
             val formatted = formatLastScan(state.lastScan, zoneId)
-            if (formatted != null) "$base • Last scan: $formatted" else base
+            if (formatted != null) "$withQuota • Last scan: $formatted" else withQuota
         }
         is ScanUiState.Error -> state.message
     }
@@ -163,6 +184,7 @@ class ScanCoordinator(
     private val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
     private val ticker: (suspend (Long) -> Unit)? = null,
     private val backends: BackendRegistry? = null,
+    cancellationRegistry: DriveScanCancellationRegistry? = null,
 ) {
     @Inject
     constructor(
@@ -170,6 +192,7 @@ class ScanCoordinator(
         libraryRefresh: LibraryRefresh,
         messenger: UiMessenger,
         backends: BackendRegistry,
+        cancellationRegistry: DriveScanCancellationRegistry,
     ) : this(
         repo = repo,
         libraryRefresh = libraryRefresh,
@@ -179,6 +202,7 @@ class ScanCoordinator(
         timeoutMs = DEFAULT_TIMEOUT_MS,
         ticker = null,
         backends = backends,
+        cancellationRegistry = cancellationRegistry,
     )
     private val scope = externalScope ?: CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -189,6 +213,28 @@ class ScanCoordinator(
     val profileStates: StateFlow<Map<String, ScanUiState>> = _profileStates.asStateFlow()
 
     private val pollingJobs = mutableMapOf<String, Job>()
+
+    init {
+        cancellationRegistry?.register(CANCELLATION_REGISTRY_KEY) { profileId ->
+            cancelScanForProfile(profileId)
+        }
+    }
+
+    private fun cancelScanForProfile(profileId: String) {
+        cancelPolling(profileId)
+        _profileStates.update { map ->
+            val current = map[profileId] ?: return@update map
+            if (current is ScanUiState.Scanning) {
+                map + (profileId to ScanUiState.Idle(
+                    count = current.count,
+                    folderCount = current.folderCount,
+                    lastScan = current.lastScan,
+                ))
+            } else {
+                map
+            }
+        }
+    }
 
     private fun primaryScanProfileId(): String? =
         backends?.enabled()?.firstOrNull { it.capabilities.supportsLibraryScan }?.profile?.id
@@ -265,12 +311,17 @@ class ScanCoordinator(
                     messenger.show(err)
                 }
                 is Result.Ok -> {
+                    val isTwoStage = profileId != null &&
+                        backends?.get(profileId)?.profile?.type == BackendType.GOOGLE_DRIVE
                     updateStateFor(
                         profileId,
                         ScanUiState.Scanning(
                             count = 0,
                             folderCount = null,
                             lastScan = prev.lastScan,
+                            totalCount = null,
+                            quotaLimited = false,
+                            twoStage = isTwoStage,
                         ),
                     )
                     startPolling(profileId)
@@ -302,6 +353,9 @@ class ScanCoordinator(
                                 count = s.count,
                                 folderCount = s.folderCount,
                                 lastScan = s.lastScan ?: cur.lastScan,
+                                totalCount = s.totalCount,
+                                quotaLimited = s.quotaLimited,
+                                twoStage = s.twoStage,
                             ),
                         )
                         startPolling(profileId)
@@ -365,6 +419,9 @@ class ScanCoordinator(
                                     count = s.count,
                                     folderCount = s.folderCount,
                                     lastScan = s.lastScan ?: latest.lastScan,
+                                    totalCount = s.totalCount,
+                                    quotaLimited = s.quotaLimited,
+                                    twoStage = s.twoStage,
                                 ),
                             )
                         } else {
@@ -374,8 +431,12 @@ class ScanCoordinator(
                                     count = s.count,
                                     folderCount = s.folderCount,
                                     lastScan = s.lastScan ?: latest.lastScan,
+                                    quotaLimited = s.quotaLimited,
                                 ),
                             )
+                            if (s.quotaLimited) {
+                                messenger.show("Google Drive rate limit reached — partial library saved")
+                            }
                             libraryRefresh.invalidateAll()
                             libraryRefresh.emitRefreshed(MetadataCacheKeys.ARTISTS)
                             libraryRefresh.emitRefreshed(MetadataCacheKeys.PLAYLISTS)
@@ -424,6 +485,7 @@ class ScanCoordinator(
 
     companion object {
         private const val DEFAULT_JOB_KEY = "__default__"
+        private const val CANCELLATION_REGISTRY_KEY = "ScanCoordinator"
         const val DEFAULT_POLL_INTERVAL_MS = 1500L
         const val DEFAULT_TIMEOUT_MS = 15 * 60 * 1000L
     }

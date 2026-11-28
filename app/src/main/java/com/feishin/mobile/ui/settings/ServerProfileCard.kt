@@ -211,14 +211,30 @@ internal fun resolveProfileScanUi(
         !capabilities.supportsLibraryScan -> "Not supported"
         !enabled -> "Disabled"
         !online -> "Unavailable offline"
-        scanState is ScanUiState.Scanning -> if (scanState.count > 0) {
-            "Scanning… ${formatScanCount(scanState.count)}"
-        } else {
-            "Scanning…"
+        scanState is ScanUiState.Scanning -> {
+            val total = scanState.totalCount
+            when {
+                total != null -> {
+                    val pct = if (total > 0) {
+                        ((scanState.count.coerceIn(0, total) * 100L) / total).toInt()
+                    } else {
+                        100
+                    }
+                    "Indexing… $pct% (${formatScanCount(scanState.count)}/${formatScanCount(total)})"
+                }
+                scanState.twoStage -> if (scanState.count > 0) {
+                    "Discovering… ${formatScanCount(scanState.count)} files"
+                } else {
+                    "Discovering…"
+                }
+                scanState.count > 0 -> "Scanning… ${formatScanCount(scanState.count)}"
+                else -> "Scanning…"
+            }
         }
         scanState is ScanUiState.Finished -> {
             val formatted = formatLastScan(scanState.lastScan)
-            if (formatted != null) "Scanned $formatted" else "Scan finished"
+            val base = if (formatted != null) "Scanned $formatted" else "Scan finished"
+            if (scanState.quotaLimited) "$base (rate limited)" else base
         }
         scanState is ScanUiState.Error -> scanState.message
         else -> {
