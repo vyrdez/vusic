@@ -23,6 +23,22 @@ android {
         // Only English is shipped: the app has no other locale content, and
         // this strips ~85 library locales (mostly AndroidX) from resources.
         resConfigs("en")
+
+        val localProps = Properties().apply {
+            val file = rootProject.file("local.properties")
+            if (file.exists()) {
+                file.inputStream().use { load(it) }
+            }
+        }
+        val googleWebClientId = (
+            localProps.getProperty("GOOGLE_WEB_CLIENT_ID")
+                ?: System.getenv("GOOGLE_WEB_CLIENT_ID")
+                ?: ""
+        ).trim()
+            .removeSurrounding("\"")
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
     }
 
     buildTypes {
@@ -150,6 +166,10 @@ dependencies {
     ksp(libs.hilt.ext.compiler)
 
     implementation(libs.security.crypto)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services)
+    implementation(libs.googleid)
+    implementation(libs.play.services.auth)
     implementation("com.atilika.kuromoji:kuromoji-ipadic:0.9.0")
 
     debugImplementation(libs.compose.ui.tooling)

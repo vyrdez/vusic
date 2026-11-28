@@ -161,14 +161,16 @@ class ProfileAuthInterceptor @Inject constructor(
                     }
                     builder.url(urlBuilder.build())
                 }
-                builder.tag(
-                    AuthTargetHost::class.java,
-                    AuthTargetHost(
-                        scheme = profileUrl.scheme.lowercase(),
-                        host = profileUrl.host.lowercase(),
-                        port = profileUrl.port,
-                    ),
-                )
+                builder
+                    .tag(ProfileIdTag::class.java, ProfileIdTag(profile.id))
+                    .tag(
+                        AuthTargetHost::class.java,
+                        AuthTargetHost(
+                            scheme = profileUrl.scheme.lowercase(),
+                            host = profileUrl.host.lowercase(),
+                            port = profileUrl.port,
+                        ),
+                    )
                 builder.build()
             }
 
@@ -188,6 +190,7 @@ class ProfileAuthInterceptor @Inject constructor(
                         HEADER_AUTHORIZATION,
                         jellyfinAuthHeader(deviceId = creds.deviceId, token = tokenForHeader),
                     )
+                    .tag(ProfileIdTag::class.java, ProfileIdTag(profile.id))
                     .tag(
                         AuthTargetHost::class.java,
                         AuthTargetHost(
@@ -202,8 +205,11 @@ class ProfileAuthInterceptor @Inject constructor(
             BackendType.GOOGLE_DRIVE -> {
                 if (!isGoogleDriveApiOrigin(url)) return builder.build()
                 val creds = profile.credentials as? ProfileCredentials.GoogleDrive ?: return builder.build()
+                if (creds.accessToken.isNotBlank()) {
+                    builder.header(HEADER_AUTHORIZATION, "Bearer ${creds.accessToken}")
+                }
                 builder
-                    .header(HEADER_AUTHORIZATION, "Bearer ${creds.accessToken}")
+                    .tag(ProfileIdTag::class.java, ProfileIdTag(profile.id))
                     .tag(
                         AuthTargetHost::class.java,
                         AuthTargetHost(

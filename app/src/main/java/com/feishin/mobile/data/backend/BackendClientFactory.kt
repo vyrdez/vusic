@@ -4,6 +4,7 @@ import com.feishin.mobile.core.network.JellyfinUrl
 import com.feishin.mobile.core.network.ProfileIdTag
 import com.feishin.mobile.data.remote.ProfileAuthInterceptor
 import com.feishin.mobile.data.remote.SubsonicApi
+import com.feishin.mobile.data.remote.drive.DriveApi
 import com.feishin.mobile.data.remote.jellyfin.JellyfinApi
 import com.feishin.mobile.domain.model.ServerProfile
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
@@ -34,6 +35,7 @@ class BackendClientFactory @Inject constructor(
 
     private val subsonicApis = ConcurrentHashMap<String, CachedApi<SubsonicApi>>()
     private val jellyfinApis = ConcurrentHashMap<String, CachedApi<JellyfinApi>>()
+    private val driveApis = ConcurrentHashMap<String, CachedApi<DriveApi>>()
 
     fun createEphemeralSubsonicApi(probeProfile: ServerProfile): SubsonicApi =
         buildSubsonicRetrofit(probeProfile).create(SubsonicApi::class.java)
@@ -69,16 +71,35 @@ class BackendClientFactory @Inject constructor(
         return created
     }
 
+    fun createEphemeralDriveApi(probeProfile: ServerProfile): DriveApi =
+        buildDriveRetrofit(probeProfile).create(DriveApi::class.java)
+
+    fun driveApi(profile: ServerProfile): DriveApi {
+        val normalizedUrl = profile.url.trim().trimEnd('/').ifBlank { GOOGLE_DRIVE_BASE_URL }
+        val existing = driveApis[profile.id]
+        if (existing != null && existing.url == normalizedUrl) {
+            return existing.api
+        }
+        val created = buildDriveRetrofit(profile, normalizedUrl).create(DriveApi::class.java)
+        driveApis[profile.id] = CachedApi(
+            url = normalizedUrl,
+            api = created,
+        )
+        return created
+    }
+
     /** Drops any cached Retrofit client for [profileId] (e.g. on URL change or logout). */
     fun invalidate(profileId: String) {
         subsonicApis.remove(profileId)
         jellyfinApis.remove(profileId)
+        driveApis.remove(profileId)
     }
 
     /** Drops all cached Retrofit clients. */
     fun clearAll() {
         subsonicApis.clear()
         jellyfinApis.clear()
+        driveApis.clear()
     }
 
     private fun buildSubsonicRetrofit(profile: ServerProfile): Retrofit =
@@ -90,6 +111,14 @@ class BackendClientFactory @Inject constructor(
     private fun buildJellyfinRetrofit(
         profile: ServerProfile,
         normalizedUrl: String = JellyfinUrl.normalize(profile.url),
+    ): Retrofit = buildRetrofit(
+        baseUrl = "$normalizedUrl/",
+        profileId = profile.id,
+    )
+
+    private fun buildDriveRetrofit(
+        profile: ServerProfile,
+        normalizedUrl: String = profile.url.trim().trimEnd('/').ifBlank { GOOGLE_DRIVE_BASE_URL },
     ): Retrofit = buildRetrofit(
         baseUrl = "$normalizedUrl/",
         profileId = profile.id,
@@ -124,5 +153,6 @@ class BackendClientFactory @Inject constructor(
 
     companion object {
         const val HEADER_PROFILE_ID = ProfileAuthInterceptor.HEADER_PROFILE_ID
+        const val GOOGLE_DRIVE_BASE_URL = "https://www.googleapis.com"
     }
 }

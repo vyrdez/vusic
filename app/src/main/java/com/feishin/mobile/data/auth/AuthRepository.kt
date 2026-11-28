@@ -8,9 +8,13 @@ import com.feishin.mobile.data.backend.BackendClientFactory
 import com.feishin.mobile.data.cache.CachedTrackStore
 import com.feishin.mobile.data.cache.MetadataCache
 import com.feishin.mobile.data.db.CachedCoverDao
+import com.feishin.mobile.data.db.DriveTrackDao
+import com.feishin.mobile.data.db.LocalFavoriteDao
+import com.feishin.mobile.data.db.LocalPlayHistoryDao
 import com.feishin.mobile.data.db.LyricsCacheDao
 import com.feishin.mobile.data.db.PendingActionDao
 import com.feishin.mobile.data.download.DownloadRepository
+import com.feishin.mobile.data.remote.ProfileAuthInterceptor
 import com.feishin.mobile.data.remote.SubsonicApi
 import com.feishin.mobile.data.remote.jellyfin.JellyfinApi
 import com.feishin.mobile.data.remote.jellyfin.JellyfinAuthRequest
@@ -33,6 +37,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import retrofit2.HttpException
 
 data class ConnectionResult(
@@ -74,6 +79,26 @@ object JellyfinAuthError {
     }
 }
 
+object DriveAuthError {
+    fun userMessage(
+        cause: Throwable? = null,
+        statusCode: Int? = (cause as? HttpException)?.code(),
+    ): String {
+        if (statusCode != null) {
+            return when (statusCode) {
+                401 -> "Google Drive authorization expired or invalid."
+                403 -> "Access denied for this Google Drive account."
+                404 -> "Google Drive endpoint not found (HTTP 404)."
+                else -> "Google Drive error (HTTP $statusCode)."
+            }
+        }
+        if (cause is SerializationException || cause is IllegalArgumentException) {
+            return "Unexpected response from Google Drive."
+        }
+        return SubsonicAuth.userMessage(code = null, serverText = null, cause = cause)
+    }
+}
+
 private class ProfileCleanupDeps(
     val cachedTrackStore: dagger.Lazy<CachedTrackStore>,
     val metadataCache: dagger.Lazy<MetadataCache>,
@@ -81,6 +106,10 @@ private class ProfileCleanupDeps(
     val pendingActionDao: dagger.Lazy<PendingActionDao>,
     val lyricsCacheDao: dagger.Lazy<LyricsCacheDao>,
     val downloadRepository: dagger.Lazy<DownloadRepository>,
+    val driveTrackDao: dagger.Lazy<DriveTrackDao>,
+    val localFavoriteDao: dagger.Lazy<LocalFavoriteDao>,
+    val localPlayHistoryDao: dagger.Lazy<LocalPlayHistoryDao>,
+    val driveScanCancellationRegistry: dagger.Lazy<DriveScanCancellationRegistry>,
 )
 
 /**
@@ -112,6 +141,10 @@ class AuthRepository private constructor(
         pendingActionDao: dagger.Lazy<PendingActionDao>,
         lyricsCacheDao: dagger.Lazy<LyricsCacheDao>,
         downloadRepository: dagger.Lazy<DownloadRepository>,
+        driveTrackDao: dagger.Lazy<DriveTrackDao>,
+        localFavoriteDao: dagger.Lazy<LocalFavoriteDao>,
+        localPlayHistoryDao: dagger.Lazy<LocalPlayHistoryDao>,
+        driveScanCancellationRegistry: dagger.Lazy<DriveScanCancellationRegistry>,
     ) : this(
         profileStore = profileStore,
         legacyCredentials = legacyCredentials,
@@ -126,6 +159,10 @@ class AuthRepository private constructor(
             pendingActionDao = pendingActionDao,
             lyricsCacheDao = lyricsCacheDao,
             downloadRepository = downloadRepository,
+            driveTrackDao = driveTrackDao,
+            localFavoriteDao = localFavoriteDao,
+            localPlayHistoryDao = localPlayHistoryDao,
+            driveScanCancellationRegistry = driveScanCancellationRegistry,
         ),
     )
 
@@ -327,6 +364,127 @@ class AuthRepository private constructor(
         )
     }
 
+    suspend fun probeGoogleDrive(
+        url: String = BackendClientFactory.GOOGLE_DRIVE_BASE_URL,
+        email: String,
+        accessToken: String,
+    ): Result<ConnectionResult> = withContext(Dispatchers.IO) {
+        val parsed = url.trim().trimEnd('/').toHttpUrlOrNull()
+            ?: return@withContext Result.Err("Invalid Google Drive API URL.")
+        if (!parsed.isHttps) {
+            return@withContext Result.Err("Cleartext HTTP is never permitted for Google Drive.")
+        }
+        if (!parsed.host.equals(ProfileAuthInterceptor.GOOGLE_API_HOST, ignoreCase = true) ||
+            parsed.port != 443
+        ) {
+            return@withContext Result.Err("Invalid Google Drive API host.")
+        }
+        val token = accessToken.trim()
+        if (token.isEmpty()) {
+            return@withContext Result.Err("Google Drive access token is empty.")
+        }
+
+        val normalizedEmail = email.trim()
+        val displayName = normalizedEmail.ifBlank { "Google Drive" }
+        val candidate = ServerProfile(
+            id = "__probe__",
+            name = displayName,
+            type = BackendType.GOOGLE_DRIVE,
+            url = BackendClientFactory.GOOGLE_DRIVE_BASE_URL,
+            userId = normalizedEmail,
+            credentials = ProfileCredentials.GoogleDrive(
+                accountEmail = normalizedEmail,
+                accessToken = token,
+            ),
+            allowSelfSigned = false,
+            allowCleartext = false,
+            enabled = true,
+            priority = profileStore.nextPriority(),
+        )
+        val probeId = probeRegistry.register(candidate)
+        val probeProfile = probeRegistry.get(probeId) ?: candidate.copy(id = probeId)
+        verifying.value = true
+        syncLoginState()
+        try {
+            val startNs = System.nanoTime()
+            val api = backendFactory.createEphemeralDriveApi(probeProfile)
+            val about = api.getAbout()
+            val resolvedEmail = about.user?.emailAddress?.trim()?.takeIf { it.isNotBlank() }
+                ?: normalizedEmail
+            if (resolvedEmail.isBlank()) {
+                return@withContext Result.Err("Google Drive did not return an account email.")
+            }
+            val latencyMs = ((System.nanoTime() - startNs) / 1_000_000L).coerceAtLeast(0L)
+            val accountLabel = about.user?.displayName?.trim()?.takeIf { it.isNotBlank() }
+                ?: resolvedEmail
+            Result.Ok(
+                ConnectionResult(
+                    profile = probeProfile.copy(
+                        name = "Google Drive ($accountLabel)",
+                        userId = resolvedEmail,
+                        credentials = ProfileCredentials.GoogleDrive(
+                            accountEmail = resolvedEmail,
+                            accessToken = token,
+                        ),
+                        allowSelfSigned = false,
+                        allowCleartext = false,
+                    ),
+                    latencyMs = latencyMs,
+                    apiInfo = "Google Drive · $resolvedEmail",
+                ),
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.Err(DriveAuthError.userMessage(e), e)
+        } finally {
+            probeRegistry.remove(probeId)
+            verifying.value = false
+            syncLoginState()
+        }
+    }
+
+    suspend fun connectGoogleDrive(
+        name: String,
+        email: String,
+        accessToken: String,
+        expiresAtEpochMs: Long = 0L,
+        rootFolderId: String? = null,
+        rootFolderName: String? = null,
+        existingProfileId: String? = null,
+    ): Result<ConnectionResult> = withContext(Dispatchers.IO) {
+        val probed = probeGoogleDrive(
+            url = BackendClientFactory.GOOGLE_DRIVE_BASE_URL,
+            email = email,
+            accessToken = accessToken,
+        )
+        when (probed) {
+            is Result.Err -> probed
+            is Result.Ok -> {
+                val probedProfile = probed.value.profile
+                val creds = probedProfile.credentials as ProfileCredentials.GoogleDrive
+                val resolvedName = name.trim().ifBlank { "Google Drive (${creds.accountEmail})" }
+                val candidate = probedProfile.copy(
+                    name = resolvedName,
+                    userId = creds.accountEmail,
+                    credentials = creds.copy(expiresAtEpochMs = expiresAtEpochMs),
+                    allowSelfSigned = false,
+                    allowCleartext = false,
+                    driveRootFolderId = rootFolderId?.trim()?.takeIf { it.isNotBlank() },
+                    driveRootFolderName = rootFolderName?.trim()?.takeIf { it.isNotBlank() },
+                )
+                val matchedExisting = findExistingProfile(
+                    type = BackendType.GOOGLE_DRIVE,
+                    normalizedUrl = BackendClientFactory.GOOGLE_DRIVE_BASE_URL,
+                    username = creds.accountEmail,
+                    existingProfileId = existingProfileId,
+                )
+                val saved = persistConnectedProfile(candidate, matchedExisting)
+                Result.Ok(probed.value.copy(profile = saved))
+            }
+        }
+    }
+
     suspend fun updateProfile(profile: ServerProfile): Result<Unit> = withContext(Dispatchers.IO) {
         val baseUrl = try {
             if (profile.type == BackendType.JELLYFIN) {
@@ -361,11 +519,16 @@ class AuthRepository private constructor(
         backendFactory.invalidate(profileId)
         profileAuthStateStore.clear(profileId)
         cleanup?.let { c ->
+            // Cancel active Drive scan jobs before purging Drive Room tables.
+            runCatching { c.driveScanCancellationRegistry.get().cancel(profileId) }
             runCatching { c.cachedTrackStore.get().clearForProfile(profileId) }
             runCatching { c.metadataCache.get().deleteByPrefix("$profileId:") }
             runCatching { c.cachedCoverDao.get().deleteByPrefix("$profileId:") }
             runCatching { c.pendingActionDao.get().deleteByProfile(profileId) }
             runCatching { c.lyricsCacheDao.get().deleteByProfile(profileId) }
+            runCatching { c.driveTrackDao.get().clearProfile(profileId) }
+            runCatching { c.localFavoriteDao.get().clearProfile(profileId) }
+            runCatching { c.localPlayHistoryDao.get().clearProfile(profileId) }
             runCatching { c.downloadRepository.get().removeProfileData(profileId, keepDownloads) }
         }
         if (profileStore.profiles.value.isEmpty()) {
@@ -412,6 +575,12 @@ class AuthRepository private constructor(
 
     /** Wipes all profiles and legacy credentials; navigation reacts via [loginState]. */
     fun logout() {
+        val existingIds = profileStore.profiles.value.map { it.id }
+        cleanup?.let { c ->
+            existingIds.forEach { id ->
+                runCatching { c.driveScanCancellationRegistry.get().cancel(id) }
+            }
+        }
         profileStore.clear()
         backendFactory.clearAll()
         profileAuthStateStore.clearAll()

@@ -15,6 +15,7 @@ import com.feishin.mobile.data.remote.ProfileAuthInterceptor
 import com.feishin.mobile.data.remote.ProfileTrustManager
 import com.feishin.mobile.data.remote.RedactingHttpLogger
 import com.feishin.mobile.data.remote.SubsonicApi
+import com.feishin.mobile.data.remote.drive.DriveTokenAuthenticator
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
 import dagger.Provides
@@ -46,6 +47,7 @@ object NetworkModule {
     fun provideOkHttp(
         cleartextGuard: CleartextGuardInterceptor,
         profileAuth: ProfileAuthInterceptor,
+        driveTokenAuthenticator: DriveTokenAuthenticator,
         tm: ProfileTrustManager,
     ): OkHttpClient {
         val ssl = tm.sslContext()
@@ -54,6 +56,7 @@ object NetworkModule {
             .hostnameVerifier(tm.hostnameVerifier())
             .addInterceptor(cleartextGuard)
             .addInterceptor(profileAuth)
+            .authenticator(driveTokenAuthenticator)
             // Library reads must fail visibly and fast on a bad network: the
             // spinner turns into an error with Retry instead of hanging.
             .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
@@ -89,6 +92,7 @@ object NetworkModule {
     fun provideCoilOkHttp(
         cleartextGuard: CleartextGuardInterceptor,
         profileAuth: ProfileAuthInterceptor,
+        driveTokenAuthenticator: DriveTokenAuthenticator,
         tm: ProfileTrustManager,
     ): OkHttpClient {
         val ssl = tm.sslContext()
@@ -97,6 +101,7 @@ object NetworkModule {
             .hostnameVerifier(tm.hostnameVerifier())
             .addInterceptor(cleartextGuard)
             .addInterceptor(profileAuth)
+            .authenticator(driveTokenAuthenticator)
             .addNetworkInterceptor(profileAuth.redirectGuard())
             .build()
     }

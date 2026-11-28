@@ -5,6 +5,7 @@ import androidx.work.WorkManager
 import com.feishin.mobile.data.remote.CleartextGuardInterceptor
 import com.feishin.mobile.data.remote.ProfileAuthInterceptor
 import com.feishin.mobile.data.remote.ProfileTrustManager
+import com.feishin.mobile.data.remote.drive.DriveTokenAuthenticator
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -32,6 +33,7 @@ object DownloadModule {
     fun provideDownloadClient(
         cleartextGuard: CleartextGuardInterceptor,
         profileAuth: ProfileAuthInterceptor,
+        driveTokenAuthenticator: DriveTokenAuthenticator,
         tm: ProfileTrustManager,
     ): OkHttpClient =
         OkHttpClient.Builder()
@@ -39,6 +41,7 @@ object DownloadModule {
             .hostnameVerifier(tm.hostnameVerifier())
             .addInterceptor(cleartextGuard)
             .addInterceptor(profileAuth)
+            .authenticator(driveTokenAuthenticator)
             .addNetworkInterceptor(profileAuth.redirectGuard())
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS) // a whole song/album may take a while

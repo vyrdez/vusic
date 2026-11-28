@@ -11,6 +11,7 @@ import com.feishin.mobile.data.cache.LiveLruCacheEvictor
 import com.feishin.mobile.data.remote.CleartextGuardInterceptor
 import com.feishin.mobile.data.remote.ProfileAuthInterceptor
 import com.feishin.mobile.data.remote.ProfileTrustManager
+import com.feishin.mobile.data.remote.drive.DriveTokenAuthenticator
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -65,6 +66,7 @@ object PlayerModule {
     fun provideStreamingClient(
         cleartextGuard: CleartextGuardInterceptor,
         profileAuth: ProfileAuthInterceptor,
+        driveTokenAuthenticator: DriveTokenAuthenticator,
         tm: ProfileTrustManager,
     ): OkHttpClient =
         OkHttpClient.Builder()
@@ -72,6 +74,7 @@ object PlayerModule {
             .hostnameVerifier(tm.hostnameVerifier())
             .addInterceptor(cleartextGuard)
             .addInterceptor(profileAuth)
+            .authenticator(driveTokenAuthenticator)
             .addNetworkInterceptor(profileAuth.redirectGuard())
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
