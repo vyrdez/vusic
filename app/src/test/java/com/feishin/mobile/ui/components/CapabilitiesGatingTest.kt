@@ -84,7 +84,7 @@ class CapabilitiesGatingTest {
             artistId = "gd1:ar1",
         )
         assertTrue(drive.canFavorite)
-        assertFalse(drive.canSaveToPlaylist)
+        assertTrue(drive.canSaveToPlaylist)
         assertFalse(drive.canStartRadio)
         assertTrue(drive.canDownload)
 
@@ -95,7 +95,7 @@ class CapabilitiesGatingTest {
             artistId = "local_artist:1",
         )
         assertFalse(local.canFavorite)
-        assertFalse(local.canSaveToPlaylist)
+        assertTrue(local.canSaveToPlaylist)
         assertFalse(local.canStartRadio)
         assertFalse(local.canDownload)
         assertFalse(local.canNavigateAlbum)
@@ -134,18 +134,21 @@ class CapabilitiesGatingTest {
     }
 
     @Test
-    fun filterPlaylistsForSingleRemoteProfileScopesToOwningServer() {
+    fun filterPlaylistsForSingleRemoteProfileScopesServerPlaylistsAndAlwaysIncludesLocalPlaylists() {
         val playlists = listOf(
             playlist("p1:pl1", "Home Mix"),
             playlist("p2:pl2", "Work Mix"),
             playlist("pl_bare", "Legacy"),
+            playlist("local_pl:u1", "Cross-Server Mix"),
         )
         val result = filterPlaylistsForTracks(
             tracks = listOf(track("p1:s1"), track("p1:s2")),
             playlists = playlists,
             capabilitiesFor = ::capsFor,
         )
-        assertEquals(listOf("p1:pl1"), result.playlists.map { it.id })
+        assertEquals(listOf("p1:pl1", "local_pl:u1"), result.playlists.map { it.id })
+        assertEquals(listOf("p1:pl1"), result.serverPlaylists.map { it.id })
+        assertEquals(listOf("local_pl:u1"), result.localPlaylists.map { it.id })
         assertEquals("p1", result.owningProfileId)
         assertTrue(result.canCreatePlaylist)
         assertNull(result.helperMessage)
@@ -170,33 +173,41 @@ class CapabilitiesGatingTest {
     }
 
     @Test
-    fun filterPlaylistsRejectsMixedServerSelectionWithHelperMessage() {
+    fun filterPlaylistsAllowsLocalPlaylistsAndCreationForMixedServerSelection() {
         val playlists = listOf(
             playlist("p1:pl1", "Home Mix"),
             playlist("p2:pl2", "Work Mix"),
+            playlist("local_pl:u1", "Cross-Server Mix"),
         )
         val result = filterPlaylistsForTracks(
             tracks = listOf(track("p1:s1"), track("p2:s2")),
             playlists = playlists,
             capabilitiesFor = ::capsFor,
         )
-        assertTrue(result.playlists.isEmpty())
+        assertTrue(result.serverPlaylists.isEmpty())
+        assertEquals(listOf("local_pl:u1"), result.localPlaylists.map { it.id })
+        assertEquals(listOf("local_pl:u1"), result.playlists.map { it.id })
         assertNull(result.owningProfileId)
-        assertFalse(result.canCreatePlaylist)
+        assertTrue(result.canCreatePlaylist)
         assertEquals(MIXED_OR_UNSUPPORTED_PLAYLIST_MESSAGE, result.helperMessage)
     }
 
     @Test
-    fun filterPlaylistsRejectsLocalOrUnsupportedBackendTracks() {
-        val playlists = listOf(playlist("p1:pl1", "Home Mix"))
+    fun filterPlaylistsAllowsLocalPlaylistsAndCreationForLocalOrDriveTracks() {
+        val playlists = listOf(
+            playlist("p1:pl1", "Home Mix"),
+            playlist("local_pl:u1", "Roadtrip"),
+        )
 
         val localResult = filterPlaylistsForTracks(
             tracks = listOf(track("local:1", localUri = "content://media/1")),
             playlists = playlists,
             capabilitiesFor = ::capsFor,
         )
-        assertTrue(localResult.playlists.isEmpty())
-        assertFalse(localResult.canCreatePlaylist)
+        assertTrue(localResult.serverPlaylists.isEmpty())
+        assertEquals(listOf("local_pl:u1"), localResult.localPlaylists.map { it.id })
+        assertNull(localResult.owningProfileId)
+        assertTrue(localResult.canCreatePlaylist)
         assertEquals(MIXED_OR_UNSUPPORTED_PLAYLIST_MESSAGE, localResult.helperMessage)
 
         val driveResult = filterPlaylistsForTracks(
@@ -204,8 +215,10 @@ class CapabilitiesGatingTest {
             playlists = playlists,
             capabilitiesFor = ::capsFor,
         )
-        assertTrue(driveResult.playlists.isEmpty())
-        assertFalse(driveResult.canCreatePlaylist)
+        assertTrue(driveResult.serverPlaylists.isEmpty())
+        assertEquals(listOf("local_pl:u1"), driveResult.localPlaylists.map { it.id })
+        assertNull(driveResult.owningProfileId)
+        assertTrue(driveResult.canCreatePlaylist)
         assertEquals(MIXED_OR_UNSUPPORTED_PLAYLIST_MESSAGE, driveResult.helperMessage)
     }
 }

@@ -1,5 +1,7 @@
 package com.feishin.mobile.ui.library
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -44,10 +46,15 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import com.feishin.mobile.core.common.GlobalId
+import com.feishin.mobile.core.common.Result
+import com.feishin.mobile.data.playlist.LocalPlaylistRepository
+import com.feishin.mobile.domain.model.Playlist
 import com.feishin.mobile.ui.theme.VusicColors
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Spacer
@@ -201,6 +208,37 @@ private fun profileUsernameLabel(profile: ServerProfile): String = when (val c =
     is ProfileCredentials.GoogleDrive -> c.accountEmail
 }
 
+internal fun filterPlaylistsBySource(
+    playlists: List<Playlist>,
+    sourceFilter: String,
+    profiles: List<ServerProfile>,
+    localPlaylistSourceMap: Map<String, Set<String>>,
+): List<Playlist> {
+    val filter = sourceFilter.trim()
+    if (filter.isBlank() || filter.equals("ALL", ignoreCase = true) || filter.equals("DEVICE", ignoreCase = true)) {
+        return playlists
+    }
+    val matchingIds: Set<String> = when {
+        filter.startsWith("TYPE:", ignoreCase = true) -> {
+            val rawType = filter.substringAfter(":").trim()
+            val targetType = BackendType.entries.firstOrNull { it.name.equals(rawType, ignoreCase = true) }
+                ?: return emptyList()
+            profiles.filter { it.type == targetType }.mapTo(HashSet()) { it.id }
+        }
+        filter.startsWith("PROFILE:", ignoreCase = true) -> {
+            setOf(filter.substringAfter(":").trim())
+        }
+        else -> setOf(filter)
+    }
+    return playlists.filter { playlist ->
+        if (LocalPlaylistRepository.isLocalPlaylist(playlist.id)) {
+            localPlaylistSourceMap[playlist.id].orEmpty().any { it in matchingIds }
+        } else {
+            GlobalId.profileIdOrNull(playlist.id) in matchingIds
+        }
+    }
+}
+
 private fun resolveLibraryTitle(
     sourceFilter: String,
     isDeviceMode: Boolean,
@@ -273,7 +311,30 @@ fun LibraryScreen(
     val settings by vm.settingsFlow.collectAsStateWithLifecycle(initialValue = null)
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val sourceFilter by vm.librarySourceFilter.collectAsStateWithLifecycle()
+    val localPlaylistSources by vm.localPlaylistSources.collectAsStateWithLifecycle()
     val healthState by vm.healthState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var showPlaylistsOverflow by remember { mutableStateOf(false) }
+    val m3uImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            vm.importM3uUri(context.contentResolver, uri) { result ->
+                when (result) {
+                    is Result.Ok -> {
+                        val r = result.value
+                        val msg = if (r.unmatchedCount > 0) {
+                            "Imported ${r.importedCount} tracks (${r.unmatchedCount} unmatched)"
+                        } else {
+                            "Imported ${r.importedCount} tracks"
+                        }
+                        messenger.show(msg)
+                    }
+                    is Result.Err -> messenger.show(result.message)
+                }
+            }
+        }
+    }
     val showDeviceFiles = settings?.showDeviceFiles == true
     val enabledProfiles = remember(profiles) {
         profiles.filter { it.enabled }.sortedBy { it.priority }
@@ -364,6 +425,27 @@ fun LibraryScreen(
                 }
                 IconButton(onClick = { showSortSheet = true }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.Sort, contentDescription = "Sort")
+                }
+                if (tab == LibraryTab.PLAYLISTS) {
+                    Box {
+                        IconButton(onClick = { showPlaylistsOverflow = true }, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Playlist options")
+                        }
+                        DropdownMenu(
+                            expanded = showPlaylistsOverflow,
+                            onDismissRequest = { showPlaylistsOverflow = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Import .m3u / .m3u8 playlist") },
+                                onClick = {
+                                    showPlaylistsOverflow = false
+                                    m3uImportLauncher.launch(
+                                        arrayOf("audio/x-mpegurl", "application/vnd.apple.mpegurl", "text/plain"),
+                                    )
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -596,7 +678,15 @@ fun LibraryScreen(
                             )
                         }
                         is UiState.Data -> {
-                            val shown = com.feishin.mobile.core.common.LibraryOrdering.filterPlaylists(s.value, query)
+                            val sourceFiltered = remember(s.value, sourceFilter, profiles, localPlaylistSources) {
+                                filterPlaylistsBySource(
+                                    playlists = s.value,
+                                    sourceFilter = sourceFilter,
+                                    profiles = profiles,
+                                    localPlaylistSourceMap = localPlaylistSources,
+                                )
+                            }
+                            val shown = com.feishin.mobile.core.common.LibraryOrdering.filterPlaylists(sourceFiltered, query)
                             if (grid) {
                                 LazyVerticalGrid(
                                     GridCells.Fixed(2), Modifier.fillMaxSize(),
@@ -617,7 +707,9 @@ fun LibraryScreen(
                                         )
                                     }
                                     if (shown.isEmpty() && query.isNotBlank()) {
-                                        item { EmptyState("No playlists match \"$query\"") }
+                                        item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
+                                            EmptyState("No playlists match \"$query\"")
+                                        }
                                     }
                                     items(shown, key = { it.id }, contentType = { "item" }) { p ->
                                         PlaylistGridCell(

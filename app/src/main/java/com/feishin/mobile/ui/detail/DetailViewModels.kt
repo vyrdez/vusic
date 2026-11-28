@@ -153,6 +153,8 @@ class PlaylistDetailViewModel @Inject constructor(
     val isVirtualFavorites: Boolean = id == FAVORITE_SONGS_PLAYLIST_ID
     /** The built-in Cached collection is virtual: no delete/rename/remove. */
     val isVirtualCached: Boolean = id == com.feishin.mobile.data.cache.CACHED_SONGS_PLAYLIST_ID
+    /** Local cross-server or imported `.m3u` playlist (`local_pl:*`). */
+    val isLocalPlaylist: Boolean = com.feishin.mobile.data.playlist.LocalPlaylistRepository.isLocalPlaylist(id)
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
     private val _ui = MutableStateFlow<UiState<PlaylistDetail>>(UiState.Loading)
@@ -299,8 +301,14 @@ class PlaylistDetailViewModel @Inject constructor(
         _query.value = q
     }
 
+    /** Remote tracks eligible for offline download (skips `local:` device files). */
+    fun downloadableTracks(): List<Track> =
+        (_ui.value as? UiState.Data)?.value?.tracks
+            ?.filter { !it.id.startsWith("local:") && it.localUri == null }
+            .orEmpty()
+
     fun delete(onDone: () -> Unit) {
-        if (isVirtualFavorites) return
+        if (isVirtualFavorites || isVirtualCached) return
         viewModelScope.launch {
             repo.deletePlaylist(id)
             onDone()

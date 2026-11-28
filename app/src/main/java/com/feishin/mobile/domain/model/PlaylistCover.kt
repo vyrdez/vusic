@@ -1,5 +1,9 @@
 package com.feishin.mobile.domain.model
 
+import kotlinx.serialization.json.Json
+
+private const val LOCAL_COLLAGE_PREFIX = "local_collage:"
+
 /**
  * Chooses what a playlist should show as its cover.
  *
@@ -25,7 +29,20 @@ sealed interface PlaylistCover {
 
     companion object {
         fun select(serverCoverArtId: String?, trackCoverArtIds: List<String?>): PlaylistCover {
-            if (!serverCoverArtId.isNullOrBlank()) return Server(serverCoverArtId)
+            if (!serverCoverArtId.isNullOrBlank()) {
+                if (serverCoverArtId.startsWith(LOCAL_COLLAGE_PREFIX)) {
+                    val payload = serverCoverArtId.removePrefix(LOCAL_COLLAGE_PREFIX)
+                    val collageIds = runCatching {
+                        Json.decodeFromString<List<String>>(payload)
+                    }.getOrDefault(emptyList())
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                        .distinct()
+                        .take(4)
+                    return if (collageIds.isEmpty()) Placeholder else Collage(collageIds)
+                }
+                return Server(serverCoverArtId)
+            }
             val distinct = trackCoverArtIds.filterNot { it.isNullOrBlank() }.map { it!! }.distinct().take(4)
             return if (distinct.isEmpty()) Placeholder else Collage(distinct)
         }

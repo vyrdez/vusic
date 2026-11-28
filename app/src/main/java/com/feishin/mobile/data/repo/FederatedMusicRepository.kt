@@ -21,8 +21,10 @@ import com.feishin.mobile.data.db.DriveTrackDao
 import com.feishin.mobile.data.db.LocalFavoriteDao
 import com.feishin.mobile.data.download.OfflineSyncStore
 import com.feishin.mobile.data.favorites.FAVORITE_SONGS_PLAYLIST_ID
+import com.feishin.mobile.data.favorites.PlaylistEvent
 import com.feishin.mobile.data.favorites.PlaylistEvents
 import com.feishin.mobile.data.network.NetworkMonitor
+import com.feishin.mobile.data.playlist.LocalPlaylistRepository
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.domain.model.Album
 import com.feishin.mobile.domain.model.AlbumDetail
@@ -80,6 +82,8 @@ class FederatedMusicRepository internal constructor(
     private val cachedTracks: dagger.Lazy<CachedTrackStore>? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashGuard.handler),
     private val profilePreloader: (suspend () -> Unit)? = null,
+    private val localPlaylists: LocalPlaylistRepository? = null,
+    private val playlistEvents: dagger.Lazy<PlaylistEvents>? = null,
 ) : MusicDataRepository, BackendRegistry {
 
     @Inject
@@ -96,6 +100,7 @@ class FederatedMusicRepository internal constructor(
         driveTrackDao: DriveTrackDao,
         localFavoriteDao: LocalFavoriteDao,
         driveIndexer: DriveLibraryIndexer,
+        localPlaylists: LocalPlaylistRepository,
         json: Json,
     ) : this(
         profilesFlow = profileStore.profiles,
@@ -117,6 +122,8 @@ class FederatedMusicRepository internal constructor(
         cachedTracks = cachedTracks,
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CrashGuard.handler),
         profilePreloader = profileStore::preloadIfNeeded,
+        localPlaylists = localPlaylists,
+        playlistEvents = playlistEvents,
     )
 
     private val registryLock = Any()
@@ -482,7 +489,8 @@ class FederatedMusicRepository internal constructor(
         ensureLoaded()
         val settings = readSettings()
         val targets = matchingBackends(settings)
-        if (targets.isEmpty()) return Result.Ok(emptyList())
+        val local = localPlaylists?.allPlaylists().orEmpty()
+        if (targets.isEmpty()) return Result.Ok(local)
         return when (
             val r = fanOut(
                 backends = targets,
@@ -492,8 +500,8 @@ class FederatedMusicRepository internal constructor(
                 fallbackCache = { it.readCachedPlaylists() },
             ) { it.playlists() }
         ) {
-            is Result.Err -> r
-            is Result.Ok -> Result.Ok(r.value.flatMap { it.value.orEmpty() }.distinctBy { it.id })
+            is Result.Err -> if (local.isNotEmpty()) Result.Ok(local) else r
+            is Result.Ok -> Result.Ok((r.value.flatMap { it.value.orEmpty() } + local).distinctBy { it.id })
         }
     }
 
@@ -509,7 +517,8 @@ class FederatedMusicRepository internal constructor(
         ensureLoaded()
         val settings = readSettings()
         val targets = matchingBackends(settings)
-        if (targets.isEmpty()) return Result.Ok(SearchResults())
+        val localMatched = if (query.isNotBlank()) localPlaylists?.search(query).orEmpty() else emptyList()
+        if (targets.isEmpty()) return Result.Ok(SearchResults(playlists = localMatched))
         return when (
             val r = fanOut(
                 backends = targets,
@@ -517,7 +526,7 @@ class FederatedMusicRepository internal constructor(
                 isEmpty = { it.artists.isEmpty() && it.albums.isEmpty() && it.tracks.isEmpty() && it.playlists.isEmpty() },
             ) { it.search(query, artistCount, albumCount, songCount) }
         ) {
-            is Result.Err -> r
+            is Result.Err -> if (localMatched.isNotEmpty()) Result.Ok(SearchResults(playlists = localMatched)) else r
             is Result.Ok -> {
                 val results = r.value.mapNotNull { it.value }
                 val priorities = profilePriorities(targets)
@@ -532,7 +541,7 @@ class FederatedMusicRepository internal constructor(
                             interleave(results.map { it.tracks }),
                             priorities,
                         ),
-                        playlists = interleave(results.map { it.playlists }).distinctBy { it.id },
+                        playlists = (interleave(results.map { it.playlists }) + localMatched).distinctBy { it.id },
                     ),
                 )
             }
@@ -722,12 +731,36 @@ class FederatedMusicRepository internal constructor(
                 ),
             )
         }
+        if (LocalPlaylistRepository.isLocalPlaylist(id)) {
+            val found = localPlaylists?.playlist(id) ?: return Result.Err("Playlist not found")
+            val (pl, tracks) = found
+            return Result.Ok(
+                PlaylistDetail(
+                    id = pl.id,
+                    name = pl.name,
+                    songCount = pl.songCount,
+                    durationSec = pl.durationSec,
+                    tracks = tracks,
+                ),
+            )
+        }
         val backend = resolveBackend(id) ?: return Result.Err("Server unavailable")
         return backend.playlist(id)
     }
 
     override suspend fun cachedPlaylist(id: String): PlaylistDetail? {
         ensureLoaded()
+        if (LocalPlaylistRepository.isLocalPlaylist(id)) {
+            val found = localPlaylists?.playlist(id) ?: return null
+            val (pl, tracks) = found
+            return PlaylistDetail(
+                id = pl.id,
+                name = pl.name,
+                songCount = pl.songCount,
+                durationSec = pl.durationSec,
+                tracks = tracks,
+            )
+        }
         if (id in GlobalId.VIRTUAL_IDS) return null
         return resolveBackend(id)?.cachedPlaylist(id)
     }
@@ -831,8 +864,82 @@ class FederatedMusicRepository internal constructor(
         return res
     }
 
+    override suspend fun createPlaylistWithTracks(
+        name: String,
+        tracks: List<Track>,
+        profileId: String?,
+    ): Result<Playlist> {
+        ensureLoaded()
+        val targetBackend = profileId?.let { get(it) }
+        val distinctProfiles = tracks.mapNotNull { track ->
+            GlobalId.profileIdOrNull(track.id) ?: track.sourceProfileId?.takeIf { s -> s.isNotBlank() }
+        }.distinct()
+        val hasLocalDevice = tracks.any { it.isLocal || GlobalId.isDeviceLocal(it.id) }
+        val useLocal = profileId == null ||
+            targetBackend == null ||
+            !targetBackend.capabilities.supportsServerPlaylists ||
+            hasLocalDevice ||
+            distinctProfiles.size > 1 ||
+            (distinctProfiles.size == 1 && distinctProfiles.single() != profileId)
+
+        if (useLocal && localPlaylists != null) {
+            val created = localPlaylists.createPlaylist(name = name, tracks = tracks)
+            refresh.policy.forceLogical(MetadataCacheKeys.PLAYLISTS)
+            playlistEvents?.get()?.emit(PlaylistEvent.TracksAdded(created.id))
+            return Result.Ok(created)
+        }
+
+        val target = targetBackend ?: return Result.Err("No server available for playlist creation")
+        val compatibleTrackIds = tracks.mapNotNull { track ->
+            if (track.isLocal || GlobalId.isDeviceLocal(track.id)) return@mapNotNull null
+            val owner = GlobalId.profileIdOrNull(track.id) ?: track.sourceProfileId?.takeIf { it.isNotBlank() }
+            if (owner == null || owner == target.profile.id) track.id else null
+        }
+        return when (val res = target.createPlaylist(name, compatibleTrackIds)) {
+            is Result.Err -> res
+            is Result.Ok -> {
+                refresh.policy.forceLogical(MetadataCacheKeys.PLAYLISTS)
+                playlistEvents?.get()?.emit(PlaylistEvent.TracksAdded(res.value))
+                Result.Ok(
+                    Playlist(
+                        id = res.value,
+                        name = name,
+                        songCount = compatibleTrackIds.size,
+                        durationSec = tracks.sumOf { it.durationSec.coerceAtLeast(0) },
+                        coverArt = null,
+                    ),
+                )
+            }
+        }
+    }
+
     override suspend fun addToPlaylist(playlistId: String, trackIds: List<String>): Result<Unit> {
         ensureLoaded()
+        if (LocalPlaylistRepository.isLocalPlaylist(playlistId)) {
+            val store = localPlaylists ?: return Result.Err("Local playlists unavailable")
+            val cachedById = cachedTracks?.get()?.all()?.associate { it.songId to it.toTrack() }.orEmpty()
+            val resolved = trackIds.map { tid ->
+                cachedById[tid] ?: Track(
+                    id = tid,
+                    title = tid,
+                    album = "",
+                    albumId = null,
+                    artist = "",
+                    artistId = null,
+                    coverArt = null,
+                    durationSec = 0,
+                    trackNo = null,
+                    year = null,
+                    genre = null,
+                    suffix = null,
+                    starred = false,
+                )
+            }
+            store.addTracks(playlistId, resolved)
+            refresh.policy.forceLogical(MetadataCacheKeys.playlist(playlistId))
+            refresh.policy.forceLogical(MetadataCacheKeys.PLAYLISTS)
+            return Result.Ok(Unit)
+        }
         val backend = resolveBackend(playlistId) ?: return Result.Err("Server unavailable")
         val compatible = trackIds.filter { tid ->
             if (GlobalId.isDeviceLocal(tid)) return@filter false
@@ -854,6 +961,19 @@ class FederatedMusicRepository internal constructor(
         onRollback: (() -> Unit)?,
     ): Result<Unit> {
         ensureLoaded()
+        if (LocalPlaylistRepository.isLocalPlaylist(playlistId)) {
+            val store = localPlaylists ?: return Result.Err("Local playlists unavailable")
+            return try {
+                store.addTracks(playlistId, tracks)
+                refresh.policy.forceLogical(MetadataCacheKeys.playlist(playlistId))
+                refresh.policy.forceLogical(MetadataCacheKeys.PLAYLISTS)
+                playlistEvents?.get()?.emit(PlaylistEvent.TracksAdded(playlistId))
+                Result.Ok(Unit)
+            } catch (e: Exception) {
+                onRollback?.invoke()
+                Result.Err(e.message ?: "Could not add to playlist")
+            }
+        }
         val backend = resolveBackend(playlistId) ?: return Result.Err("Server unavailable")
         val compatible = tracks.filter { track ->
             if (track.isLocal || GlobalId.isDeviceLocal(track.id)) return@filter false
@@ -872,6 +992,18 @@ class FederatedMusicRepository internal constructor(
         entryIds: List<String>,
     ): Result<Unit> {
         ensureLoaded()
+        if (LocalPlaylistRepository.isLocalPlaylist(playlistId)) {
+            val store = localPlaylists ?: return Result.Err("Local playlists unavailable")
+            store.removeTracks(
+                playlistId = playlistId,
+                positions = indexes,
+                entryIds = entryIds.mapNotNull { it.toLongOrNull() },
+            )
+            refresh.policy.forceLogical(MetadataCacheKeys.playlist(playlistId))
+            refresh.policy.forceLogical(MetadataCacheKeys.PLAYLISTS)
+            playlistEvents?.get()?.emit(PlaylistEvent.TracksAdded(playlistId))
+            return Result.Ok(Unit)
+        }
         val backend = resolveBackend(playlistId) ?: return Result.Err("Server unavailable")
         val res = backend.removeFromPlaylist(playlistId, indexes, entryIds)
         if (res is Result.Ok) {
@@ -883,6 +1015,13 @@ class FederatedMusicRepository internal constructor(
 
     override suspend fun deletePlaylist(id: String): Result<Unit> {
         ensureLoaded()
+        if (LocalPlaylistRepository.isLocalPlaylist(id)) {
+            val store = localPlaylists ?: return Result.Err("Local playlists unavailable")
+            store.deletePlaylist(id)
+            refresh.policy.forceLogical(MetadataCacheKeys.PLAYLISTS)
+            playlistEvents?.get()?.emit(PlaylistEvent.TracksAdded(id))
+            return Result.Ok(Unit)
+        }
         val backend = resolveBackend(id) ?: return Result.Err("Server unavailable")
         val res = backend.deletePlaylist(id)
         if (res is Result.Ok) {
@@ -986,6 +1125,7 @@ class FederatedMusicRepository internal constructor(
     override fun coverArtUrl(coverArtId: String?, size: Int): String? {
         if (coverArtId.isNullOrBlank()) return null
         if (
+            coverArtId.startsWith("drive-cover://", ignoreCase = true) ||
             coverArtId.startsWith("content://") ||
             coverArtId.startsWith("file://") ||
             coverArtId.startsWith("http://") ||

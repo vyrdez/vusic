@@ -1,5 +1,8 @@
 package com.feishin.mobile.ui.library
 
+import android.content.ContentResolver
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -21,12 +24,17 @@ import com.feishin.mobile.data.db.CachedTrackEntity
 import com.feishin.mobile.data.cache.CachedTrackStore
 import com.feishin.mobile.data.cache.LibraryRefresh
 import com.feishin.mobile.data.cache.MetadataCacheKeys
+import com.feishin.mobile.data.playlist.LocalPlaylistRepository
+import com.feishin.mobile.data.playlist.M3uFileTooLargeException
+import com.feishin.mobile.data.playlist.M3uImportResult
+import com.feishin.mobile.data.playlist.M3uImporter
 import com.feishin.mobile.data.settings.LayoutMode
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.data.favorites.PlaylistEvent
 import com.feishin.mobile.data.favorites.PlaylistEvents
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +46,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class LibraryTab { PLAYLISTS, DOWNLOADS, ALBUMS, ARTISTS, SONGS, FAVORITES }
 
@@ -50,6 +59,8 @@ class LibraryViewModel @Inject constructor(
     private val refresh: LibraryRefresh,
     savedStateHandle: SavedStateHandle,
     private val auth: com.feishin.mobile.data.auth.AuthRepository? = null,
+    private val localPlaylists: LocalPlaylistRepository? = null,
+    private val m3uImporter: M3uImporter? = null,
 ) : ViewModel() {
     private val handle: SavedStateHandle = savedStateHandle
 
@@ -184,6 +195,9 @@ class LibraryViewModel @Inject constructor(
 
     private val _playlists = MutableStateFlow<UiState<List<Playlist>>>(UiState.Loading)
     val playlists: StateFlow<UiState<List<Playlist>>> = _playlists.asStateFlow()
+
+    private val _localPlaylistSources = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
+    val localPlaylistSources: StateFlow<Map<String, Set<String>>> = _localPlaylistSources.asStateFlow()
 
     private val _favs = MutableStateFlow<UiState<StarredCollection>>(UiState.Loading)
     val favs: StateFlow<UiState<StarredCollection>> = _favs.asStateFlow()
@@ -502,6 +516,7 @@ class LibraryViewModel @Inject constructor(
         playlistsJob?.cancel()
         playlistsJob = viewModelScope.launch {
             if (!silent) _playlists.value = UiState.Loading
+            _localPlaylistSources.value = localPlaylists?.allPlaylistSourceMap().orEmpty()
             val r = repo.playlists()
             if (!isActive) return@launch
             _playlists.value = when (r) {
@@ -510,6 +525,75 @@ class LibraryViewModel @Inject constructor(
                 is Result.Err -> if (_playlists.value is UiState.Data) _playlists.value else UiState.Error(r.message)
             }
         }
+    }
+
+    fun importM3uUri(
+        contentResolver: ContentResolver,
+        uri: Uri,
+        onResult: (Result<M3uImportResult>) -> Unit,
+    ) {
+        val importer = m3uImporter ?: run {
+            onResult(Result.Err("M3U importer unavailable"))
+            return
+        }
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching {
+                    val fileName = resolveDisplayName(contentResolver, uri) ?: "Imported Playlist.m3u"
+                    val playlistName = fileName
+                        .removeSuffix(".m3u8")
+                        .removeSuffix(".M3U8")
+                        .removeSuffix(".m3u")
+                        .removeSuffix(".M3U")
+                        .trim()
+                        .ifBlank { "Imported Playlist" }
+                    val loadedSongs = (_songs.value as? UiState.Data)?.value.orEmpty()
+                    val lookup: (suspend () -> List<Track>)? = if (loadedSongs.isEmpty()) {
+                        { (repo.randomSongs(500) as? Result.Ok)?.value.orEmpty() }
+                    } else {
+                        null
+                    }
+                    contentResolver.openInputStream(uri)?.use { stream ->
+                        importer.import(
+                            inputStream = stream,
+                            playlistName = playlistName,
+                            sourceM3uName = fileName,
+                            candidateTracks = loadedSongs,
+                            candidateTrackLookup = lookup,
+                        )
+                    } ?: throw IllegalStateException("Could not open selected file")
+                }
+            }
+            outcome.fold(
+                onSuccess = { imported ->
+                    refresh.invalidate(MetadataCacheKeys.PLAYLISTS)
+                    loadPlaylists(silent = true)
+                    playlistEvents.emit(PlaylistEvent.TracksAdded(imported.playlistId))
+                    onResult(Result.Ok(imported))
+                },
+                onFailure = { error ->
+                    val message = when (error) {
+                        is M3uFileTooLargeException -> "Playlist file exceeds the 5 MB limit"
+                        else -> error.message ?: "Could not import playlist"
+                    }
+                    onResult(Result.Err(message))
+                },
+            )
+        }
+    }
+
+    private fun resolveDisplayName(contentResolver: ContentResolver, uri: Uri): String? {
+        runCatching {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) {
+                        c.getString(idx)?.takeIf { it.isNotBlank() }?.let { return it }
+                    }
+                }
+            }
+        }
+        return uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
     }
 
     private fun loadFavs(silent: Boolean = false) {

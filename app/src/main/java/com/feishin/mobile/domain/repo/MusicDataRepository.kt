@@ -73,6 +73,22 @@ interface MusicDataRepository {
     suspend fun createPlaylist(name: String, trackIds: List<String> = emptyList()): Result<String>
     suspend fun createPlaylist(name: String, trackIds: List<String>, profileId: String?): Result<String> =
         createPlaylist(name, trackIds)
+    suspend fun createPlaylistWithTracks(
+        name: String,
+        tracks: List<Track>,
+        profileId: String? = null,
+    ): Result<Playlist> = when (val res = createPlaylist(name, tracks.map { it.id }, profileId)) {
+        is Result.Ok -> Result.Ok(
+            Playlist(
+                id = res.value,
+                name = name,
+                songCount = tracks.size,
+                durationSec = tracks.sumOf { it.durationSec.coerceAtLeast(0) },
+                coverArt = null,
+            ),
+        )
+        is Result.Err -> res
+    }
     suspend fun cachedPlaylist(id: String): PlaylistDetail? = null
     suspend fun addToPlaylist(playlistId: String, trackIds: List<String>): Result<Unit>
     suspend fun addToPlaylistOptimistic(

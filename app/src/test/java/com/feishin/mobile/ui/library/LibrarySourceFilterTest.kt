@@ -173,40 +173,44 @@ class LibrarySourceFilterTest {
     }
 
     @Test
-    fun `local_pl playlists are unprefixed reserved ids visible under All sources and excluded under member backend filters`() {
+    fun `local_pl playlists appear under All sources and under member backend or profile filters`() {
         val driveProfile = googleDriveProfile(id = "gd-1", name = "Drive", priority = 10)
         val navProfile = navidromeProfile(id = "nd-1", name = "Navidrome", priority = 20)
-        val profiles = listOf(driveProfile, navProfile)
+        val jfProfile = jellyfinProfile(id = "jf-1", name = "Jellyfin", priority = 30)
+        val profiles = listOf(driveProfile, navProfile, jfProfile)
 
         val playlists = listOf(
             Playlist(id = "gd-1:pl-1", name = "Drive Mix", songCount = 5, durationSec = 0, coverArt = null),
             Playlist(id = "nd-1:pl-2", name = "Nav Mix", songCount = 8, durationSec = 0, coverArt = null),
             Playlist(id = "local_pl:uuid-1", name = "Cross-Server Favorites", songCount = 12, durationSec = 0, coverArt = null),
+            Playlist(id = "local_pl:uuid-local-only", name = "Device Only Mix", songCount = 3, durationSec = 0, coverArt = null),
         )
-
-        fun visibleForSource(sourceFilter: String): List<String> {
-            val filter = sourceFilter.trim()
-            return when {
-                filter.isBlank() || filter.equals("ALL", ignoreCase = true) -> playlists.map { it.id }
-                filter.startsWith("TYPE:", ignoreCase = true) -> {
-                    val targetType = BackendType.valueOf(filter.substringAfter(":").trim())
-                    val matchingProfileIds = profiles.filter { it.type == targetType }.map { it.id }.toSet()
-                    playlists.filter { GlobalId.profileIdOrNull(it.id) in matchingProfileIds }.map { it.id }
-                }
-                filter.startsWith("PROFILE:", ignoreCase = true) -> {
-                    val pid = filter.substringAfter(":").trim()
-                    playlists.filter { GlobalId.profileIdOrNull(it.id) == pid }.map { it.id }
-                }
-                else -> emptyList()
-            }
-        }
+        val sourceMap = mapOf(
+            "local_pl:uuid-1" to setOf("gd-1", "nd-1"),
+            "local_pl:uuid-local-only" to emptySet(),
+        )
 
         assertTrue(GlobalId.isReserved("local_pl:uuid-1"))
         assertNull(GlobalId.profileIdOrNull("local_pl:uuid-1"))
 
-        assertEquals(listOf("gd-1:pl-1", "nd-1:pl-2", "local_pl:uuid-1"), visibleForSource("ALL"))
-        assertEquals(listOf("gd-1:pl-1"), visibleForSource("TYPE:GOOGLE_DRIVE"))
-        assertEquals(listOf("nd-1:pl-2"), visibleForSource("TYPE:NAVIDROME"))
-        assertEquals(listOf("gd-1:pl-1"), visibleForSource("PROFILE:gd-1"))
+        assertEquals(
+            listOf("gd-1:pl-1", "nd-1:pl-2", "local_pl:uuid-1", "local_pl:uuid-local-only"),
+            filterPlaylistsBySource(playlists, "ALL", profiles, sourceMap).map { it.id },
+        )
+        assertEquals(
+            listOf("gd-1:pl-1", "local_pl:uuid-1"),
+            filterPlaylistsBySource(playlists, "TYPE:GOOGLE_DRIVE", profiles, sourceMap).map { it.id },
+        )
+        assertEquals(
+            listOf("nd-1:pl-2", "local_pl:uuid-1"),
+            filterPlaylistsBySource(playlists, "TYPE:NAVIDROME", profiles, sourceMap).map { it.id },
+        )
+        assertEquals(
+            listOf("gd-1:pl-1", "local_pl:uuid-1"),
+            filterPlaylistsBySource(playlists, "PROFILE:gd-1", profiles, sourceMap).map { it.id },
+        )
+        assertTrue(
+            filterPlaylistsBySource(playlists, "TYPE:JELLYFIN", profiles, sourceMap).isEmpty(),
+        )
     }
 }

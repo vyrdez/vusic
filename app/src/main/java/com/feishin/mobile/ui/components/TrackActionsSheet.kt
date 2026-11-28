@@ -72,6 +72,7 @@ import com.feishin.mobile.data.favorites.FAVORITE_SONGS_PLAYLIST_ID
 import com.feishin.mobile.data.favorites.FavoritesStore
 import com.feishin.mobile.data.favorites.PlaylistEvent
 import com.feishin.mobile.data.favorites.PlaylistEvents
+import com.feishin.mobile.data.playlist.LocalPlaylistRepository
 import com.feishin.mobile.data.settings.SettingsStore
 import com.feishin.mobile.data.settings.speedDialKey
 import com.feishin.mobile.domain.model.Album
@@ -132,7 +133,7 @@ fun EntityActionsSheet(
 }
 
 internal const val MIXED_OR_UNSUPPORTED_PLAYLIST_MESSAGE =
-    "Playlists are scoped per server in 12.0; select tracks from one server."
+    "Server playlists require one compatible server — saving uses an on-device cross-server playlist."
 
 internal data class TrackCapabilitiesUi(
     val canFavorite: Boolean,
@@ -153,7 +154,7 @@ internal fun resolveTrackCapabilities(
     val isRemote = !isLocal && caps != BackendCapabilities.DEVICE_LOCAL
     return TrackCapabilitiesUi(
         canFavorite = isRemote,
-        canSaveToPlaylist = isRemote && caps.supportsServerPlaylists,
+        canSaveToPlaylist = true,
         canStartRadio = isRemote && caps.supportsRadioMix,
         canDownload = isRemote,
         canNavigateAlbum = !isLocal && !albumId.isNullOrBlank(),
@@ -164,6 +165,8 @@ internal fun resolveTrackCapabilities(
 
 internal data class PlaylistPickerFilterResult(
     val playlists: List<Playlist>,
+    val serverPlaylists: List<Playlist>,
+    val localPlaylists: List<Playlist>,
     val owningProfileId: String?,
     val canCreatePlaylist: Boolean,
     val helperMessage: String? = null,
@@ -174,9 +177,14 @@ internal fun filterPlaylistsForTracks(
     playlists: List<Playlist>,
     capabilitiesFor: (String) -> BackendCapabilities,
 ): PlaylistPickerFilterResult {
+    val localPlaylists = playlists.filter { LocalPlaylistRepository.isLocalPlaylist(it.id) }
+    val remotePlaylists = playlists.filterNot { LocalPlaylistRepository.isLocalPlaylist(it.id) }
+
     if (tracks.isEmpty()) {
         return PlaylistPickerFilterResult(
-            playlists = playlists,
+            playlists = remotePlaylists + localPlaylists,
+            serverPlaylists = remotePlaylists,
+            localPlaylists = localPlaylists,
             owningProfileId = null,
             canCreatePlaylist = true,
         )
@@ -187,36 +195,31 @@ internal fun filterPlaylistsForTracks(
             GlobalId.isDeviceLocal(track.id) ||
             !capabilitiesFor(track.id).supportsServerPlaylists
     }
-    if (anyUnsupported) {
-        return PlaylistPickerFilterResult(
-            playlists = emptyList(),
-            owningProfileId = null,
-            canCreatePlaylist = false,
-            helperMessage = MIXED_OR_UNSUPPORTED_PLAYLIST_MESSAGE,
-        )
-    }
-
     val distinctProfiles = tracks.map { track ->
         GlobalId.profileIdOrNull(track.id) ?: track.sourceProfileId?.takeIf { it.isNotBlank() }
     }.distinct()
 
-    if (distinctProfiles.size > 1) {
+    if (anyUnsupported || distinctProfiles.size > 1) {
         return PlaylistPickerFilterResult(
-            playlists = emptyList(),
+            playlists = localPlaylists,
+            serverPlaylists = emptyList(),
+            localPlaylists = localPlaylists,
             owningProfileId = null,
-            canCreatePlaylist = false,
+            canCreatePlaylist = true,
             helperMessage = MIXED_OR_UNSUPPORTED_PLAYLIST_MESSAGE,
         )
     }
 
     val owningProfileId = distinctProfiles.single()
-    val filtered = if (owningProfileId != null) {
-        playlists.filter { GlobalId.profileIdOrNull(it.id) == owningProfileId }
+    val serverPlaylists = if (owningProfileId != null) {
+        remotePlaylists.filter { GlobalId.profileIdOrNull(it.id) == owningProfileId }
     } else {
-        playlists.filter { GlobalId.profileIdOrNull(it.id) == null }
+        remotePlaylists.filter { GlobalId.profileIdOrNull(it.id) == null }
     }
     return PlaylistPickerFilterResult(
-        playlists = filtered,
+        playlists = serverPlaylists + localPlaylists,
+        serverPlaylists = serverPlaylists,
+        localPlaylists = localPlaylists,
         owningProfileId = owningProfileId,
         canCreatePlaylist = true,
     )
@@ -418,6 +421,9 @@ private fun TrackSheetContent(
             messenger.show("Playing next: ${track.title}")
             onDismiss()
         })
+        if (gating.canSaveToPlaylist) {
+            SheetRow("Add to playlist", Icons.AutoMirrored.Filled.PlaylistAdd, onClick = { showPicker = true })
+        }
     }
     SheetRow("Add to queue", Icons.Default.QueueMusic, onClick = {
         player.addToEnd(track)
@@ -548,7 +554,7 @@ private fun AlbumSheetContent(
             shareText(context, "${album.name} - ${album.artist}")
             onDismiss()
         },
-        showSaveToPlaylist = !isLocalAlbum && caps.supportsServerPlaylists,
+        showSaveToPlaylist = true,
     )
     SheetRow("Play", Icons.Default.PlayArrow, onClick = {
         if (tracks.isNotEmpty()) player.playAll(tracks, source = album.name)
@@ -714,7 +720,7 @@ private fun ArtistSheetContent(
             shareText(context, artist.name)
             onDismiss()
         },
-        showSaveToPlaylist = !isLocalArtist && caps.supportsServerPlaylists,
+        showSaveToPlaylist = !isLocalArtist,
     )
     SheetRow("Play all", Icons.Default.PlayArrow, onClick = { withTracks { player.playAll(it, source = artist.name) } }, enabled = !gathering)
     SheetRow("Shuffle all", Icons.Default.Shuffle, onClick = { withTracks { player.playAll(it, shuffle = true, source = artist.name) } }, enabled = !gathering)
@@ -766,8 +772,9 @@ private fun PlaylistSheetContent(
     val isVirtual = playlist.id == FAVORITE_SONGS_PLAYLIST_ID
     val isCached = playlist.id == com.feishin.mobile.data.cache.CACHED_SONGS_PLAYLIST_ID
     val isBuiltIn = isVirtual || isCached
+    val isLocalPlaylist = LocalPlaylistRepository.isLocalPlaylist(playlist.id)
     val caps = repo.capabilitiesFor(playlist.id)
-    val canEditServerPlaylist = !isBuiltIn && caps.supportsServerPlaylists
+    val canEditPlaylist = !isBuiltIn && (isLocalPlaylist || caps.supportsServerPlaylists)
     val groupId = if (isVirtual) "favorites" else "playlist:${playlist.id}"
     val groupType = if (isVirtual) "favorites" else "playlist"
     val scope = rememberCoroutineScope()
@@ -802,7 +809,7 @@ private fun PlaylistSheetContent(
             shareText(context, playlist.name)
             onDismiss()
         },
-        showSaveToPlaylist = isBuiltIn || caps.supportsServerPlaylists,
+        showSaveToPlaylist = true,
     )
     SheetRow("Play", Icons.Default.PlayArrow, onClick = {
         if (tracks.isNotEmpty()) player.playAll(tracks, source = playlist.name)
@@ -855,11 +862,16 @@ private fun PlaylistSheetContent(
                     } else if (tracks.isEmpty()) {
                         messenger.show("Tracks not loaded yet")
                     } else {
-                        if (isVirtual) downloads.enqueueFavorites(tracks)
-                        else downloads.enqueueTracks(tracks, groupId)
-                        downloads.setKeepDownloaded(groupId, groupType, playlist.name, true)
-                        keep = true
-                        messenger.show("Keeping downloaded: ${playlist.name}")
+                        val downloadable = tracks.filter { !it.id.startsWith("local:") && it.localUri == null }
+                        if (downloadable.isEmpty()) {
+                            messenger.show("No remote tracks to download")
+                        } else {
+                            if (isVirtual) downloads.enqueueFavorites(downloadable)
+                            else downloads.enqueueTracks(downloadable, groupId)
+                            downloads.setKeepDownloaded(groupId, groupType, playlist.name, true)
+                            keep = true
+                            messenger.show("Keeping downloaded: ${playlist.name}")
+                        }
                     }
                 }
             },
@@ -877,7 +889,7 @@ private fun PlaylistSheetContent(
     if (showPicker) {
         PlaylistPickerSheet(tracks = tracks, title = playlist.name, onDismiss = { showPicker = false }, repo = repo, messenger = messenger, playlistEvents = playlistEvents)
     }
-    if (canEditServerPlaylist && onDelete != null) {
+    if (canEditPlaylist && onDelete != null) {
         // Only a user-created playlist on a playlist-capable backend can be deleted;
         // Favorites and Cached are views over other data, not playlists. The confirmation
         // lives with the caller so it outlives this sheet closing.
@@ -929,6 +941,34 @@ fun PlaylistPickerSheet(
         }
     }
 
+    fun onPlaylistSelected(p: Playlist) {
+        scope.launch {
+            val existingIds = run {
+                val cached = repo.cachedPlaylist(p.id)
+                if (cached != null) {
+                    cached.tracks.map { it.id }.toSet()
+                } else if (p.songCount > 0) {
+                    (repo.playlist(p.id) as? Result.Ok)?.value?.tracks?.map { it.id }?.toSet().orEmpty()
+                } else {
+                    emptySet()
+                }
+            }
+            when (val plan = com.feishin.mobile.core.common.PlaylistAddPlanner.plan(tracks, p.name, existingIds)) {
+                is com.feishin.mobile.core.common.PlaylistAddResolution.NoOp -> onDismiss()
+                is com.feishin.mobile.core.common.PlaylistAddResolution.AddImmediately -> {
+                    performAdd(p, plan.songsToAdd, plan.toastMessage)
+                }
+                is com.feishin.mobile.core.common.PlaylistAddResolution.AddFilteredImmediately -> {
+                    performAdd(p, plan.songsToAdd, plan.toastMessage)
+                }
+                is com.feishin.mobile.core.common.PlaylistAddResolution.RequireConfirmation -> {
+                    confirmDupTarget = p to plan.songsToAdd
+                    confirmDupMessage = plan.dialogMessage
+                }
+            }
+        }
+    }
+
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         val filterResult = remember(tracks, playlists) {
             filterPlaylistsForTracks(tracks, playlists.orEmpty(), repo::capabilitiesFor)
@@ -953,59 +993,48 @@ fun PlaylistPickerSheet(
                 )
             }
             val list = playlists
-            if (list == null && filterResult.helperMessage == null) {
+            if (list == null) {
                 Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-            } else if (filterResult.helperMessage == null && filterResult.playlists.isEmpty()) {
+            } else if (filterResult.playlists.isEmpty()) {
                 Text("No playlists yet — create one above.", color = VusicColors.SecondaryText, modifier = Modifier.padding(vertical = 12.dp))
-            } else if (filterResult.playlists.isNotEmpty()) {
+            } else {
                 LazyColumn(Modifier.fillMaxWidth()) {
-                    items(filterResult.playlists, key = { it.id }, contentType = { "item" }) { p ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            // Server art when the playlist has any, else its tracks' art.
-                            val cover = PlaylistCover.select(p.coverArt, emptyList())
-                            PlaylistCoverArt(
-                                cover = cover,
-                                resolver = { id -> repo.coverArtUrl(id, 128) },
-                                contentDescription = p.name,
-                                modifier = Modifier.size(44.dp),
-                                roundedDp = 4.dp,
+                    if (filterResult.serverPlaylists.isNotEmpty()) {
+                        item(key = "header_server") {
+                            Text(
+                                "Server playlists",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = VusicColors.SecondaryText,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
                             )
-                            Box(Modifier.weight(1f)) {
-                                SheetRow("${p.name} • ${p.songCount}", Icons.Default.QueueMusic, onClick = {
-                                    scope.launch {
-                                        val existingIds = run {
-                                            val cached = repo.cachedPlaylist(p.id)
-                                            if (cached != null) {
-                                                cached.tracks.map { it.id }.toSet()
-                                            } else if (p.songCount > 0) {
-                                                // If metadata indicates songs exist but detail is not cached, fetch detail
-                                                (repo.playlist(p.id) as? Result.Ok)?.value?.tracks?.map { it.id }?.toSet().orEmpty()
-                                            } else {
-                                                emptySet()
-                                            }
-                                        }
-
-                                        when (val plan = com.feishin.mobile.core.common.PlaylistAddPlanner.plan(tracks, p.name, existingIds)) {
-                                            is com.feishin.mobile.core.common.PlaylistAddResolution.NoOp -> onDismiss()
-                                            is com.feishin.mobile.core.common.PlaylistAddResolution.AddImmediately -> {
-                                                performAdd(p, plan.songsToAdd, plan.toastMessage)
-                                            }
-                                            is com.feishin.mobile.core.common.PlaylistAddResolution.AddFilteredImmediately -> {
-                                                performAdd(p, plan.songsToAdd, plan.toastMessage)
-                                            }
-                                            is com.feishin.mobile.core.common.PlaylistAddResolution.RequireConfirmation -> {
-                                                confirmDupTarget = p to plan.songsToAdd
-                                                confirmDupMessage = plan.dialogMessage
-                                            }
-                                        }
-                                    }
-                                })
-                            }
+                        }
+                        items(filterResult.serverPlaylists, key = { it.id }, contentType = { "item" }) { p ->
+                            PlaylistPickerRow(
+                                playlist = p,
+                                badge = null,
+                                repo = repo,
+                                onClick = { onPlaylistSelected(p) },
+                            )
+                        }
+                    }
+                    if (filterResult.localPlaylists.isNotEmpty()) {
+                        item(key = "header_local") {
+                            Text(
+                                "Local playlists",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = VusicColors.SecondaryText,
+                                modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                            )
+                        }
+                        items(filterResult.localPlaylists, key = { it.id }, contentType = { "item" }) { p ->
+                            PlaylistPickerRow(
+                                playlist = p,
+                                badge = "On device (cross-server)",
+                                repo = repo,
+                                onClick = { onPlaylistSelected(p) },
+                            )
                         }
                     }
                 }
@@ -1069,12 +1098,12 @@ fun PlaylistPickerSheet(
                         // Same ordering rule as performAdd(): dismiss only after
                         // the work is done, since dismissing cancels this scope.
                         scope.launch {
-                            when (val res = repo.createPlaylist(trimmed, tracks.map { it.id }, targetProfileId)) {
+                            when (val res = repo.createPlaylistWithTracks(trimmed, tracks, targetProfileId)) {
                                 is Result.Ok -> {
                                     messenger.show("Created playlist $trimmed")
-                                    // The event carries the server id, not the
+                                    // The event carries the created playlist id, not the
                                     // name: detail screens match on id.
-                                    playlistEvents?.emit(PlaylistEvent.TracksAdded(res.value))
+                                    playlistEvents?.emit(PlaylistEvent.TracksAdded(res.value.id))
                                 }
                                 is Result.Err -> {
                                     messenger.show("Could not create playlist")
@@ -1087,6 +1116,55 @@ fun PlaylistPickerSheet(
                 ) { Text("Create") }
             },
             dismissButton = { TextButton(onClick = { showNew = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun PlaylistPickerRow(
+    playlist: Playlist,
+    badge: String?,
+    repo: MusicDataRepository,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val cover = PlaylistCover.select(playlist.coverArt, emptyList())
+        PlaylistCoverArt(
+            cover = cover,
+            resolver = { id -> repo.coverArtUrl(id, 128) },
+            contentDescription = playlist.name,
+            modifier = Modifier.size(44.dp),
+            roundedDp = 4.dp,
+        )
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(
+                "${playlist.name} • ${playlist.songCount}",
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!badge.isNullOrBlank()) {
+                Text(
+                    badge,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = VusicColors.Accent,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Icon(
+            Icons.Default.QueueMusic,
+            contentDescription = null,
+            tint = VusicColors.SecondaryText,
+            modifier = Modifier.size(20.dp),
         )
     }
 }
