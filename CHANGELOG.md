@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.5.2
+
+### Added
+- **Google Drive Backend & Local Cross-Server Persistence (Phase 12.2)**:
+  - **Google Drive Auth & Token Lifecycle (`P12.2-A`)**:
+    - Added Credential Manager + `AuthorizationClient` (`drive.readonly`) sign-in and single-flight `DriveTokenAuthenticator` for automatic token refresh.
+  - **Room Schema `v7 -> v8` (`P12.2-B`)**:
+    - Added `MIGRATION_7_8` with `drive_tracks`, `local_playlists`, `local_playlist_tracks`, `local_favorites`, and `local_play_history` tables.
+  - **HTTP Range Metadata & Indexing (`P12.2-C`..`D`)**:
+    - Added HTTP Range tag/art/lyrics extraction supporting 64-bit M4A tail `moov` atoms and `<= 2 MB` embedded cover art.
+    - Added `DriveLibraryIndexer` with MIME-free BFS traversal, HTTP 429 exponential backoff, and 2-stage scan progress.
+  - **Backend & Cover Art (`P12.2-E`)**:
+    - Added `GoogleDriveBackend` and `DriveCoverFetcher` (`drive-cover://`) for streaming and embedded artwork loading.
+  - **Cross-Server Local Playlists & Mixes (`P12.2-F`..`G`)**:
+    - Added cross-server `local_pl:*` playlists with editable `.m3u`/`.m3u8` import and 2x2 cover collages.
+    - Wired `PlayerService` local play history, 5 personalized mixes, and `OfflineRadio`.
+  - **Lyrics & UI (`P12.2-H`..`I`)**:
+    - Added `DriveEmbeddedLyricsProvider` for embedded track lyrics.
+    - Added Drive folder picker, Login/Add/Edit Drive profile flows, and `ServerProfileCard` UI updates.
+  - **Verification**:
+    - `1141` unit tests across `147` suites, `22/22` Android instrumentation tests (including `Migration7To8Test`), `0` lint errors, and R8 `assembleRelease` green.
+
 ## 1.5.1
 
 ### Added
