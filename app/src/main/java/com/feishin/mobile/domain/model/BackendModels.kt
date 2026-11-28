@@ -71,6 +71,7 @@ data class BackendCapabilities(
     val supportsTranscoding: Boolean,
     val supportsRadioMix: Boolean,
     val supportsLibraryScan: Boolean,
+    val supportsServerFavorites: Boolean = true,
 ) {
     companion object {
         val DEVICE_LOCAL = BackendCapabilities(
@@ -80,6 +81,7 @@ data class BackendCapabilities(
             supportsTranscoding = false,
             supportsRadioMix = false,
             supportsLibraryScan = false,
+            supportsServerFavorites = false,
         )
 
         private val FULL_REMOTE = BackendCapabilities(
@@ -89,6 +91,7 @@ data class BackendCapabilities(
             supportsTranscoding = true,
             supportsRadioMix = true,
             supportsLibraryScan = true,
+            supportsServerFavorites = true,
         )
 
         private val GOOGLE_DRIVE_CAPS = BackendCapabilities(
@@ -98,6 +101,7 @@ data class BackendCapabilities(
             supportsTranscoding = false,
             supportsRadioMix = false,
             supportsLibraryScan = true,
+            supportsServerFavorites = false,
         )
 
         fun forType(type: BackendType): BackendCapabilities = when (type) {

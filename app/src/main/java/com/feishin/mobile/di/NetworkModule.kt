@@ -15,6 +15,8 @@ import com.feishin.mobile.data.remote.ProfileAuthInterceptor
 import com.feishin.mobile.data.remote.ProfileTrustManager
 import com.feishin.mobile.data.remote.RedactingHttpLogger
 import com.feishin.mobile.data.remote.SubsonicApi
+import com.feishin.mobile.data.remote.drive.DriveCoverFetcher
+import com.feishin.mobile.data.remote.drive.DriveRangeReader
 import com.feishin.mobile.data.remote.drive.DriveTokenAuthenticator
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
@@ -113,6 +115,7 @@ object NetworkModule {
         settings: com.feishin.mobile.data.settings.SettingsStore,
         cachedCoverDao: com.feishin.mobile.data.db.CachedCoverDao,
         profileStore: ProfileStore,
+        driveRangeReader: DriveRangeReader,
     ): ImageLoader {
         // Same deal as the stream cache: the size is fixed at construction, so
         // a changed value takes effect on the next launch.
@@ -127,6 +130,7 @@ object NetworkModule {
             .okHttpClient(coilClient)
             .components {
                 add(OfflineCoverInterceptor(cachedCoverDao, profileStore))
+                add(DriveCoverFetcher.Factory(cachedCoverDao, driveRangeReader))
                 add(com.feishin.mobile.core.ui.LocalAudioCoverFetcher.Factory(ctx))
             }
             .crossfade(true)
@@ -146,6 +150,9 @@ class OfflineCoverInterceptor(
     override suspend fun intercept(chain: Interceptor.Chain): coil.request.ImageResult {
         val request = chain.request
         val url = request.data?.toString() ?: ""
+        if (url.startsWith("drive-cover://", ignoreCase = true)) {
+            return chain.proceed(request)
+        }
         val key = resolveKey(request, url)
         if (!key.isNullOrBlank()) {
             val path = cachedCoverDao.path(key)
@@ -192,18 +199,10 @@ class OfflineCoverInterceptor(
                 return if (profileId != null) GlobalId.format(profileId, itemId) else itemId
             }
         }
-        DRIVE_COVER_REGEX.find(url)?.let { match ->
-            val profileId = match.groupValues[1]
-            val itemId = match.groupValues[2]
-            if (GlobalId.PROFILE_ID_REGEX.matches(profileId) && itemId.isNotBlank()) {
-                return GlobalId.format(profileId, itemId)
-            }
-        }
         return null
     }
 
     private companion object {
         val JELLYFIN_COVER_REGEX = Regex("/Items/([^/]+)/Images/Primary")
-        val DRIVE_COVER_REGEX = Regex("drive-cover://([^/]+)/([^/?#]+)")
     }
 }

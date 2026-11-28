@@ -7,6 +7,8 @@ import com.feishin.mobile.core.common.Result
 import com.feishin.mobile.core.network.SyncedLyrics
 import com.feishin.mobile.data.auth.ProfileStore
 import com.feishin.mobile.data.backend.BackendClientFactory
+import com.feishin.mobile.data.backend.DriveLibraryIndexer
+import com.feishin.mobile.data.backend.GoogleDriveBackend
 import com.feishin.mobile.data.backend.JellyfinBackend
 import com.feishin.mobile.data.backend.SubsonicBackend
 import com.feishin.mobile.data.cache.CACHED_SONGS_PLAYLIST_ID
@@ -15,6 +17,8 @@ import com.feishin.mobile.data.cache.LibraryRefresh
 import com.feishin.mobile.data.cache.MetadataCache
 import com.feishin.mobile.data.cache.MetadataCacheKeys
 import com.feishin.mobile.data.cache.toTrack
+import com.feishin.mobile.data.db.DriveTrackDao
+import com.feishin.mobile.data.db.LocalFavoriteDao
 import com.feishin.mobile.data.download.OfflineSyncStore
 import com.feishin.mobile.data.favorites.FAVORITE_SONGS_PLAYLIST_ID
 import com.feishin.mobile.data.favorites.PlaylistEvents
@@ -57,6 +61,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
 
 /**
  * Multi-backend federated [MusicDataRepository] and [BackendRegistry].
@@ -88,6 +93,10 @@ class FederatedMusicRepository internal constructor(
         offlineSync: dagger.Lazy<OfflineSyncStore>,
         playlistEvents: dagger.Lazy<PlaylistEvents>,
         cachedTracks: dagger.Lazy<CachedTrackStore>,
+        driveTrackDao: DriveTrackDao,
+        localFavoriteDao: LocalFavoriteDao,
+        driveIndexer: DriveLibraryIndexer,
+        json: Json,
     ) : this(
         profilesFlow = profileStore.profiles,
         backendFactory = defaultBackendFactory(
@@ -98,6 +107,10 @@ class FederatedMusicRepository internal constructor(
             settings = settings,
             offlineSync = offlineSync,
             playlistEvents = playlistEvents,
+            driveTrackDao = driveTrackDao,
+            localFavoriteDao = localFavoriteDao,
+            driveIndexer = driveIndexer,
+            json = json,
         ),
         settingsProvider = defaultSettingsProvider(settings),
         refresh = refresh,
@@ -1019,6 +1032,10 @@ class FederatedMusicRepository internal constructor(
             settings: SettingsStore,
             offlineSync: dagger.Lazy<OfflineSyncStore>,
             playlistEvents: dagger.Lazy<PlaylistEvents>,
+            driveTrackDao: DriveTrackDao,
+            localFavoriteDao: LocalFavoriteDao,
+            driveIndexer: DriveLibraryIndexer,
+            json: Json,
         ): (ServerProfile, CoroutineScope) -> MusicBackend = { profile, repoScope ->
             when (profile.type) {
                 BackendType.NAVIDROME,
@@ -1044,7 +1061,14 @@ class FederatedMusicRepository internal constructor(
                     playlistEvents = playlistEvents,
                     cacheScope = repoScope,
                 )
-                BackendType.GOOGLE_DRIVE -> UnsupportedBackend(profile)
+                BackendType.GOOGLE_DRIVE -> GoogleDriveBackend(
+                    profile = profile,
+                    api = clientFactory.driveApi(profile),
+                    driveTrackDao = driveTrackDao,
+                    localFavoriteDao = localFavoriteDao,
+                    indexer = driveIndexer,
+                    json = json,
+                )
             }
         }
 
@@ -1060,46 +1084,4 @@ class FederatedMusicRepository internal constructor(
             }
         }
     }
-}
-
-/** Placeholder adapter for backend types implemented in later phases (12.1 Jellyfin, 12.2 Drive). */
-private class UnsupportedBackend(
-    override val profile: ServerProfile,
-) : MusicBackend {
-    override val capabilities: BackendCapabilities = BackendCapabilities.forType(profile.type)
-    private fun unsupported(): Result.Err = Result.Err("${profile.type} backend is not supported yet")
-
-    override suspend fun ping(): Result<Unit> = unsupported()
-    override suspend fun serverInfo(): Result<ServerInfo> = unsupported()
-    override suspend fun startScan(): Result<Unit> = unsupported()
-    override suspend fun scanStatus(): Result<ScanStatus> = unsupported()
-    override suspend fun albumList(type: String, size: Int, offset: Int, genre: String?): Result<List<Album>> = unsupported()
-    override suspend fun artists(): Result<List<Artist>> = unsupported()
-    override suspend fun genres(): Result<List<Genre>> = unsupported()
-    override suspend fun playlists(): Result<List<Playlist>> = unsupported()
-    override suspend fun search(query: String, artistCount: Int, albumCount: Int, songCount: Int): Result<SearchResults> = unsupported()
-    override suspend fun album(id: String): Result<AlbumDetail> = unsupported()
-    override suspend fun artist(id: String): Result<ArtistDetail> = unsupported()
-    override suspend fun artistInfo(id: String): Result<ArtistInfo> = unsupported()
-    override suspend fun randomSongs(size: Int, genre: String?): Result<List<Track>> = unsupported()
-    override suspend fun topSongs(artist: String, count: Int): Result<List<Track>> = unsupported()
-    override suspend fun similarSongs(songId: String?, artistId: String?, count: Int): Result<List<Track>> = unsupported()
-    override suspend fun playlist(id: String): Result<PlaylistDetail> = unsupported()
-    override suspend fun starred(): Result<StarredCollection> = unsupported()
-    override suspend fun starTrack(id: String, starred: Boolean): Result<Unit> = unsupported()
-    override suspend fun starAlbum(id: String, starred: Boolean): Result<Unit> = unsupported()
-    override suspend fun starArtist(id: String, starred: Boolean): Result<Unit> = unsupported()
-    override suspend fun createPlaylist(name: String, trackIds: List<String>): Result<String> = unsupported()
-    override suspend fun addToPlaylist(playlistId: String, trackIds: List<String>): Result<Unit> = unsupported()
-    override suspend fun removeFromPlaylist(playlistId: String, indexes: List<Int>): Result<Unit> = unsupported()
-    override suspend fun deletePlaylist(id: String): Result<Unit> = unsupported()
-    override suspend fun scrobble(id: String, submission: Boolean): Result<Unit> = unsupported()
-    override suspend fun scrobbleAt(id: String, timeMs: Long, submission: Boolean): Result<Unit> = unsupported()
-    override suspend fun lyricsForTrack(id: String, artist: String, title: String): Result<SyncedLyrics> = unsupported()
-    override suspend fun lyrics(artist: String, title: String): Result<String> = unsupported()
-    override fun streamUrl(track: Track, maxBitrate: Int, format: String): String =
-        throw UnsupportedOperationException("${profile.type} backend is not supported yet")
-    override fun coverArtUrl(coverArtId: String?, size: Int): String? = null
-    override fun downloadUrl(track: Track): String =
-        throw UnsupportedOperationException("${profile.type} backend is not supported yet")
 }

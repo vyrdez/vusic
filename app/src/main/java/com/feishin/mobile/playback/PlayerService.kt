@@ -15,6 +15,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
@@ -130,6 +131,24 @@ class PlayerService : MediaLibraryService() {
         java.util.concurrent.ConcurrentHashMap<String, Boolean>(),
     )
 
+    /** Main-thread-populated lookup tables so `ResolvingDataSource` resolves `"p1"` profile IDs safely. */
+    private val streamProfileByKey = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val streamProfileByUri = java.util.concurrent.ConcurrentHashMap<String, String>()
+    @Volatile private var activePlaybackMediaId: String? = null
+
+    private fun indexPlayerMediaItems(p: Player) {
+        activePlaybackMediaId = p.currentMediaItem?.mediaId
+        if (streamProfileByKey.size > 512) streamProfileByKey.clear()
+        if (streamProfileByUri.size > 512) streamProfileByUri.clear()
+        for (i in 0 until p.mediaItemCount) {
+            val item = p.getMediaItemAt(i)
+            val pid = GlobalId.profileIdOrNull(item.mediaId) ?: continue
+            val local = item.localConfiguration ?: continue
+            local.customCacheKey?.takeIf { it.isNotBlank() }?.let { streamProfileByKey[it] = pid }
+            streamProfileByUri[local.uri.toString()] = pid
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         VLog.d(TAG, "service onCreate")
@@ -149,7 +168,11 @@ class PlayerService : MediaLibraryService() {
         // Network streams (http://, https://) route to CacheDataSource with UpstreamLogger.
         val okHttpFactory = OkHttpDataSource.Factory(okHttpClient)
         val httpFactory = ResolvingDataSource.Factory(okHttpFactory) { spec ->
+            val mediaId = activePlaybackMediaId
             val profileId = StableCacheKey.extractProfileId(spec.key)
+                ?: spec.key?.let { streamProfileByKey[it] }
+                ?: streamProfileByUri[spec.uri.toString()]
+                ?: mediaId?.let { GlobalId.profileIdOrNull(it) }
             if (profileId != null && !spec.httpRequestHeaders.containsKey(ProfileAuthInterceptor.HEADER_PROFILE_ID)) {
                 spec.buildUpon()
                     .setHttpRequestHeaders(
@@ -201,7 +224,12 @@ class PlayerService : MediaLibraryService() {
             .build()
 
         exo.addListener(object : Player.Listener {
+            override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                indexPlayerMediaItems(exo)
+            }
+
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                indexPlayerMediaItems(exo)
                 val id = mediaItem?.mediaId
                 val jellyfin = id != null && isJellyfinTrack(id)
                 val uri = mediaItem?.localConfiguration?.uri?.toString().orEmpty()
